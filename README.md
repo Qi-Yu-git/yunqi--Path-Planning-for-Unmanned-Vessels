@@ -53,6 +53,7 @@ yunqi--Path-Planning-for-Unmanned-Vessels/
 欢迎通过 Pull Request 提交优化建议、算法改进或功能扩展。若发现问题，可在 Issues 板块提交反馈。
 
 
-[环境搭建文档.docx](https://github.com/user-attachments/files/23282669/default.docx)
+[环境搭建文档.docx](https://github.com/user-attachments/files/23282734/default.docx)
 
-[在Anaconda中配置的库.txt](https://github.com/user-attachments/files/23282670/Anaconda.txt)
+[在Anaconda中配置的库.txt](https://github.com/user-attachments/files/23282735/Anaconda.txt)
+
