@@ -1,159 +1,133 @@
 ﻿using UnityEngine;
+using System.Collections.Generic;
 
-[RequireComponent(typeof(Rigidbody))]
 public class BoatController : MonoBehaviour
 {
-    public ImprovedAStar pathfinder;       // A*寻路组件引用（拖拽AStarManager对象）
-    public GridManager gridManager;        // 栅格管理器引用（拖拽水域平面对象）
-    public float moveSpeed = 5f;           // 移动速度（米/秒）
-    public float rotationSpeed = 15f;      // 旋转速度（数值越大越灵敏）
-    public float waypointDistance = 1f;    // 到达路径点的判定距离
-    public float avoidDistance = 2f;       // 避障检测距离
+    public ImprovedAStar pathfinder; // 关联A*寻路脚本
+    public GridManager gridManager; // 关联栅格管理器
+    private List<Vector2Int> gridPath; // 栅格路径点列表
+    private List<Vector3> worldPath; // 转换后的世界坐标路径
+    private int currentWaypointIndex = 0; // 当前目标点索引
+
+    [Header("移动参数")]
+    public float moveSpeed = 3f; // 移动速度
+    public float rotationSpeed = 2f; // 旋转速度（降低避免转圈）
+    public float waypointDistance = 0.6f; // 到达路径点的判定距离
 
     private Rigidbody rb;
-    private int currentWaypointIndex = 0;
-    private Vector3 targetPosition;
 
-    // 初始化方法（正确放在类内部）
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-        rb.constraints = RigidbodyConstraints.FreezeRotation;
-        rb.useGravity = false; // 取消重力，适配水面场景
+        if (rb == null)
+        {
+            Debug.LogError("无人船缺少Rigidbody组件！");
+            return;
+        }
 
-        // 延迟0.1秒执行路径初始化（给ImprovedAStar留足路径计算时间）
-        Invoke("InitTargetPosition", 0.1f);
+        if (pathfinder == null || gridManager == null)
+        {
+            Debug.LogError("请关联pathfinder和gridManager！");
+            return;
+        }
+
+        // 延迟0.1秒读取路径（等待A*生成），失败则重试
+        InvokeRepeating("TryLoadPath", 0.1f, 0.1f);
     }
 
-    // 单独写一个路径初始化方法
-    private void InitTargetPosition()
+    // 重试读取路径的方法
+    private void TryLoadPath()
     {
         if (pathfinder.path != null && pathfinder.path.Count > 0)
         {
-            targetPosition = gridManager.栅格转世界(pathfinder.path[0]);
-            Debug.Log("BoatController成功读取路径，初始目标点：" + targetPosition);
-
-            Vector3 targetDirection = (targetPosition - transform.position).normalized;
-            targetDirection.y = 0;
-            if (targetDirection != Vector3.zero)
+            gridPath = pathfinder.path;
+            // 转换为世界坐标
+            worldPath = new List<Vector3>();
+            foreach (var gridPos in gridPath)
             {
-                // 直接设置旋转，无任何过渡，启动时立即朝向目标
-                transform.rotation = Quaternion.LookRotation(targetDirection);
-                // 若使用刚体控制，同时更新刚体旋转（避免延迟）
-                rb.MoveRotation(Quaternion.LookRotation(targetDirection));
+                Vector3 worldPos = gridManager.栅格转世界(gridPos);
+                worldPath.Add(worldPos);
             }
+            Debug.Log($"BoatController成功读取路径，共{worldPath.Count}个世界坐标点，初始目标点：{worldPath[0]}");
+            CancelInvoke("TryLoadPath"); // 成功后取消重试
         }
         else
         {
-            Debug.LogError("BoatController延迟读取路径仍为空，请检查ImprovedAStar的path是否赋值");
+            Debug.LogWarning("路径未生成，重试中...");
         }
     }
 
-    void Update()
-    {
-        // 如果路径存在且有路径点
-        if (pathfinder.path != null && pathfinder.path.Count > 0)
-        {
-            // 检查是否到达当前路径点
-            if (Vector3.Distance(transform.position, targetPosition) < waypointDistance)
-            {
-                currentWaypointIndex++;
-                // 检查是否到达终点
-                if (currentWaypointIndex >= pathfinder.path.Count)
-                {
-                    StopMovement();
-                    return;
-                }
-                // 更新目标点
-                targetPosition = gridManager.栅格转世界(pathfinder.path[currentWaypointIndex]);
-            }
-        }
-    }
+    // 保留原FixedUpdate和MoveTowardsTarget方法不变
 
     void FixedUpdate()
     {
-        // 如果有目标点则移动
-        if (pathfinder.path != null && pathfinder.path.Count > 0 &&
-            currentWaypointIndex < pathfinder.path.Count)
+        if (worldPath == null || worldPath.Count == 0)
+            return;
+
+        // 1. 检查是否到达最后一个点，到达则停止
+        if (currentWaypointIndex >= worldPath.Count)
         {
-            // 检查前方是否有障碍物
-            if (CheckForObstacles())
-            {
-                // 重新计算路径
-                Vector2Int currentGrid = gridManager.世界转栅格(transform.position);
-                Vector2Int targetGrid = gridManager.世界转栅格(pathfinder.targetPos.position);
-                var newPath = pathfinder.FindPath(currentGrid, targetGrid);
-
-                if (newPath != null)
-                {
-                    pathfinder.path = newPath;
-                    currentWaypointIndex = 0;
-                    targetPosition = gridManager.栅格转世界(pathfinder.path[0]);
-                }
-                else
-                {
-                    // 如果无法找到新路径，暂时停止
-                    StopMovement();
-                    return;
-                }
-            }
-
-            // 移动到目标点
-            MoveTowardsTarget();
+            rb.velocity = Vector3.zero; // 强制停止
+            Debug.Log("已到达终点，停止移动");
+            return;
         }
-    }
 
-    // 移动到目标点（平滑转向+移动）
-    private void MoveTowardsTarget()
-    {
-        // 计算目标方向（忽略Y轴，保持水平）
-        Vector3 targetDirection = (targetPosition - transform.position).normalized;
-        targetDirection.y = 0;
+        // 2. 获取当前目标点（仅XZ平面）
+        Vector3 target = worldPath[currentWaypointIndex];
+        Vector3 targetXZ = new Vector3(target.x, transform.position.y, target.z);
+        Vector3 currentXZ = new Vector3(transform.position.x, transform.position.y, transform.position.z);
 
-        // 旋转朝向目标（平滑插值）
-        Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
+        // 3. 计算距离，判断是否到达当前目标点
+        float distance = Vector3.Distance(currentXZ, targetXZ);
+        bool isLastWaypoint = (currentWaypointIndex == worldPath.Count - 1);
+        float stopDistance = isLastWaypoint ? 0.3f : 0.6f; // 终点用更小的判定距离
+
+        if (distance <= stopDistance)
+        {
+            currentWaypointIndex++;
+            if (currentWaypointIndex < worldPath.Count)
+            {
+                Debug.Log($"更新目标点{currentWaypointIndex}：{worldPath[currentWaypointIndex]}");
+            }
+            return;
+        }
+
+        // 4. 旋转朝向目标（平滑旋转）
+        Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
+        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0); // 仅绕Y轴旋转
         transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
 
-        // 向前移动（用刚体避免穿模）
-        rb.velocity = transform.forward * moveSpeed;
+        // 5. 移动（到达终点前减速）
+        float currentSpeed = isLastWaypoint ? moveSpeed * 0.5f : moveSpeed; // 终点前减速50%
+        Vector3 moveDir = transform.forward * currentSpeed;
+        rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z);
     }
 
-    // 检查前方是否有障碍物（射线检测）
-    private bool CheckForObstacles()
+    private void MoveTowardsTarget(Vector3 target)
     {
-        RaycastHit hit;
-        // 从船的位置向前发射射线
-        if (Physics.Raycast(transform.position, transform.forward, out hit, avoidDistance))
+        // 忽略Y轴，仅在XZ平面移动
+        Vector3 targetXZ = new Vector3(target.x, transform.position.y, target.z);
+        Vector3 currentXZ = new Vector3(transform.position.x, transform.position.y, transform.position.z);
+
+        // 计算距离，判断是否到达目标点
+        float distance = Vector3.Distance(currentXZ, targetXZ);
+        if (distance <= waypointDistance)
         {
-            // 忽略水域平面和自身
-            if (hit.collider.gameObject != gridManager.水域平面.gameObject &&
-                hit.collider.gameObject != gameObject)
+            currentWaypointIndex++; // 切换到下一个点
+            if (currentWaypointIndex < worldPath.Count)
             {
-                return true; // 检测到障碍物
+                Debug.Log($"更新目标点{currentWaypointIndex}：{worldPath[currentWaypointIndex]}");
             }
-        }
-        return false;
-    }
-
-    // 停止移动
-    private void StopMovement()
-    {
-        rb.velocity = Vector3.zero;
-    }
-
-    // 绘制调试线（方便查看）
-    void OnDrawGizmosSelected()
-    {
-        // 绘制到当前目标点的线
-        if (pathfinder.path != null && pathfinder.path.Count > 0 &&
-            currentWaypointIndex < pathfinder.path.Count)
-        {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawLine(transform.position, targetPosition);
+            return;
         }
 
-        // 绘制避障检测射线
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawRay(transform.position, transform.forward * avoidDistance);
+        // 平滑旋转（仅绕Y轴）
+        Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
+        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0); // 锁定X、Z轴旋转
+        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
+
+        // 移动（通过刚体控制）
+        Vector3 moveDir = transform.forward * moveSpeed;
+        rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z); // 保留Y轴速度（如悬浮）
     }
 }

@@ -3,35 +3,101 @@ using UnityEngine;
 
 public class ImprovedAStar : MonoBehaviour
 {
-    public GridManager gridManager;    // 拖拽栅格管理脚本对象
-    public Transform startPos;        // 起点（无人艇初始位置）
-    public Transform targetPos;       // 终点（目标位置）
-    public List<Vector2Int> path;     // 开放访问权限，让BoatController可调用
+    public GridManager gridManager;
+    public Transform startPos;
+    public Transform targetPos;
+    public List<Vector2Int> path;
 
     void Start()
     {
         Debug.Log("A*路径开始计算");
-        Vector2Int startGrid = gridManager.世界转栅格(startPos.position);
-        Vector2Int targetGrid = gridManager.世界转栅格(targetPos.position);
-        path = FindPath(startGrid, targetGrid);
-        Debug.Log("A*路径计算完成，路径点数量：" + (path?.Count ?? 0));
+        if (gridManager == null || startPos == null || targetPos == null)
+        {
+            Debug.LogError("ImprovedAStar：依赖项未完全赋值！");
+            return;
+        }
 
-        // 绘制路径（调试用）
-        if (path != null)
+        // 强制修正起点世界坐标（约束到栅格内）
+        Vector3 startWorldPos = startPos.position;
+        float maxX = gridManager.栅格原点.x + gridManager.栅格宽度 * gridManager.栅格尺寸;
+        float maxZ = gridManager.栅格原点.z + gridManager.栅格高度 * gridManager.栅格尺寸;
+        startWorldPos.x = Mathf.Clamp(startWorldPos.x, gridManager.栅格原点.x + 0.5f, maxX - 0.5f);
+        startWorldPos.z = Mathf.Clamp(startWorldPos.z, gridManager.栅格原点.z + 0.5f, maxZ - 0.5f);
+        startPos.position = startWorldPos;
+
+        // 转换并检查起点栅格
+        Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
+        if (!gridManager.栅格是否可通行(startGrid))
+        {
+            Debug.LogWarning($"起点栅格{startGrid}不可通行，扩大范围寻找可通行栅格...");
+            startGrid = FindNearestWalkableGrid(startWorldPos);
+            if (startGrid == new Vector2Int(-1, -1))
+            {
+                Debug.LogError("A*路径计算失败：扩大范围后仍无可用栅格！请手动调整无人船位置到水域中央");
+                path = null;
+                return;
+            }
+            startWorldPos = gridManager.栅格转世界(startGrid);
+            startPos.position = startWorldPos;
+            Debug.Log($"已自动修正起点到栅格{startGrid}");
+        }
+
+        // 修正终点坐标
+        Vector3 targetWorldPos = targetPos.position;
+        targetWorldPos.x = Mathf.Clamp(targetWorldPos.x, gridManager.栅格原点.x + 0.5f, maxX - 0.5f);
+        targetWorldPos.z = Mathf.Clamp(targetWorldPos.z, gridManager.栅格原点.z + 0.5f, maxZ - 0.5f);
+        targetPos.position = targetWorldPos;
+        Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
+
+        if (!gridManager.栅格是否可通行(targetGrid))
+        {
+            Debug.LogError($"A*路径计算失败：终点栅格{targetGrid}不可通行！");
+            path = null;
+            return;
+        }
+
+        // 生成路径
+        path = FindPath(startGrid, targetGrid);
+        Debug.Log($"A*路径计算完成，路径点数量：{path?.Count ?? 0}");
+
+        // 绘制路径
+        if (path != null && path.Count > 0)
         {
             for (int i = 0; i < path.Count - 1; i++)
             {
-                Debug.DrawLine(
-                    gridManager.栅格转世界(path[i]),
-                    gridManager.栅格转世界(path[i + 1]),
-                    Color.green,
-                    1000f
-                );
+                Vector3 起点世界坐标 = gridManager.栅格转世界(path[i]);
+                Vector3 终点世界坐标 = gridManager.栅格转世界(path[i + 1]);
+                Debug.DrawLine(起点世界坐标, 终点世界坐标, Color.green, 1000f);
             }
         }
     }
 
-    // 开放访问权限，让BoatController可调用重新寻路
+    // 扩大搜索范围到5×5，确保找到可通行栅格
+    private Vector2Int FindNearestWalkableGrid(Vector3 centerWorldPos)
+    {
+        for (int xOffset = -2; xOffset <= 2; xOffset++)
+        {
+            for (int zOffset = -2; zOffset <= 2; zOffset++)
+            {
+                if (xOffset == 0 && zOffset == 0)
+                    continue;
+
+                Vector3 offsetWorldPos = centerWorldPos + new Vector3(
+                    xOffset * gridManager.栅格尺寸,
+                    0,
+                    zOffset * gridManager.栅格尺寸
+                );
+                Vector2Int offsetGrid = gridManager.世界转栅格(offsetWorldPos);
+                if (gridManager.栅格是否可通行(offsetGrid))
+                {
+                    return offsetGrid;
+                }
+            }
+        }
+        return new Vector2Int(-1, -1);
+    }
+
+    // 核心A*寻路算法（完整实现）
     public List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
     {
         List<Vector2Int> openList = new List<Vector2Int>();
@@ -72,10 +138,10 @@ public class ImprovedAStar : MonoBehaviour
                 }
             }
         }
-        return null; // 无路径
+
+        return null;
     }
 
-    // 获取8邻域节点
     private List<Vector2Int> GetNeighbors(Vector2Int node)
     {
         return new List<Vector2Int>
@@ -91,13 +157,13 @@ public class ImprovedAStar : MonoBehaviour
         };
     }
 
-    // 计算F值（G+启发式H，H采用欧几里得距离）
     private float CalculateFCost(Vector2Int node, Vector2Int target)
     {
-        return CalculateDistance(node, target) * gridManager.栅格尺寸;
+        int dx = Mathf.Abs(node.x - target.x);
+        int dy = Mathf.Abs(node.y - target.y);
+        return Mathf.Sqrt(dx * dx + dy * dy) * gridManager.栅格尺寸;
     }
 
-    // 计算欧几里得距离
     private float CalculateDistance(Vector2Int a, Vector2Int b)
     {
         int dx = a.x - b.x;
@@ -105,7 +171,6 @@ public class ImprovedAStar : MonoBehaviour
         return Mathf.Sqrt(dx * dx + dy * dy);
     }
 
-    // 获取OpenList中F值最小的节点
     private Vector2Int GetLowestFCostNode(List<Vector2Int> openList, Dictionary<Vector2Int, float> fCostMap)
     {
         Vector2Int lowest = openList[0];
@@ -117,22 +182,18 @@ public class ImprovedAStar : MonoBehaviour
         return lowest;
     }
 
-    // 重构路径
     private List<Vector2Int> ReconstructPath(Dictionary<Vector2Int, Vector2Int> parentMap, Vector2Int end)
     {
         List<Vector2Int> path = new List<Vector2Int>();
         path.Add(end);
-        while (parentMap.ContainsKey(path[0]))
+        Vector2Int current = end;
+
+        while (parentMap.ContainsKey(current))
         {
-            path.Insert(0, parentMap[path[0]]);
+            current = parentMap[current];
+            path.Insert(0, current);
         }
-        // 移除第一个与起点重复的路径点
-        if (path.Count > 0 && path[0] == gridManager.世界转栅格(startPos.position))
-        {
-            path.RemoveAt(0);
-        }
-        Debug.Log("路径点顺序：" + string.Join(", ", path));
+
         return path;
     }
 }
-

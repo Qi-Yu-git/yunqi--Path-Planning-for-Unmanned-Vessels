@@ -1,123 +1,162 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+// 栅格节点类（仅内部使用）
+internal class Node
+{
+    public bool walkable;
+    public Vector3 worldPosition;
+    public int gridX;
+    public int gridY;
+
+    public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY)
+    {
+        walkable = _walkable;
+        worldPosition = _worldPos;
+        gridX = _gridX;
+        gridY = _gridY;
+    }
+}
+
 public class GridManager : MonoBehaviour
 {
-    public Transform 水域平面;         // 拖拽场景中的水域平面
-    public float 栅格尺寸 = 1f;         // 栅格尺寸（米）
-    private int 栅格宽度;              // 栅格列数
-    private int 栅格高度;             // 栅格行数
-    private bool[,] 栅格地图;            // 栅格可通行状态（true=可通行，false=障碍物）
-    private Vector3 栅格原点;         // 栅格原点（水域左下角）
+    // 公开配置参数
+    public float 栅格尺寸 = 1f;
+    public Transform 水域平面;
+    public LayerMask obstacleLayer;
+
+    // 公开变量（供外部访问）
+    public Vector3 栅格原点;
+    public int 栅格宽度;
+    public int 栅格高度;
+
+    private Node[,] 栅格地图;
 
     void Start()
     {
         初始化栅格();
         标记障碍物();
+        Debug.Log($"栅格初始化完成：{栅格宽度}×{栅格高度}，原点：{栅格原点}");
     }
 
-    // 初始化栅格尺寸与数组
     private void 初始化栅格()
     {
-        float 水域大小X = 水域平面.lossyScale.x * 10; // Unity 平面默认 10m×10m，缩放后计算实际大小
+        if (水域平面 == null)
+        {
+            Debug.LogError("GridManager：未赋值水域平面！");
+            return;
+        }
+
+        float 水域大小X = 水域平面.lossyScale.x * 10;
         float 水域大小Z = 水域平面.lossyScale.z * 10;
+
         栅格宽度 = Mathf.CeilToInt(水域大小X / 栅格尺寸);
         栅格高度 = Mathf.CeilToInt(水域大小Z / 栅格尺寸);
-        栅格地图 = new bool[栅格宽度, 栅格高度];
+
         栅格原点 = 水域平面.position - new Vector3(水域大小X / 2, 0, 水域大小Z / 2);
 
-        // 初始化为可通行
+        栅格地图 = new Node[栅格宽度, 栅格高度];
         for (int x = 0; x < 栅格宽度; x++)
         {
             for (int z = 0; z < 栅格高度; z++)
             {
-                栅格地图[x, z] = true;
+                Vector3 节点世界坐标 = 栅格原点 + new Vector3(
+                    x * 栅格尺寸 + 栅格尺寸 / 2,
+                    水域平面.position.y,
+                    z * 栅格尺寸 + 栅格尺寸 / 2
+                );
+                栅格地图[x, z] = new Node(true, 节点世界坐标, x, z);
             }
         }
     }
 
-    // 标记障碍物
     private void 标记障碍物()
     {
         for (int x = 0; x < 栅格宽度; x++)
         {
             for (int z = 0; z < 栅格高度; z++)
             {
-                Vector3 栅格中心 = 栅格原点 + new Vector3(x * 栅格尺寸 + 栅格尺寸 / 2, 0.5f, z * 栅格尺寸 + 栅格尺寸 / 2);
-                float 检测半径 = 栅格尺寸 / 2 - 0.1f;
-                Collider[] 碰撞体 = Physics.OverlapSphere(栅格中心, 检测半径);
-
-                // 标记障碍物栅格
+                Node 节点 = 栅格地图[x, z];
+                Collider[] 碰撞体 = Physics.OverlapSphere(
+                    节点.worldPosition,
+                    栅格尺寸 / 2 - 0.1f,
+                    obstacleLayer
+                );
                 foreach (var 碰撞 in 碰撞体)
                 {
                     if (碰撞.gameObject != 水域平面.gameObject)
                     {
-                        栅格地图[x, z] = false;
+                        节点.walkable = false;
                         break;
                     }
                 }
             }
         }
-        Debug.Log("栅格初始化完成：" + 栅格宽度 + "×" + 栅格高度 + "，障碍物已标记");
     }
 
-    // 世界坐标转栅格坐标
     public Vector2Int 世界转栅格(Vector3 世界坐标)
     {
         Vector3 偏移 = 世界坐标 - 栅格原点;
         int x = Mathf.FloorToInt(偏移.x / 栅格尺寸);
         int z = Mathf.FloorToInt(偏移.z / 栅格尺寸);
-        return new Vector2Int(Mathf.Clamp(x, 0, 栅格宽度 - 1), Mathf.Clamp(z, 0, 栅格高度 - 1));
+        x = Mathf.Clamp(x, 0, 栅格宽度 - 1);
+        z = Mathf.Clamp(z, 0, 栅格高度 - 1);
+        return new Vector2Int(x, z);
     }
 
-    // 栅格坐标转世界坐标
     public Vector3 栅格转世界(Vector2Int 栅格坐标)
     {
-        return 栅格原点 + new Vector3(栅格坐标.x * 栅格尺寸 + 栅格尺寸 / 2, 0, 栅格坐标.y * 栅格尺寸 + 栅格尺寸 / 2);
+        int x = Mathf.Clamp(栅格坐标.x, 0, 栅格宽度 - 1);
+        int z = Mathf.Clamp(栅格坐标.y, 0, 栅格高度 - 1);
+        return 栅格原点 + new Vector3(
+            x * 栅格尺寸 + 栅格尺寸 / 2,
+            水域平面.position.y,
+            z * 栅格尺寸 + 栅格尺寸 / 2
+        );
     }
 
-    // 检查栅格是否可通行
     public bool 栅格是否可通行(Vector2Int 栅格坐标)
     {
         if (栅格坐标.x < 0 || 栅格坐标.x >= 栅格宽度 || 栅格坐标.y < 0 || 栅格坐标.y >= 栅格高度)
             return false;
-        return 栅格地图[栅格坐标.x, 栅格坐标.y];
+        return 栅格地图[栅格坐标.x, 栅格坐标.y].walkable;
     }
 
-    // Gizmos 可视化栅格（调试用）
-    void OnDrawGizmos()
+    private void OnDrawGizmos()
     {
-        if (栅格地图 == null || 水域平面 == null) return;
+        if (水域平面 == null || 栅格地图 == null) return;
 
-        Gizmos.color = Color.white;
         float 水域大小X = 水域平面.lossyScale.x * 10;
         float 水域大小Z = 水域平面.lossyScale.z * 10;
-        栅格原点 = 水域平面.position - new Vector3(水域大小X / 2, 0, 水域大小Z / 2);
+        Gizmos.color = Color.white;
+        Gizmos.DrawWireCube(
+            水域平面.position,
+            new Vector3(水域大小X, 0.1f, 水域大小Z)
+        );
 
-        // 绘制栅格线
+        Gizmos.color = Color.gray;
         for (int x = 0; x <= 栅格宽度; x++)
         {
-            Vector3 起点 = 栅格原点 + new Vector3(x * 栅格尺寸, 0, 0);
-            Vector3 终点 = 栅格原点 + new Vector3(x * 栅格尺寸, 0, 栅格高度 * 栅格尺寸);
+            Vector3 起点 = 栅格原点 + new Vector3(x * 栅格尺寸, 0.1f, 0);
+            Vector3 终点 = 栅格原点 + new Vector3(x * 栅格尺寸, 0.1f, 栅格高度 * 栅格尺寸);
             Gizmos.DrawLine(起点, 终点);
         }
         for (int z = 0; z <= 栅格高度; z++)
         {
-            Vector3 起点 = 栅格原点 + new Vector3(0, 0, z * 栅格尺寸);
-            Vector3 终点 = 栅格原点 + new Vector3(栅格宽度 * 栅格尺寸, 0, z * 栅格尺寸);
+            Vector3 起点 = 栅格原点 + new Vector3(0, 0.1f, z * 栅格尺寸);
+            Vector3 终点 = 栅格原点 + new Vector3(栅格宽度 * 栅格尺寸, 0.1f, z * 栅格尺寸);
             Gizmos.DrawLine(起点, 终点);
         }
 
-        // 绘制障碍物栅格（红色）
         Gizmos.color = Color.red;
         for (int x = 0; x < 栅格宽度; x++)
         {
             for (int z = 0; z < 栅格高度; z++)
             {
-                if (!栅格地图[x, z])
+                if (!栅格地图[x, z].walkable)
                 {
-                    Vector3 栅格中心 = 栅格原点 + new Vector3(x * 栅格尺寸 + 栅格尺寸 / 2, 0.1f, z * 栅格尺寸 + 栅格尺寸 / 2);
-                    Gizmos.DrawCube(栅格中心, new Vector3(栅格尺寸 - 0.1f, 0.1f, 栅格尺寸 - 0.1f));
+                    Vector3 栅格中心 = 栅格转世界(new Vector2Int(x, z));
+                    Gizmos.DrawCube(栅格中心, new Vector3(栅格尺寸 - 0.1f, 0.2f, 栅格尺寸 - 0.1f));
                 }
             }
         }
