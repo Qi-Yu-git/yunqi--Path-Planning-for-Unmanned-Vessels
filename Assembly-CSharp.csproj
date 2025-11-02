@@ -62,6 +62,7 @@
   <ItemGroup>
     <Compile Include="Assets\GridManager.cs" />
     <Compile Include="Assets\ImprovedAStar.cs" />
+    <Compile Include="Assets\BoatController.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">

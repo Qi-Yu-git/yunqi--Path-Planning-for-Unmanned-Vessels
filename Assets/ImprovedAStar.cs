@@ -6,13 +6,15 @@ public class ImprovedAStar : MonoBehaviour
     public GridManager gridManager;    // 拖拽栅格管理脚本对象
     public Transform startPos;        // 起点（无人艇初始位置）
     public Transform targetPos;       // 终点（目标位置）
-    private List<Vector2Int> path;    // 最终路径
+    public List<Vector2Int> path;     // 开放访问权限，让BoatController可调用
 
     void Start()
     {
+        Debug.Log("A*路径开始计算");
         Vector2Int startGrid = gridManager.世界转栅格(startPos.position);
         Vector2Int targetGrid = gridManager.世界转栅格(targetPos.position);
         path = FindPath(startGrid, targetGrid);
+        Debug.Log("A*路径计算完成，路径点数量：" + (path?.Count ?? 0));
 
         // 绘制路径（调试用）
         if (path != null)
@@ -29,8 +31,8 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
-    // 改进A*路径搜索核心逻辑
-    private List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
+    // 开放访问权限，让BoatController可调用重新寻路
+    public List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
     {
         List<Vector2Int> openList = new List<Vector2Int>();
         HashSet<Vector2Int> closedList = new HashSet<Vector2Int>();
@@ -70,14 +72,13 @@ public class ImprovedAStar : MonoBehaviour
                 }
             }
         }
-
         return null; // 无路径
     }
 
-    // 获取8邻域节点（改进A*的节点扩展方式）
+    // 获取8邻域节点
     private List<Vector2Int> GetNeighbors(Vector2Int node)
     {
-        List<Vector2Int> neighbors = new List<Vector2Int>
+        return new List<Vector2Int>
         {
             new Vector2Int(node.x - 1, node.y - 1),
             new Vector2Int(node.x, node.y - 1),
@@ -88,7 +89,6 @@ public class ImprovedAStar : MonoBehaviour
             new Vector2Int(node.x, node.y + 1),
             new Vector2Int(node.x + 1, node.y + 1)
         };
-        return neighbors;
     }
 
     // 计算F值（G+启发式H，H采用欧几里得距离）
@@ -126,6 +126,13 @@ public class ImprovedAStar : MonoBehaviour
         {
             path.Insert(0, parentMap[path[0]]);
         }
+        // 移除第一个与起点重复的路径点
+        if (path.Count > 0 && path[0] == gridManager.世界转栅格(startPos.position))
+        {
+            path.RemoveAt(0);
+        }
+        Debug.Log("路径点顺序：" + string.Join(", ", path));
         return path;
     }
 }
+
