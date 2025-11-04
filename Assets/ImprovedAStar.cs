@@ -8,24 +8,34 @@ public class ImprovedAStar : MonoBehaviour
     public Transform targetPos;
     public List<Vector2Int> path;
 
+    // 修改 ImprovedAStar.cs 的 Start 方法，延迟计算路径
     void Start()
     {
-        Debug.Log("A*路径开始计算");
+        Debug.Log("A*路径准备计算（等待目标点生成）");
         if (gridManager == null || startPos == null || targetPos == null)
         {
             Debug.LogError("ImprovedAStar：依赖项未完全赋值！");
             return;
         }
+        // 延迟0.5秒计算路径，确保 RandomSpawnManager 已生成新目标点
+        Invoke(nameof(CalculatePathAfterDelay), 0.5f);
+    }
 
-        // 强制修正起点世界坐标（约束到栅格内）
+    // 新增延迟计算路径的方法
+    // 修改 ImprovedAStar.cs 的 CalculatePathAfterDelay 方法中目标点Y轴逻辑
+    private void CalculatePathAfterDelay()
+    {
         Vector3 startWorldPos = startPos.position;
         float maxX = gridManager.栅格原点.x + gridManager.栅格宽度 * gridManager.栅格尺寸;
         float maxZ = gridManager.栅格原点.z + gridManager.栅格高度 * gridManager.栅格尺寸;
+
+        // 1. 修正起点Y轴（确保与水域一致）
+        startWorldPos.y = 0.05f; // 强制设为水域Y轴高度
         startWorldPos.x = Mathf.Clamp(startWorldPos.x, gridManager.栅格原点.x + 0.5f, maxX - 0.5f);
         startWorldPos.z = Mathf.Clamp(startWorldPos.z, gridManager.栅格原点.z + 0.5f, maxZ - 0.5f);
         startPos.position = startWorldPos;
 
-        // 转换并检查起点栅格
+        // 2. 检查起点栅格（原有逻辑不变）
         Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
         if (!gridManager.栅格是否可通行(startGrid))
         {
@@ -33,22 +43,25 @@ public class ImprovedAStar : MonoBehaviour
             startGrid = FindNearestWalkableGrid(startWorldPos);
             if (startGrid == new Vector2Int(-1, -1))
             {
-                Debug.LogError("A*路径计算失败：扩大范围后仍无可用栅格！请手动调整无人船位置到水域中央");
+                Debug.LogError("A*路径计算失败：扩大范围后仍无可用栅格！");
                 path = null;
                 return;
             }
             startWorldPos = gridManager.栅格转世界(startGrid);
+            startWorldPos.y = 0.05f; // 再次确保Y轴正确
             startPos.position = startWorldPos;
-            Debug.Log($"已自动修正起点到栅格{startGrid}");
+            Debug.Log($"已自动修正起点到栅格{startGrid}，位置：{startWorldPos}");
         }
 
-        // 修正终点坐标
+        // 3. 【关键修复】修正目标点Y轴，强制与水域一致
         Vector3 targetWorldPos = targetPos.position;
+        targetWorldPos.y = 0.05f; // 覆盖异常的Y=2.00，设为正确的水域高度
         targetWorldPos.x = Mathf.Clamp(targetWorldPos.x, gridManager.栅格原点.x + 0.5f, maxX - 0.5f);
         targetWorldPos.z = Mathf.Clamp(targetWorldPos.z, gridManager.栅格原点.z + 0.5f, maxZ - 0.5f);
         targetPos.position = targetWorldPos;
-        Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
 
+        // 4. 检查终点栅格（原有逻辑不变）
+        Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
         if (!gridManager.栅格是否可通行(targetGrid))
         {
             Debug.LogError($"A*路径计算失败：终点栅格{targetGrid}不可通行！");
@@ -56,17 +69,19 @@ public class ImprovedAStar : MonoBehaviour
             return;
         }
 
-        // 生成路径
+        // 5. 生成路径（原有逻辑不变）
         path = FindPath(startGrid, targetGrid);
-        Debug.Log($"A*路径计算完成，路径点数量：{path?.Count ?? 0}");
+        Debug.Log($"A*路径计算完成，目标点：{targetWorldPos}，路径点数量：{path?.Count ?? 0}");
 
-        // 绘制路径
+        // 绘制路径（绿色线条，便于调试）
         if (path != null && path.Count > 0)
         {
             for (int i = 0; i < path.Count - 1; i++)
             {
                 Vector3 起点世界坐标 = gridManager.栅格转世界(path[i]);
+                起点世界坐标.y = 0.05f; // 确保路径点Y轴正确
                 Vector3 终点世界坐标 = gridManager.栅格转世界(path[i + 1]);
+                终点世界坐标.y = 0.05f; // 确保路径点Y轴正确
                 Debug.DrawLine(起点世界坐标, 终点世界坐标, Color.green, 1000f);
             }
         }

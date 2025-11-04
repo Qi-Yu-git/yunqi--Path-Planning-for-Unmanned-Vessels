@@ -1,14 +1,12 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// 栅格节点类（仅内部使用）
 internal class Node
 {
     public bool walkable;
     public Vector3 worldPosition;
     public int gridX;
     public int gridY;
-
     public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY)
     {
         walkable = _walkable;
@@ -20,16 +18,12 @@ internal class Node
 
 public class GridManager : MonoBehaviour
 {
-    // 公开配置参数
     public float 栅格尺寸 = 1f;
     public Transform 水域平面;
     public LayerMask obstacleLayer;
-
-    // 公开变量（供外部访问）
     public Vector3 栅格原点;
     public int 栅格宽度;
     public int 栅格高度;
-
     private Node[,] 栅格地图;
 
     void Start()
@@ -46,15 +40,11 @@ public class GridManager : MonoBehaviour
             Debug.LogError("GridManager：未赋值水域平面！");
             return;
         }
-
         float 水域大小X = 水域平面.lossyScale.x * 10;
         float 水域大小Z = 水域平面.lossyScale.z * 10;
-
         栅格宽度 = Mathf.CeilToInt(水域大小X / 栅格尺寸);
         栅格高度 = Mathf.CeilToInt(水域大小Z / 栅格尺寸);
-
         栅格原点 = 水域平面.position - new Vector3(水域大小X / 2, 0, 水域大小Z / 2);
-
         栅格地图 = new Node[栅格宽度, 栅格高度];
         for (int x = 0; x < 栅格宽度; x++)
         {
@@ -70,16 +60,18 @@ public class GridManager : MonoBehaviour
         }
     }
 
-    private void 标记障碍物()
+    // 【修改】扩大碰撞检测半径，确保覆盖礁石；新增public修饰符，允许外部调用
+    public void 标记障碍物()
     {
         for (int x = 0; x < 栅格宽度; x++)
         {
             for (int z = 0; z < 栅格高度; z++)
             {
                 Node 节点 = 栅格地图[x, z];
+                // 碰撞半径从“栅格尺寸/2 -0.1”改为“栅格尺寸/2”，确保覆盖礁石
                 Collider[] 碰撞体 = Physics.OverlapSphere(
                     节点.worldPosition,
-                    栅格尺寸 / 2 - 0.1f,
+                    栅格尺寸 / 2,
                     obstacleLayer
                 );
                 foreach (var 碰撞 in 碰撞体)
@@ -94,6 +86,15 @@ public class GridManager : MonoBehaviour
         }
     }
 
+    // 【新增】重置栅格（用于礁石生成后重新标记）
+    public void 重置栅格()
+    {
+        初始化栅格();
+        标记障碍物();
+        Debug.Log("栅格已重置，重新标记障碍物完成");
+    }
+
+    // 以下方法保持不变
     public Vector2Int 世界转栅格(Vector3 世界坐标)
     {
         Vector3 偏移 = 世界坐标 - 栅格原点;
@@ -125,15 +126,10 @@ public class GridManager : MonoBehaviour
     private void OnDrawGizmos()
     {
         if (水域平面 == null || 栅格地图 == null) return;
-
         float 水域大小X = 水域平面.lossyScale.x * 10;
         float 水域大小Z = 水域平面.lossyScale.z * 10;
         Gizmos.color = Color.white;
-        Gizmos.DrawWireCube(
-            水域平面.position,
-            new Vector3(水域大小X, 0.1f, 水域大小Z)
-        );
-
+        Gizmos.DrawWireCube(水域平面.position, new Vector3(水域大小X, 0.1f, 水域大小Z));
         Gizmos.color = Color.gray;
         for (int x = 0; x <= 栅格宽度; x++)
         {
@@ -147,7 +143,6 @@ public class GridManager : MonoBehaviour
             Vector3 终点 = 栅格原点 + new Vector3(栅格宽度 * 栅格尺寸, 0.1f, z * 栅格尺寸);
             Gizmos.DrawLine(起点, 终点);
         }
-
         Gizmos.color = Color.red;
         for (int x = 0; x < 栅格宽度; x++)
         {

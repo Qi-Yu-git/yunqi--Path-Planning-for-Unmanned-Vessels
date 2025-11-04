@@ -3,19 +3,23 @@ using System.Collections.Generic;
 
 public class BoatController : MonoBehaviour
 {
-    public ImprovedAStar pathfinder; // 关联A*寻路脚本
-    public GridManager gridManager; // 关联栅格管理器
-    private List<Vector2Int> gridPath; // 栅格路径点列表
-    private List<Vector3> worldPath; // 转换后的世界坐标路径
-    private int currentWaypointIndex = 0; // 当前目标点索引
+    // 公开参数（在Inspector赋值）
+    public ImprovedAStar pathfinder;
+    public GridManager gridManager;
+    public float moveSpeed = 3f;
+    public float rotationSpeed = 2f;
+    public float waypointDistance = 0.6f;
+    public float endPointSlowRange = 2f; // 终点前减速范围
+    public float minEndSpeed = 0.5f;     // 终点前最小速度
 
-    [Header("移动参数")]
-    public float moveSpeed = 3f; // 移动速度
-    public float rotationSpeed = 2f; // 旋转速度（降低避免转圈）
-    public float waypointDistance = 0.6f; // 到达路径点的判定距离
-
+    // 私有变量
+    private List<Vector2Int> gridPath;
+    private List<Vector3> worldPath;
+    private int currentWaypointIndex = 0;
     private Rigidbody rb;
+    private bool isReachedEnd = false;
 
+    // 初始化
     void Start()
     {
         rb = GetComponent<Rigidbody>();
@@ -24,110 +28,94 @@ public class BoatController : MonoBehaviour
             Debug.LogError("无人船缺少Rigidbody组件！");
             return;
         }
-
         if (pathfinder == null || gridManager == null)
         {
-            Debug.LogError("请关联pathfinder和gridManager！");
+            Debug.LogError("请在Inspector中关联pathfinder和gridManager！");
             return;
         }
-
-        // 延迟0.1秒读取路径（等待A*生成），失败则重试
-        InvokeRepeating("TryLoadPath", 0.1f, 0.1f);
+        TryLoadPath(); // 尝试加载路径
     }
 
-    // 重试读取路径的方法
+    // 尝试加载路径（失败则重试）
     private void TryLoadPath()
     {
         if (pathfinder.path != null && pathfinder.path.Count > 0)
         {
             gridPath = pathfinder.path;
-            // 转换为世界坐标
             worldPath = new List<Vector3>();
             foreach (var gridPos in gridPath)
             {
                 Vector3 worldPos = gridManager.栅格转世界(gridPos);
+                worldPos.y = 0.05f; // 强制路径点Y轴与水域一致
                 worldPath.Add(worldPos);
+                Debug.Log($"路径点{worldPath.Count}：{worldPos}"); // 新增日志，验证Y轴
             }
-            Debug.Log($"BoatController成功读取路径，共{worldPath.Count}个世界坐标点，初始目标点：{worldPath[0]}");
-            CancelInvoke("TryLoadPath"); // 成功后取消重试
+            Debug.Log($"成功读取路径，共{worldPath.Count}个点");
+            isReachedEnd = false;
         }
         else
         {
-            Debug.LogWarning("路径未生成，重试中...");
+            Debug.LogWarning("路径未生成，1秒后重试...");
+            Invoke(nameof(TryLoadPath), 1f);
         }
     }
 
-    // 保留原FixedUpdate和MoveTowardsTarget方法不变
-
+    // 物理更新（移动逻辑）
     void FixedUpdate()
     {
-        if (worldPath == null || worldPath.Count == 0)
+        // 固定Y轴高度为0.4f
+        transform.position = new Vector3(transform.position.x, 0.4f, transform.position.z);
+
+        if (isReachedEnd || worldPath == null || worldPath.Count == 0)
             return;
 
-        // 1. 检查是否到达最后一个点，到达则停止
+        // 到达最后一个路径点
         if (currentWaypointIndex >= worldPath.Count)
         {
-            rb.velocity = Vector3.zero; // 强制停止
+            rb.velocity = Vector3.zero;
+            isReachedEnd = true;
             Debug.Log("已到达终点，停止移动");
             return;
         }
 
-        // 2. 获取当前目标点（仅XZ平面）
+        // 移动到当前路径点
         Vector3 target = worldPath[currentWaypointIndex];
-        Vector3 targetXZ = new Vector3(target.x, transform.position.y, target.z);
-        Vector3 currentXZ = new Vector3(transform.position.x, transform.position.y, transform.position.z);
-
-        // 3. 计算距离，判断是否到达当前目标点
+        Vector3 targetXZ = new Vector3(target.x, 0.4f, target.z); // 目标点也使用相同Y轴高度
+        Vector3 currentXZ = new Vector3(transform.position.x, 0.4f, transform.position.z);
         float distance = Vector3.Distance(currentXZ, targetXZ);
         bool isLastWaypoint = (currentWaypointIndex == worldPath.Count - 1);
-        float stopDistance = isLastWaypoint ? 0.3f : 0.6f; // 终点用更小的判定距离
+        float stopDistance = isLastWaypoint ? 0.3f : 0.6f;
 
+        // 到达当前路径点，切换到下一个
         if (distance <= stopDistance)
         {
             currentWaypointIndex++;
-            if (currentWaypointIndex < worldPath.Count)
-            {
-                Debug.Log($"更新目标点{currentWaypointIndex}：{worldPath[currentWaypointIndex]}");
-            }
             return;
         }
 
-        // 4. 旋转朝向目标（平滑旋转）
+        // 旋转朝向目标
         Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
-        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0); // 仅绕Y轴旋转
+        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
         transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
 
-        // 5. 移动（到达终点前减速）
-        float currentSpeed = isLastWaypoint ? moveSpeed * 0.5f : moveSpeed; // 终点前减速50%
+        // 移动速度（终点前减速）
+        float currentSpeed = moveSpeed;
+        if (isLastWaypoint)
+        {
+            float distanceToEnd = Vector3.Distance(currentXZ, worldPath[worldPath.Count - 1]);
+            if (distanceToEnd <= endPointSlowRange)
+            {
+                float speedRatio = distanceToEnd / endPointSlowRange;
+                currentSpeed = Mathf.Lerp(minEndSpeed, moveSpeed * 0.5f, speedRatio);
+            }
+            else
+            {
+                currentSpeed = moveSpeed * 0.5f;
+            }
+        }
+
+        // 应用移动
         Vector3 moveDir = transform.forward * currentSpeed;
         rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z);
-    }
-
-    private void MoveTowardsTarget(Vector3 target)
-    {
-        // 忽略Y轴，仅在XZ平面移动
-        Vector3 targetXZ = new Vector3(target.x, transform.position.y, target.z);
-        Vector3 currentXZ = new Vector3(transform.position.x, transform.position.y, transform.position.z);
-
-        // 计算距离，判断是否到达目标点
-        float distance = Vector3.Distance(currentXZ, targetXZ);
-        if (distance <= waypointDistance)
-        {
-            currentWaypointIndex++; // 切换到下一个点
-            if (currentWaypointIndex < worldPath.Count)
-            {
-                Debug.Log($"更新目标点{currentWaypointIndex}：{worldPath[currentWaypointIndex]}");
-            }
-            return;
-        }
-
-        // 平滑旋转（仅绕Y轴）
-        Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
-        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0); // 锁定X、Z轴旋转
-        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
-
-        // 移动（通过刚体控制）
-        Vector3 moveDir = transform.forward * moveSpeed;
-        rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z); // 保留Y轴速度（如悬浮）
     }
 }
