@@ -1,12 +1,15 @@
 using UnityEngine;
 
-public class ObstacleBoatMove : MonoBehaviour
+public class MoveForwardBoat : MonoBehaviour
 {
-    public float moveSpeed = 2f; // 前进速度
+    public float moveSpeed = 5f; // 前进速度
+    public float heightOffset = 0.5f; // 离水面高度
 
     void Update()
     {
-        // 沿自身Z轴（前方）持续移动
-        transform.Translate(Vector3.forward * moveSpeed * Time.deltaTime);
+        // 沿X轴正方向（前方）移动，固定Y轴高度
+        Vector3 currentPos = transform.position;
+        currentPos.x += moveSpeed * Time.deltaTime;
+        transform.position = new Vector3(currentPos.x, heightOffset, currentPos.z);
     }
 }
