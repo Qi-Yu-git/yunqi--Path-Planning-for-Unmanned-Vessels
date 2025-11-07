@@ -1,0 +1,51 @@
+[33mcommit bab3fecd5863d0935d5190e2891d6a26ea8364a5[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m)[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Tue Nov 4 22:21:58 2025 +0800
+
+    无人船全局栅格路径规划
+
+[33mcommit 29ec70c136adc2b6aebe64a1d55176fece7fa48a[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 2 22:10:38 2025 +0800
+
+    无人船替换版本
+
+[33mcommit a830e3b52f32c148db27ed26afdc253bfdd147b9[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 2 14:04:45 2025 +0800
+
+    提交说明：例如「优化A*算法路径规划效率，新增障碍物避障逻辑」
+
+[33mcommit d73ee3c59493ba9045ee695587326c1ca59fb46d[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 20:31:58 2025 +0800
+
+    Update README.md
+
+[33mcommit 4a6a57fcd42656f89ca0cfebf880649e880566a3[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 20:29:08 2025 +0800
+
+    Update README.md
+    
+    环境配置
+
+[33mcommit b0bf71eea6d05dee3640677d0fd68c8db4145008[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 19:33:51 2025 +0800
+
+    Update README.md
+
+[33mcommit a4849a3c4b54bbf285fbca2ca59459d34d99c463[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 19:32:50 2025 +0800
+
+    Create README.md
+    
+    本项目参考环境配置（建议在Anaconda中管理）
+
+[33mcommit 60b755de0bc38d71db41fc6c03529c4d393362d7[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 18:53:09 2025 +0800
+
+    首次提交：全局环境地图_栅格建模法
