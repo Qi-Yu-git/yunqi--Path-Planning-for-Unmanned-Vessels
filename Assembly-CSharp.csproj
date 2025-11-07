@@ -61,9 +61,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Assets\GridManager.cs" />
+    <Compile Include="Assets\USVLidarSensorImpl.cs" />
     <Compile Include="Assets\RandomSpawnManager.cs" />
     <Compile Include="Assets\ImprovedAStar.cs" />
+    <Compile Include="Assets\USV_LocalPlanner.cs" />
     <Compile Include="Assets\BoatController.cs" />
+    <Compile Include="Assets\Encounter an unmanned vessel.cs" />
     <Compile Include="Assets\USV_GlobalRLAgent.cs" />
     <Compile Include="Assets\FollowTarget.cs" />
   </ItemGroup>
