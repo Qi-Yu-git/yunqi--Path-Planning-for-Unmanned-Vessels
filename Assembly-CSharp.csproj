@@ -64,6 +64,7 @@
     <Compile Include="Assets\RandomSpawnManager.cs" />
     <Compile Include="Assets\ImprovedAStar.cs" />
     <Compile Include="Assets\BoatController.cs" />
+    <Compile Include="Assets\USV_GlobalRLAgent.cs" />
     <Compile Include="Assets\FollowTarget.cs" />
   </ItemGroup>
   <ItemGroup>

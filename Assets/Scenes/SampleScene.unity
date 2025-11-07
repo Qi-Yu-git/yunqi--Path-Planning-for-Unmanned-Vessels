@@ -151,7 +151,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1fa9dafdf73227469212fea55def618, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  "\u6805\u683C\u5C3A\u5BF8": 1
+  "\u6805\u683C\u5C3A\u5BF8": 0.3
   "\u6C34\u57DF\u5E73\u9762": {fileID: 318416866}
   obstacleLayer:
     serializedVersion: 2
