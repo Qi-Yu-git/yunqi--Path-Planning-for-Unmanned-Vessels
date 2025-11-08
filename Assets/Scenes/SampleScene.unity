@@ -2355,6 +2355,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1137107878}
   - component: {fileID: 1137107877}
+  - component: {fileID: 1137107879}
   m_Layer: 6
   m_Name: "\u96F7\u8FBE"
   m_TagString: Untagged
@@ -2374,20 +2375,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fff798bbe74b4394aa5ac6134bae6fb5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxDetectionDistance: 100
+  maxDetectionDistance: 3
   obstacleLayer:
     serializedVersion: 2
     m_Bits: 65
-  raycastHeight: 0.2
+  raycastHeight: 0
   offsetX: 0
-  offsetZ: 0
-  useParentBinding: 1
+  offsetY: 0.1
+  offsetZ: 1
+  useParentBinding: 0
   usvTransform: {fileID: 173794670}
   maxConcurrentRays: 30
   scanInterval: 0.05
   obstacleGizmoColor: {r: 1, g: 0, b: 0, a: 0.627451}
-  rayColor: {r: 0, g: 0, b: 1, a: 1}
-  alwaysShowRays: 1
   defaultSampleCount: 36
 --- !u!4 &1137107878
 Transform:
@@ -2398,12 +2398,30 @@ Transform:
   m_GameObject: {fileID: 1137107876}
   serializedVersion: 2
   m_LocalRotation: {x: 0.50000006, y: 0.49999997, z: 0.50000006, w: 0.49999997}
-  m_LocalPosition: {x: 0.0032000004, y: -0.011000003, z: -0.0040000007}
+  m_LocalPosition: {x: 0.0032, y: -0.0098, z: -0.004}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 858632560}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1137107879
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1137107876}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae4dc04440807c742bbff070d88a6c59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  radarCore: {fileID: 1137107877}
+  rayLength: 10
+  rayCount: 36
+  noObstacleColor: {r: 0, g: 0, b: 1, a: 1}
+  hasObstacleColor: {r: 1, g: 0, b: 0, a: 1}
+  originSize: 0.5
 --- !u!1 &1160700550
 GameObject:
   m_ObjectHideFlags: 0
