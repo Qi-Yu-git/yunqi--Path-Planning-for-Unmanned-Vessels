@@ -97,18 +97,22 @@ public class ImprovedAStar : MonoBehaviour
         return true;
     }
 
+    // 原私有方法修改为公开方法，允许外部脚本调用
     public void CalculatePathAfterDelay()
     {
         if (gridManager == null) return;
 
         Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
         startPos.position = startWorldPos;
+        Debug.Log($"起点原始世界坐标：{startPos.position}，限制后世界坐标：{startWorldPos}");
 
         Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
         targetPos.position = targetWorldPos;
+        Debug.Log($"目标原始世界坐标：{targetPos.position}，限制后世界坐标：{targetWorldPos}");
 
         Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
         Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
+        Debug.Log($"起点栅格：{startGrid}，目标栅格：{targetGrid}");
 
         startGrid = FindValidGrid(startGrid);
         if (startGrid.x == -1)
@@ -121,7 +125,7 @@ public class ImprovedAStar : MonoBehaviour
         startWorldPos = gridManager.栅格转世界(startGrid);
         startWorldPos.y = WATER_Y_HEIGHT;
         startPos.position = startWorldPos;
-        Debug.Log($"已自动修正起点到栅格{startGrid}，位置：{startWorldPos}");
+        Debug.Log($"修正后起点栅格：{startGrid}，世界坐标：{startWorldPos}");
 
         if (!gridManager.栅格是否可通行(targetGrid))
         {
@@ -133,11 +137,6 @@ public class ImprovedAStar : MonoBehaviour
         Path = FindPath(startGrid, targetGrid);
         Debug.Log($"A*路径计算完成，目标点：{targetWorldPos}，路径点数量：{Path?.Count ?? 0}");
 
-                                                    
-        if (Path == null || Path.Count == 0)
-        {
-            Debug.LogError("路径规划失败！起点：" + startGrid + " 终点：" + targetGrid);
-        }
 
     }
 
@@ -151,23 +150,32 @@ public class ImprovedAStar : MonoBehaviour
 
         worldPos.x = Mathf.Clamp(worldPos.x, minX, maxX);
         worldPos.z = Mathf.Clamp(worldPos.z, minZ, maxZ);
+
+        // 添加日志：输出原始坐标、限制后的坐标、栅格边界
+        Debug.Log($"Clamp前坐标：{worldPos}，Clamp后坐标：{worldPos}，边界[X: {minX}-{maxX}, Z: {minZ}-{maxZ}]");
         return worldPos;
     }
 
     // 螺旋式搜索更高效的寻找可用栅格
     private Vector2Int FindValidGrid(Vector2Int originalGrid)
     {
+        Debug.Log($"原始栅格：{originalGrid}，是否有效且可通行：{IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid)}");
+
         if (IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid))
             return originalGrid;
 
         for (int layer = 1; layer <= NEIGHBOR_SEARCH_RANGE; layer++)
         {
+            Debug.Log($"开始搜索第{layer}层栅格...");
             // 上边缘
             for (int x = -layer; x <= layer; x++)
             {
                 var checkPos = new Vector2Int(originalGrid.x + x, originalGrid.y - layer);
                 if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
+                {
+                    Debug.Log($"找到有效栅格（上边缘）：{checkPos}");
                     return checkPos;
+                }
             }
 
             // 右边缘
@@ -175,7 +183,10 @@ public class ImprovedAStar : MonoBehaviour
             {
                 var checkPos = new Vector2Int(originalGrid.x + layer, originalGrid.y + y);
                 if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
+                {
+                    Debug.Log($"找到有效栅格（右边缘）：{checkPos}");
                     return checkPos;
+                }
             }
 
             // 下边缘
@@ -183,7 +194,10 @@ public class ImprovedAStar : MonoBehaviour
             {
                 var checkPos = new Vector2Int(originalGrid.x + x, originalGrid.y + layer);
                 if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
+                {
+                    Debug.Log($"找到有效栅格（下边缘）：{checkPos}");
                     return checkPos;
+                }
             }
 
             // 左边缘
@@ -191,10 +205,13 @@ public class ImprovedAStar : MonoBehaviour
             {
                 var checkPos = new Vector2Int(originalGrid.x - layer, originalGrid.y + y);
                 if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
+                {
+                    Debug.Log($"找到有效栅格（左边缘）：{checkPos}");
                     return checkPos;
+                }
             }
         }
-
+        Debug.LogError("未找到有效栅格！");
         return new Vector2Int(-1, -1);
     }
 
@@ -318,17 +335,72 @@ public class ImprovedAStar : MonoBehaviour
     {
         pathBuffer.Clear();
         Vector2Int current = end;
+        int safetyCount = 0; // 防止死循环
 
         while (current.x != -1)
         {
+            // 避免重复添加同一节点
+            if (pathBuffer.Contains(current))
+            {
+                Debug.LogWarning("路径存在循环节点，已中断！");
+                break;
+            }
+
             pathBuffer.Add(current);
             current = nodeDataArray[current.x, current.y].Parent;
+
+            // 安全检查：超过栅格总节点数则中断
+            safetyCount++;
+            if (safetyCount > gridWidth * gridHeight)
+            {
+                Debug.LogError("路径重构陷入死循环，已强制中断！");
+                pathBuffer.Clear();
+                return null;
+            }
+        }
+
+        if (pathBuffer.Count == 0)
+        {
+            Debug.LogError("路径重构失败，无有效节点！");
+            return null;
         }
 
         pathBuffer.Reverse();
+        // 输出路径点详情，验证是否在栅格范围内
+        Debug.Log($"路径重构完成，节点数：{pathBuffer.Count}，首节点：{pathBuffer[0]}，尾节点：{pathBuffer[pathBuffer.Count - 1]}");
         return new List<Vector2Int>(pathBuffer);
     }
-    // 2. 保留优化后的 DrawPath 方法（仅包含Gizmos绘制逻辑）
+
+    // 在ImprovedAStar中添加：
+    [ContextMenu("聚焦路径")] // 右键菜单可直接调用
+    public void FocusPath()
+    {
+        if (Path == null || Path.Count == 0 || gridManager == null)
+        {
+            Debug.LogWarning("无路径可聚焦！");
+            return;
+        }
+
+        // 计算路径中心点
+        Vector3 center = Vector3.zero;
+        foreach (var gridPos in Path)
+        {
+            center += gridManager.栅格转世界(gridPos);
+        }
+        center /= Path.Count;
+
+        // 聚焦到路径中心（适用于Scene视图）
+        Camera sceneCamera = Camera.main;
+        if (sceneCamera == null)
+        {
+            Debug.LogWarning("找不到主相机，无法自动聚焦");
+            return;
+        }
+        sceneCamera.transform.position = center + new Vector3(0, 10, -10); // 路径上方视角
+        sceneCamera.transform.LookAt(center);
+        Debug.Log("已聚焦到路径中心");
+    }
+
     private void DrawPath()
     {
         if (Path == null || Path.Count <= 1)
@@ -336,19 +408,34 @@ public class ImprovedAStar : MonoBehaviour
             Debug.Log("路径为空或点数不足，无法绘制");
             return;
         }
+        Debug.Log($"执行路径绘制，共{Path.Count}个点");
+        // 可选：输出前3个路径点的世界坐标，验证转换是否正确
+        for (int i = 0; i < Mathf.Min(3, Path.Count); i++)
+        {
+            Vector3 worldPos = gridManager.栅格转世界(Path[i]);
+            Debug.Log($"路径点{i + 1} 栅格坐标：{Path[i]} → 世界坐标：{worldPos}");
+        }
+    }
+    private void OnDrawGizmos()
+    {
+        // 1. 验证依赖
+        if (gridManager == null || Path == null || Path.Count < 2)
+            return;
 
-        Gizmos.color = Color.green; // 路径颜色（绿色醒目）
+        // 2. 绘制细绿色路径线
+        Gizmos.color = new Color(0, 1, 0, 0.6f); // 半透明绿色，更柔和
         for (int i = 0; i < Path.Count - 1; i++)
         {
             Vector3 start = gridManager.栅格转世界(Path[i]);
             Vector3 end = gridManager.栅格转世界(Path[i + 1]);
-            start.y = 1f;  // 抬高高度，避免遮挡
-            end.y = 1f;
-            Gizmos.DrawLine(start, end); // 绘制路径线段
-            Gizmos.DrawSphere(start, 0.3f); // 绘制路径节点
+            start.y = end.y = 0.1f; // 贴近水面高度，不突兀
+            Gizmos.DrawLine(start, end);
         }
-    }
 
+        // 3. 可选：轻微标记起点（避免完全隐形）
+        Gizmos.color = new Color(0, 1, 0, 0.8f);
+        Gizmos.DrawSphere(gridManager.栅格转世界(Path[0]), 0.2f);
+    }
     private struct NodeData
     {
         public float GCost;

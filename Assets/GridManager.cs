@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEditor; // 需添加此命名空间以使用SceneView
+using UnityEditor;
 
 internal struct Node
 {
@@ -36,11 +36,15 @@ public class GridManager : MonoBehaviour
     private float 栅格半尺寸;
     private int 每帧初始化数量 = 200;
 
-    [Header("Gizmos显示设置")]
-    public float 栅格线高度 = 0.5f;
-    public float 障碍物显示高度 = 0.6f;
-    public Color 栅格线颜色 = new Color(0.8f, 0.8f, 0.8f, 1f);
-    public Color 障碍物颜色 = new Color(1f, 0f, 0f, 1f);
+    [Header("Gizmos显示设置（降低明显度）")]
+    [Tooltip("栅格线高度（越低越不明显）")]
+    public float 栅格线高度 = 0.1f; // 降低高度，接近水面
+    [Tooltip("障碍物显示高度")]
+    public float 障碍物显示高度 = 0.2f;
+    [Tooltip("栅格线颜色（降低alpha值使其更透明）")]
+    public Color 栅格线颜色 = new Color(0.5f, 0.5f, 0.5f, 0.1f); // 更淡的灰色+低透明度
+    [Tooltip("障碍物颜色")]
+    public Color 障碍物颜色 = new Color(1f, 0f, 0f, 0.7f); // 障碍物保持一定可见度
 
     void Start()
     {
@@ -225,7 +229,6 @@ public class GridManager : MonoBehaviour
         return 栅格地图[栅格坐标.x, 栅格坐标.y].walkable;
     }
 
-    // 手动刷新按钮
     [ContextMenu("强制刷新栅格和障碍物")]
     public void 强制刷新栅格()
     {
@@ -234,11 +237,9 @@ public class GridManager : MonoBehaviour
         Debug.Log("已强制刷新栅格和障碍物标记");
     }
 
-    // 定位到栅格原点的方法（添加在这里）
     [ContextMenu("定位到栅格原点")]
     public void 定位到栅格原点()
     {
-        // 聚焦到栅格区域
         if (SceneView.lastActiveSceneView != null)
         {
             Bounds 栅格范围 = new Bounds(
@@ -256,7 +257,6 @@ public class GridManager : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        Debug.Log("GridManager的Gizmos正在绘制栅格"); // 新增日志
         if (水域平面 == null)
         {
             Gizmos.color = Color.yellow;
@@ -264,27 +264,28 @@ public class GridManager : MonoBehaviour
             return;
         }
 
-        Gizmos.color = Color.white;
+        // 绘制水域外框（弱化处理）
+        Gizmos.color = new Color(0.3f, 0.3f, 0.3f, 0.1f);
         Gizmos.DrawWireCube(水域平面.position, new Vector3(水域大小缓存.x, 0.1f, 水域大小缓存.y));
 
         if (栅格地图 == null) return;
 
+        // 绘制栅格线（更细、更淡）
         Gizmos.color = 栅格线颜色;
         for (int x = 0; x <= 栅格宽度; x++)
         {
             Vector3 起点 = 栅格原点 + new Vector3(x * 栅格尺寸, 栅格线高度, 0);
             Vector3 终点 = 栅格原点 + new Vector3(x * 栅格尺寸, 栅格线高度, 栅格高度 * 栅格尺寸);
-            Gizmos.DrawLine(起点, 终点);
-            Gizmos.DrawLine(起点 + Vector3.right * 0.05f, 终点 + Vector3.right * 0.05f);
+            Gizmos.DrawLine(起点, 终点); // 只画单条线，不画双线（减少视觉干扰）
         }
         for (int z = 0; z <= 栅格高度; z++)
         {
             Vector3 起点 = 栅格原点 + new Vector3(0, 栅格线高度, z * 栅格尺寸);
             Vector3 终点 = 栅格原点 + new Vector3(栅格宽度 * 栅格尺寸, 栅格线高度, z * 栅格尺寸);
-            Gizmos.DrawLine(起点, 终点);
-            Gizmos.DrawLine(起点 + Vector3.forward * 0.05f, 终点 + Vector3.forward * 0.05f);
+            Gizmos.DrawLine(起点, 终点); // 只画单条线
         }
 
+        // 绘制障碍物（保持可见度以便区分）
         Gizmos.color = 障碍物颜色;
         for (int x = 0; x < 栅格宽度; x++)
         {
@@ -299,32 +300,13 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // 栅格未就绪则不绘制
         if (!isGridReady) return;
 
-        // 设置栅格线颜色（使用Inspector配置的颜色）
-        Gizmos.color = 栅格线颜色;
-        // 强制绘制栅格外框，确保能快速定位栅格范围
+        // 栅格外框弱化
+        Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.05f);
         Gizmos.DrawWireCube(
             栅格原点 + new Vector3(栅格宽度 / 2f, 栅格线高度, 栅格高度 / 2f),
             new Vector3(栅格宽度, 0.1f, 栅格高度)
         );
-
-        // 绘制栅格网格线（逐行逐列绘制）
-        for (int x = 0; x < 栅格宽度; x++)
-        {
-            for (int z = 0; z < 栅格高度; z++)
-            {
-                // 计算当前栅格起点
-                Vector3 start = new Vector3(x * 栅格尺寸, 栅格线高度, z * 栅格尺寸) + 栅格原点;
-                // 绘制水平方向线（X轴方向）
-                Vector3 endHorizontal = new Vector3((x + 1) * 栅格尺寸, 栅格线高度, z * 栅格尺寸) + 栅格原点;
-                Gizmos.DrawLine(start, endHorizontal);
-                // 绘制垂直方向线（Z轴方向）
-                Vector3 endVertical = new Vector3(x * 栅格尺寸, 栅格线高度, (z + 1) * 栅格尺寸) + 栅格原点;
-                Gizmos.DrawLine(start, endVertical);
-            }
-        }
-
     }
 }

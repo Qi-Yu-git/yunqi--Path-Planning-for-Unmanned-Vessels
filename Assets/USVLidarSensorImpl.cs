@@ -166,6 +166,11 @@ public class USVLidarSensorImpl : USVLidarSensor
 
     public override float[] GetDistances()
     {
+        // 确保数组已初始化，若未初始化则使用默认值初始化
+        if (_distances == null)
+        {
+            Initialize(defaultSampleCount);
+        }
         float[] result = new float[_distances.Length];
         Array.Copy(_distances, result, _distances.Length);
         return result;

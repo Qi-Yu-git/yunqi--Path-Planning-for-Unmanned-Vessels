@@ -161,7 +161,7 @@ MonoBehaviour:
   "\u6805\u683C\u9AD8\u5EA6": 67
   "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.5
   "\u969C\u788D\u7269\u663E\u793A\u9AD8\u5EA6": 0.6
-  "\u6805\u683C\u7EBF\u989C\u8272": {r: 0.7327044, g: 0.96070606, b: 1, a: 1}
+  "\u6805\u683C\u7EBF\u989C\u8272": {r: 0.37927684, g: 0.6998439, b: 0.7987421, a: 1}
   "\u969C\u788D\u7269\u989C\u8272": {r: 1, g: 0, b: 0.0232234, a: 1}
 --- !u!4 &41255707
 Transform:
@@ -2360,7 +2360,7 @@ GameObject:
   - component: {fileID: 1137107878}
   - component: {fileID: 1137107877}
   - component: {fileID: 1137107879}
-  m_Layer: 3
+  m_Layer: 1
   m_Name: "\u96F7\u8FBE"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2402,7 +2402,7 @@ Transform:
   m_GameObject: {fileID: 1137107876}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 1, w: 0}
-  m_LocalPosition: {x: 0.0031999992, y: -0.009800001, z: -0.0039999997}
+  m_LocalPosition: {x: -0.0068, y: -0.0098, z: -0.004}
   m_LocalScale: {x: 0.009999999, y: 0.009999999, z: 0.009999999}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3292,7 +3292,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.42
+      value: -0.89
       objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalRotation.w
@@ -3375,7 +3375,7 @@ GameObject:
   - component: {fileID: 7631374008013765592}
   - component: {fileID: 8939682786763710997}
   - component: {fileID: 8939682786763710998}
-  m_Layer: 6
+  m_Layer: 3
   m_Name: "\u5BF9\u9047\u65E0\u4EBA\u8239"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
