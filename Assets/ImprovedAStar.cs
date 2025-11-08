@@ -97,7 +97,7 @@ public class ImprovedAStar : MonoBehaviour
         return true;
     }
 
-    private void CalculatePathAfterDelay()
+    public void CalculatePathAfterDelay()
     {
         if (gridManager == null) return;
 
@@ -132,8 +132,16 @@ public class ImprovedAStar : MonoBehaviour
 
         Path = FindPath(startGrid, targetGrid);
         Debug.Log($"A*路径计算完成，目标点：{targetWorldPos}，路径点数量：{Path?.Count ?? 0}");
-
+        // 强制立即绘制路径
         DrawPath();
+        // 同时在Update中持续绘制（添加以下代码）
+        InvokeRepeating(nameof(DrawPath), 0, 0.1f);  // 每0.1秒重绘一次
+                                                    
+        if (Path == null || Path.Count == 0)
+        {
+            Debug.LogError("路径规划失败！起点：" + startGrid + " 终点：" + targetGrid);
+        }
+
     }
 
     private Vector3 ClampPositionToGrid(Vector3 worldPos)
@@ -324,17 +332,19 @@ public class ImprovedAStar : MonoBehaviour
         return new List<Vector2Int>(pathBuffer);
     }
 
+    // 在ImprovedAStar.cs中添加DrawPath方法的具体实现
     private void DrawPath()
     {
-        if (Path == null || Path.Count < 2)
-            return;
+        if (Path == null || Path.Count <= 1) return;
 
+        // 绘制路径线段
         for (int i = 0; i < Path.Count - 1; i++)
         {
-            Vector3 from = gridManager.栅格转世界(Path[i]);
-            Vector3 to = gridManager.栅格转世界(Path[i + 1]);
-            from.y = to.y = WATER_Y_HEIGHT;
-            Debug.DrawLine(from, to, Color.green, 1000f);
+            Vector3 start = gridManager.栅格转世界(Path[i]);
+            Vector3 end = gridManager.栅格转世界(Path[i + 1]);
+            start.y = 0.1f;  // 路径线高度，避免被水面遮挡
+            end.y = 0.1f;
+            Debug.DrawLine(start, end, Color.green, 10f);  // 绿色路径线，持续10秒
         }
     }
 

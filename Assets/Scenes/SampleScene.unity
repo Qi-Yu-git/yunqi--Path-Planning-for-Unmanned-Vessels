@@ -909,7 +909,7 @@ GameObject:
   m_Component:
   - component: {fileID: 398022123}
   - component: {fileID: 398022124}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: "\u968F\u673A\u751F\u6210"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -938,7 +938,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 398022122}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fc777756485cd1d48a416b05f1043f9e, type: 3}
   m_Name: 
@@ -2355,7 +2355,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1137107878}
   - component: {fileID: 1137107877}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: "\u96F7\u8FBE"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2374,10 +2374,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fff798bbe74b4394aa5ac6134bae6fb5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxDetectionDistance: 2
+  maxDetectionDistance: 100
   obstacleLayer:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 65
   raycastHeight: 0.2
   offsetX: 0
   offsetZ: 0
@@ -2399,7 +2399,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0.50000006, y: 0.49999997, z: 0.50000006, w: 0.49999997}
   m_LocalPosition: {x: 0.0032000004, y: -0.011000003, z: -0.0040000007}
-  m_LocalScale: {x: 0.01, y: 0.010000001, z: 0.009999998}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 858632560}
@@ -3264,6 +3264,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -8470106515263497569, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
+      propertyPath: m_Layer
+      value: 6
+      objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.42
@@ -3325,9 +3329,9 @@ GameObject:
   - component: {fileID: 7631374008013765592}
   - component: {fileID: 8939682786763710997}
   - component: {fileID: 8939682786763710998}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: "\u5BF9\u9047\u65E0\u4EBA\u8239"
-  m_TagString: Untagged
+  m_TagString: USV
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -3412,7 +3416,7 @@ BoxCollider:
     m_Bits: 0
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
-  m_ProvidesContacts: 0
+  m_ProvidesContacts: 1
   m_Enabled: 1
   serializedVersion: 3
   m_Size: {x: 0.0064134826, y: 0.007999289, z: 0.004276052}

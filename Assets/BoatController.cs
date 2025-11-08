@@ -36,6 +36,22 @@ public class BoatController : MonoBehaviour
         TryLoadPath(); // 尝试加载路径
     }
 
+    // 在BoatController.cs中添加OnCollisionEnter方法
+    private void OnCollisionEnter(Collision collision)
+    {
+        // 检测到其他无人船（假设标签为"USV"）
+        if (collision.collider.CompareTag("USV"))
+        {
+            Debug.LogError("发生碰撞！");
+            // 碰撞后紧急减速
+            rb.velocity = Vector3.zero;
+            // 尝试重新规划路径
+            if (pathfinder != null)
+            {
+                Invoke(nameof(pathfinder.CalculatePathAfterDelay), 0.5f);
+            }
+        }
+    }
     // 尝试加载路径（失败则重试）
     private void TryLoadPath()
     {
@@ -119,3 +135,4 @@ public class BoatController : MonoBehaviour
         rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z);
     }
 }
+

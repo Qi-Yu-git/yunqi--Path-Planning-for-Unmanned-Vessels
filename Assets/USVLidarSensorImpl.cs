@@ -41,6 +41,9 @@ public class USVLidarSensorImpl : USVLidarSensor
 
     void Awake()
     {
+        // 强制开启雷达显示开关
+        alwaysShowRays = true;  // 确保Gizmos始终绘制雷达射线
+
         // 自动初始化（防止外部未调用Initialize）
         if (_sampleCount == 0)
         {
@@ -140,9 +143,12 @@ public class USVLidarSensorImpl : USVLidarSensor
         }
     }
 
+    // 修改USVLidarSensorImpl.cs中的GetAngleByIndex方法
     private float GetAngleByIndex(int index)
     {
-        return (float)index / _sampleCount * 360f;
+        // 原逻辑可能导致角度计算错误，添加旋转偏移修正
+        float angle = (float)index / _sampleCount * 360f;
+        return angle - 180f;  // 确保雷达射线围绕船体360度均匀分布
     }
 
     public override void CompleteScan()
