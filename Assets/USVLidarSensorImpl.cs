@@ -95,7 +95,7 @@ public class USVLidarSensorImpl : USVLidarSensor
             _lastScanTime = Time.time;
         }
 
-        Debug.Log($"雷达位置：{transform.position}，载体位置：{usvTransform.position}");
+      //  Debug.Log($"雷达位置：{transform.position}，载体位置：{usvTransform.position}");
     }
 
     // 新增统一的位置更新方法
@@ -103,25 +103,17 @@ public class USVLidarSensorImpl : USVLidarSensor
     {
         if (usvTransform == null) return;
 
-        // 计算偏移后的位置
+        // 计算偏移后的位置（原逻辑保留）
         Vector3 offset = new Vector3(offsetX, offsetY, offsetZ);
-        // 将偏移量转换到世界坐标系（考虑载体旋转）
         Vector3 worldOffset = usvTransform.TransformDirection(offset);
         Vector3 targetPos = usvTransform.position + worldOffset;
-
-        // 应用射线高度
         targetPos.y = raycastHeight;
 
-        // 更新雷达位置
+        // 更新雷达位置和旋转（关键：Y轴加180度翻转方向）
         transform.position = targetPos;
-
-        // 更新雷达旋转
-        if (useParentBinding)
-        {
-            transform.rotation = usvTransform.rotation;
-        }
+        // 在载体旋转基础上，Y轴额外旋转180度，修正方向相反问题
+        transform.rotation = usvTransform.rotation * Quaternion.Euler(0, 180, 180);
     }
-
     private void CastSingleRay(int index)
     {
         float angle = GetAngleByIndex(index);

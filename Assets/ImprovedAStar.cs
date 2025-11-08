@@ -132,10 +132,7 @@ public class ImprovedAStar : MonoBehaviour
 
         Path = FindPath(startGrid, targetGrid);
         Debug.Log($"A*路径计算完成，目标点：{targetWorldPos}，路径点数量：{Path?.Count ?? 0}");
-        // 强制立即绘制路径
-        DrawPath();
-        // 同时在Update中持续绘制（添加以下代码）
-        InvokeRepeating(nameof(DrawPath), 0, 0.1f);  // 每0.1秒重绘一次
+
                                                     
         if (Path == null || Path.Count == 0)
         {
@@ -331,20 +328,24 @@ public class ImprovedAStar : MonoBehaviour
         pathBuffer.Reverse();
         return new List<Vector2Int>(pathBuffer);
     }
-
-    // 在ImprovedAStar.cs中添加DrawPath方法的具体实现
+    // 2. 保留优化后的 DrawPath 方法（仅包含Gizmos绘制逻辑）
     private void DrawPath()
     {
-        if (Path == null || Path.Count <= 1) return;
+        if (Path == null || Path.Count <= 1)
+        {
+            Debug.Log("路径为空或点数不足，无法绘制");
+            return;
+        }
 
-        // 绘制路径线段
+        Gizmos.color = Color.green; // 路径颜色（绿色醒目）
         for (int i = 0; i < Path.Count - 1; i++)
         {
             Vector3 start = gridManager.栅格转世界(Path[i]);
             Vector3 end = gridManager.栅格转世界(Path[i + 1]);
-            start.y = 0.1f;  // 路径线高度，避免被水面遮挡
-            end.y = 0.1f;
-            Debug.DrawLine(start, end, Color.green, 10f);  // 绿色路径线，持续10秒
+            start.y = 1f;  // 抬高高度，避免遮挡
+            end.y = 1f;
+            Gizmos.DrawLine(start, end); // 绘制路径线段
+            Gizmos.DrawSphere(start, 0.3f); // 绘制路径节点
         }
     }
 
