@@ -3,12 +3,15 @@ using System.Collections.Generic;
 
 public class BoatController : MonoBehaviour
 {
-    // 公开参数（在Inspector赋值）
+    // 公开参数（在Inspector赋值，已优化默认值）
     public ImprovedAStar pathfinder;
     public GridManager gridManager;
-    public float moveSpeed = 3f;
-    public float rotationSpeed = 2f;
-    public float waypointDistance = 0.6f;
+    [Tooltip("直线运动速度（建议1.5，原3）")]
+    public float moveSpeed = 1.5f;
+    [Tooltip("转向速度（建议1，原2）")]
+    public float rotationSpeed = 1f;
+    [Tooltip("路径点切换距离（建议1，原0.6）")]
+    public float waypointDistance = 1f;
     public float endPointSlowRange = 2f; // 终点前减速范围
     public float minEndSpeed = 0.5f;     // 终点前最小速度
 
@@ -18,6 +21,7 @@ public class BoatController : MonoBehaviour
     private int currentWaypointIndex = 0;
     private Rigidbody rb;
     private bool isReachedEnd = false;
+    private float currentSpeed = 0f; // 用于平滑速度过渡
 
     // 初始化
     void Start()
@@ -28,6 +32,10 @@ public class BoatController : MonoBehaviour
             Debug.LogError("无人船缺少Rigidbody组件！");
             return;
         }
+        // 初始化刚体阻力（新增：增加阻尼，减少滑动）
+        rb.drag = 0.5f;
+        rb.angularDrag = 0.8f;
+
         if (pathfinder == null || gridManager == null)
         {
             Debug.LogError("请在Inspector中关联pathfinder和gridManager！");
@@ -36,22 +44,30 @@ public class BoatController : MonoBehaviour
         TryLoadPath(); // 尝试加载路径
     }
 
-    // 在BoatController.cs中添加OnCollisionEnter方法
+    // 碰撞处理（增强版）
     private void OnCollisionEnter(Collision collision)
     {
-        // 检测到其他无人船（假设标签为"USV"）
-        if (collision.collider.CompareTag("USV"))
+        if (collision.collider.CompareTag("USV") || collision.collider.CompareTag("Obstacle"))
         {
-            Debug.LogError("发生碰撞！");
-            // 碰撞后紧急减速
+            Debug.LogError("发生碰撞！暂停并重新规划路径");
             rb.velocity = Vector3.zero;
-            // 尝试重新规划路径
+            rb.angularVelocity = Vector3.zero;
+            isReachedEnd = true; // 临时停止运动
+            Invoke(nameof(ResumeMovement), 1f); // 1秒后恢复
             if (pathfinder != null)
             {
-                Invoke(nameof(pathfinder.CalculatePathAfterDelay), 0.5f);
+                Invoke(nameof(pathfinder.CalculatePathAfterDelay), 1f); // 延迟重规划
             }
         }
     }
+
+    // 恢复运动（退回到上一个路径点，避免持续碰撞）
+    private void ResumeMovement()
+    {
+        currentWaypointIndex = Mathf.Max(0, currentWaypointIndex - 1);
+        isReachedEnd = false;
+    }
+
     // 尝试加载路径（失败则重试）
     private void TryLoadPath()
     {
@@ -64,10 +80,10 @@ public class BoatController : MonoBehaviour
                 Vector3 worldPos = gridManager.栅格转世界(gridPos);
                 worldPos.y = 0.05f; // 强制路径点Y轴与水域一致
                 worldPath.Add(worldPos);
-                Debug.Log($"路径点{worldPath.Count}：{worldPos}"); // 新增日志，验证Y轴
             }
             Debug.Log($"成功读取路径，共{worldPath.Count}个点");
             isReachedEnd = false;
+            currentWaypointIndex = 0; // 重置路径点索引
         }
         else
         {
@@ -76,10 +92,10 @@ public class BoatController : MonoBehaviour
         }
     }
 
-    // 物理更新（移动逻辑）
+    // 物理更新（优化后移动逻辑）
     void FixedUpdate()
     {
-        // 固定Y轴高度为0.4f
+        // 固定Y轴高度，避免上下浮动
         transform.position = new Vector3(transform.position.x, 0.4f, transform.position.z);
 
         if (isReachedEnd || worldPath == null || worldPath.Count == 0)
@@ -96,43 +112,51 @@ public class BoatController : MonoBehaviour
 
         // 移动到当前路径点
         Vector3 target = worldPath[currentWaypointIndex];
-        Vector3 targetXZ = new Vector3(target.x, 0.4f, target.z); // 目标点也使用相同Y轴高度
+        Vector3 targetXZ = new Vector3(target.x, 0.4f, target.z);
         Vector3 currentXZ = new Vector3(transform.position.x, 0.4f, transform.position.z);
         float distance = Vector3.Distance(currentXZ, targetXZ);
         bool isLastWaypoint = (currentWaypointIndex == worldPath.Count - 1);
-        float stopDistance = isLastWaypoint ? 0.3f : 0.6f;
+        float stopDistance = isLastWaypoint ? 0.5f : waypointDistance; // 用waypointDistance作为判断阈值
 
-        // 到达当前路径点，切换到下一个
+        // 到达当前路径点，切换到下一个（提前预判下一个点方向）
         if (distance <= stopDistance)
         {
             currentWaypointIndex++;
+            // 提前转向下一个点，减少转向延迟
+            if (currentWaypointIndex < worldPath.Count)
+            {
+                Vector3 nextTarget = worldPath[currentWaypointIndex];
+                Vector3 nextTargetXZ = new Vector3(nextTarget.x, 0.4f, nextTarget.z);
+                Quaternion nextRotation = Quaternion.LookRotation(nextTargetXZ - currentXZ);
+                transform.rotation = Quaternion.Euler(0, nextRotation.eulerAngles.y, 0);
+            }
             return;
         }
 
-        // 旋转朝向目标
+        // 平滑转向目标（降低旋转速度，减少抖动）
         Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
         targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
         transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
 
-        // 移动速度（终点前减速）
-        float currentSpeed = moveSpeed;
+        // 计算目标速度（终点前减速，增加平滑过渡）
+        float targetSpeed = moveSpeed;
         if (isLastWaypoint)
         {
             float distanceToEnd = Vector3.Distance(currentXZ, worldPath[worldPath.Count - 1]);
             if (distanceToEnd <= endPointSlowRange)
             {
                 float speedRatio = distanceToEnd / endPointSlowRange;
-                currentSpeed = Mathf.Lerp(minEndSpeed, moveSpeed * 0.5f, speedRatio);
+                targetSpeed = Mathf.Lerp(minEndSpeed, moveSpeed * 0.5f, speedRatio);
             }
             else
             {
-                currentSpeed = moveSpeed * 0.5f;
+                targetSpeed = moveSpeed * 0.5f;
             }
         }
 
-        // 应用移动
+        // 速度平滑过渡（避免突然加速/减速）
+        currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.fixedDeltaTime * 2f);
         Vector3 moveDir = transform.forward * currentSpeed;
         rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z);
     }
 }
-
