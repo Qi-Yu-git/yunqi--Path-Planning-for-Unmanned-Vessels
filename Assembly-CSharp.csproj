@@ -62,6 +62,7 @@
   <ItemGroup>
     <Compile Include="Assets\GridManager.cs" />
     <Compile Include="Assets\ForceRadarDisplay.cs" />
+    <Compile Include="Assets\Button control of unmanned boat.cs" />
     <Compile Include="Assets\USVLidarSensorImpl.cs" />
     <Compile Include="Assets\RandomSpawnManager.cs" />
     <Compile Include="Assets\ImprovedAStar.cs" />

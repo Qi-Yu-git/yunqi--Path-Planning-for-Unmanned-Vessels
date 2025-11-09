@@ -10,7 +10,13 @@ public class USVLidarSensorImpl : LidarSensor // 改为继承 LidarSensor（USV_Local
     [Header("雷达基本参数")]
     public float maxDetectionDistance = 20f;
     public LayerMask obstacleLayer;
-    public float raycastHeight = 0.2f;
+    [Tooltip("雷达高度（可在Inspector直接调整）")]
+    public float raycastHeight = 0.2f; // 保留该参数并作为高度调控项
+
+    [Header("显示位置偏移")]
+    public float displayOffsetX = 0f;  // X轴显示偏移
+    public float displayOffsetZ = 0f;  // Z轴显示偏移
+
     [Header("位置偏移设置")]
     public float offsetX = 0f;         // X轴偏移量
     public float offsetY = 0f;         // 新增Y轴偏移
@@ -93,7 +99,7 @@ public class USVLidarSensorImpl : LidarSensor // 改为继承 LidarSensor（USV_Local
         Vector3 offset = new Vector3(offsetX, offsetY, offsetZ);
         Vector3 worldOffset = usvTransform.TransformDirection(offset);
         Vector3 targetPos = usvTransform.position + worldOffset;
-        targetPos.y = raycastHeight;
+        targetPos.y = raycastHeight; // 改用可调控高度参数
         transform.position = targetPos;
         transform.rotation = usvTransform.rotation * Quaternion.Euler(0, 180, 180);
     }
@@ -125,7 +131,7 @@ public class USVLidarSensorImpl : LidarSensor // 改为继承 LidarSensor（USV_Local
         }
     }
 
-    private float GetAngleByIndex(int index)
+    public float GetAngleByIndex(int index)
     {
         float angle = (float)index / _sampleCount * 360f;
         return angle - 180f;

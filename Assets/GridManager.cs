@@ -20,6 +20,7 @@ internal struct Node
 
 public class GridManager : MonoBehaviour
 {
+
     public float 栅格尺寸 = 1f;
     public Transform 水域平面;
     public LayerMask obstacleLayer;
@@ -35,6 +36,12 @@ public class GridManager : MonoBehaviour
 
     private float 栅格半尺寸;
     private int 每帧初始化数量 = 200;
+
+    [Header("障碍物检测配置")]
+    [Tooltip("障碍物检测半径（值越小，检测边界越精准，默认0.5f）")]
+    public float obstacleCheckRadius = 0.5f; // 新增：可调控检测半径
+    [Tooltip("检测半径偏移量（额外扩展/收缩检测范围，默认0f）")]
+    public float radiusOffset = 0f; // 新增：偏移量，精细调整
 
     [Header("Gizmos显示设置（降低明显度）")]
     [Tooltip("栅格线高度（越低越不明显）")]
@@ -128,10 +135,10 @@ public class GridManager : MonoBehaviour
 
     public void 标记障碍物(Camera 主相机 = null)
     {
-        float 检测半径 = 栅格半尺寸 + 0.5f;
+        // 原代码：float 检测半径 = 栅格半尺寸 + 0.5f;
+        float 检测半径 = 栅格半尺寸 + obstacleCheckRadius + radiusOffset; // 改为可调控参数
         int 起始X = 0, 结束X = 栅格宽度;
         int 起始Z = 0, 结束Z = 栅格高度;
-
         for (int x = 起始X; x < 结束X; x += 4)
         {
             int 实际结束X = Mathf.Min(x + 4, 结束X);
@@ -142,7 +149,7 @@ public class GridManager : MonoBehaviour
                     Node 节点 = 栅格地图[xInner, z];
                     int 碰撞数量 = Physics.OverlapSphereNonAlloc(
                         节点.worldPosition,
-                        检测半径,
+                        检测半径, // 使用修改后的检测半径
                         碰撞检测结果,
                         obstacleLayer,
                         QueryTriggerInteraction.Ignore
