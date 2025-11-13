@@ -2,91 +2,91 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
-using System.Collections.Generic; // ÓÃÓÚ»º´æ°²È«Î»ÖÃÁĞ±í
+using System.Collections.Generic; // ç”¨äºç¼“å­˜å®‰å…¨ä½ç½®åˆ—è¡¨
 
 public class USV_GlobalRLAgent : Agent
 {
-    public Transform target; // Ä¿±êµã
-    private GridManager gridManager; // Õ¤¸ñ¹ÜÀíÆ÷
-    private Rigidbody rb; // ¸ÕÌå×é¼ş
-    private int gridWidth; // »º´æÕ¤¸ñ¿í¶È£¨Ìæ´ú¶¯Ì¬»ñÈ¡£©
-    private int gridHeight; // »º´æÕ¤¸ñ¸ß¶È£¨Ìæ´ú¶¯Ì¬»ñÈ¡£©
-    private bool[,] passableGrid; // »º´æÕ¤¸ñÍ¨ĞĞĞÔÊı¾İ£¨¼õÉÙÖØ¸´²éÑ¯£©
-    private List<Vector3> safePositions; // Ô¤Éú³É°²È«Î»ÖÃÁĞ±í£¨¼ÓËÙÖØÖÃ£©
-    private float lastDistToTarget; // ¼ÇÂ¼ÉÏÒ»Ö¡µ½Ä¿±êµÄ¾àÀë£¨ÓÅ»¯½±Àø¼ÆËã£©
-    private const int ViewRange = 5; // ¾Ö²¿ÊÓÒ°·¶Î§£¨5x5=25¸ñ£¬Ìæ´úÈ«¾ÖÕ¤¸ñ£©
-    private const float MaxSpeed = 2f; // ×î´óËÙ¶È£¨ÓÃÓÚ¹éÒ»»¯£©
+    public Transform target; // ç›®æ ‡ç‚¹
+    private GridManager gridManager; // æ …æ ¼ç®¡ç†å™¨
+    private Rigidbody rb; // åˆšä½“ç»„ä»¶
+    private int gridWidth; // ç¼“å­˜æ …æ ¼å®½åº¦ï¼ˆæ›¿ä»£åŠ¨æ€è·å–ï¼‰
+    private int gridHeight; // ç¼“å­˜æ …æ ¼é«˜åº¦ï¼ˆæ›¿ä»£åŠ¨æ€è·å–ï¼‰
+    private bool[,] passableGrid; // ç¼“å­˜æ …æ ¼é€šè¡Œæ€§æ•°æ®ï¼ˆå‡å°‘é‡å¤æŸ¥è¯¢ï¼‰
+    private List<Vector3> safePositions; // é¢„ç”Ÿæˆå®‰å…¨ä½ç½®åˆ—è¡¨ï¼ˆåŠ é€Ÿé‡ç½®ï¼‰
+    private float lastDistToTarget; // è®°å½•ä¸Šä¸€å¸§åˆ°ç›®æ ‡çš„è·ç¦»ï¼ˆä¼˜åŒ–å¥–åŠ±è®¡ç®—ï¼‰
+    private const int ViewRange = 5; // å±€éƒ¨è§†é‡èŒƒå›´ï¼ˆ5x5=25æ ¼ï¼Œæ›¿ä»£å…¨å±€æ …æ ¼ï¼‰
+    private const float MaxSpeed = 2f; // æœ€å¤§é€Ÿåº¦ï¼ˆç”¨äºå½’ä¸€åŒ–ï¼‰
 
     void Awake()
     {
-        // »ñÈ¡×é¼ş²¢³õÊ¼»¯»º´æ
+        // è·å–ç»„ä»¶å¹¶åˆå§‹åŒ–ç¼“å­˜
         gridManager = FindObjectOfType<GridManager>();
         rb = GetComponent<Rigidbody>();
 
         if (gridManager != null)
         {
-            // »º´æÕ¤¸ñ³ß´ç£¨±ÜÃâÃ¿´Î·ÃÎÊGridManager£©
-            gridWidth = gridManager.Õ¤¸ñ¿í¶È;
-            gridHeight = gridManager.Õ¤¸ñ¸ß¶È;
-            // Ô¤»º´æËùÓĞÕ¤¸ñµÄÍ¨ĞĞĞÔ£¨Ìæ´úÃ¿´Î²éÑ¯£©
+            // ç¼“å­˜æ …æ ¼å°ºå¯¸ï¼ˆé¿å…æ¯æ¬¡è®¿é—®GridManagerï¼‰
+            gridWidth = gridManager.æ …æ ¼å®½åº¦;
+            gridHeight = gridManager.æ …æ ¼é«˜åº¦;
+            // é¢„ç¼“å­˜æ‰€æœ‰æ …æ ¼çš„é€šè¡Œæ€§ï¼ˆæ›¿ä»£æ¯æ¬¡æŸ¥è¯¢ï¼‰
             CachePassableGrid();
-            // Ô¤Éú³ÉËùÓĞ°²È«Î»ÖÃ£¨¼ÓËÙOnEpisodeBegin£©
+            // é¢„ç”Ÿæˆæ‰€æœ‰å®‰å…¨ä½ç½®ï¼ˆåŠ é€ŸOnEpisodeBeginï¼‰
             GenerateSafePositions();
         }
     }
 
-    // ³õÊ¼»¯´úÀí
+    // åˆå§‹åŒ–ä»£ç†
     public override void Initialize()
     {
         if (rb != null)
         {
             rb.maxAngularVelocity = 5f;
-            // ½ûÓÃ²»±ØÒªµÄÎïÀí¼ÆËã£¨ÓÅ»¯ĞÔÄÜ£©
+            // ç¦ç”¨ä¸å¿…è¦çš„ç‰©ç†è®¡ç®—ï¼ˆä¼˜åŒ–æ€§èƒ½ï¼‰
             rb.useGravity = false;
             rb.interpolation = RigidbodyInterpolation.None;
         }
     }
 
-    // Ã¿ÂÖ¿ªÊ¼Ê±µ÷ÓÃ£¨ÓÅ»¯ÖØÖÃĞ§ÂÊ£©
+    // æ¯è½®å¼€å§‹æ—¶è°ƒç”¨ï¼ˆä¼˜åŒ–é‡ç½®æ•ˆç‡ï¼‰
     public override void OnEpisodeBegin()
     {
         if (gridManager == null || safePositions == null || safePositions.Count == 0) return;
 
-        // ´ÓÔ¤Éú³ÉµÄ°²È«Î»ÖÃÖĞËæ»úÑ¡Ôñ£¨Ìæ´úÖØ¸´¼ÆËã£©
+        // ä»é¢„ç”Ÿæˆçš„å®‰å…¨ä½ç½®ä¸­éšæœºé€‰æ‹©ï¼ˆæ›¿ä»£é‡å¤è®¡ç®—ï¼‰
         transform.position = safePositions[Random.Range(0, safePositions.Count)];
         target.position = safePositions[Random.Range(0, safePositions.Count)];
 
-        // ÖØÖÃÎïÀí×´Ì¬
-        rb.velocity = Vector3.zero;
+        // é‡ç½®ç‰©ç†çŠ¶æ€
+        rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        // ³õÊ¼»¯¾àÀë¼ÇÂ¼£¨ÓÃÓÚÔöÁ¿½±Àø£©
+        // åˆå§‹åŒ–è·ç¦»è®°å½•ï¼ˆç”¨äºå¢é‡å¥–åŠ±ï¼‰
         lastDistToTarget = Vector3.Distance(transform.position, target.position);
     }
 
-    // ÊÕ¼¯»·¾³¹Û²âÊı¾İ£¨ºËĞÄÓÅ»¯£ºËõ¼õ¹Û²âÎ¬¶È£©
+    // æ”¶é›†ç¯å¢ƒè§‚æµ‹æ•°æ®ï¼ˆæ ¸å¿ƒä¼˜åŒ–ï¼šç¼©å‡è§‚æµ‹ç»´åº¦ï¼‰
     public override void CollectObservations(VectorSensor sensor)
     {
         if (rb == null || target == null || gridManager == null) return;
 
-        // 1. ×ÔÉíËÙ¶È£¨ÓÅ»¯£ºÖ»¹Ø×¢Ç°½ø·½ÏòËÙ¶È£¬¼õÉÙÎ¬¶È£©
-        float forwardSpeed = Vector3.Dot(transform.forward, rb.velocity);
+        // 1. è‡ªèº«é€Ÿåº¦ï¼ˆä¼˜åŒ–ï¼šåªå…³æ³¨å‰è¿›æ–¹å‘é€Ÿåº¦ï¼Œå‡å°‘ç»´åº¦ï¼‰
+        float forwardSpeed = Vector3.Dot(transform.forward, rb.linearVelocity);
         sensor.AddObservation(Mathf.Clamp(forwardSpeed / MaxSpeed, -1f, 1f));
 
-        // 2. ×ÔÉí³¯Ïò½Ç£¨ÓÅ»¯£º¹éÒ»»¯µ½-1~1·¶Î§£©
+        // 2. è‡ªèº«æœå‘è§’ï¼ˆä¼˜åŒ–ï¼šå½’ä¸€åŒ–åˆ°-1~1èŒƒå›´ï¼‰
         sensor.AddObservation((transform.eulerAngles.y % 360f) / 180f - 1f);
 
-        // 3. µ½Ä¿±êµÄ¾àÀë£¨ÓÅ»¯£ºÊ¹ÓÃ»º´æµÄÕ¤¸ñ³ß´ç¹éÒ»»¯£©
+        // 3. åˆ°ç›®æ ‡çš„è·ç¦»ï¼ˆä¼˜åŒ–ï¼šä½¿ç”¨ç¼“å­˜çš„æ …æ ¼å°ºå¯¸å½’ä¸€åŒ–ï¼‰
         float distToTarget = Vector3.Distance(transform.position, target.position);
         sensor.AddObservation(Mathf.Clamp01(distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f)));
 
-        // 4. µ½Ä¿±êµÄ½Ç¶È£¨±£³ÖÔ­ÓĞÂß¼­£©
+        // 4. åˆ°ç›®æ ‡çš„è§’åº¦ï¼ˆä¿æŒåŸæœ‰é€»è¾‘ï¼‰
         float angleToTarget = Vector3.SignedAngle(transform.forward, target.position - transform.position, Vector3.up);
         sensor.AddObservation(angleToTarget / 180f);
 
-        // 5. ¾Ö²¿ÊÓÒ°ÕÏ°­Îï£¨ºËĞÄÓÅ»¯£ºÌæ´úÈ«¾ÖÕ¤¸ñ£¬Î¬¶È´ÓW*H½µÖÁ25£©
-        Vector2Int agentGridPos = gridManager.ÊÀ½ç×ªÕ¤¸ñ(transform.position);
-        Vector2Int checkPos = new Vector2Int(); // ¸´ÓÃ±äÁ¿¼õÉÙGC
+        // 5. å±€éƒ¨è§†é‡éšœç¢ç‰©ï¼ˆæ ¸å¿ƒä¼˜åŒ–ï¼šæ›¿ä»£å…¨å±€æ …æ ¼ï¼Œç»´åº¦ä»W*Hé™è‡³25ï¼‰
+        Vector2Int agentGridPos = gridManager.ä¸–ç•Œè½¬æ …æ ¼(transform.position);
+        Vector2Int checkPos = new Vector2Int(); // å¤ç”¨å˜é‡å‡å°‘GC
 
         for (int x = -ViewRange; x <= ViewRange; x++)
         {
@@ -94,34 +94,34 @@ public class USV_GlobalRLAgent : Agent
             {
                 checkPos.x = agentGridPos.x + x;
                 checkPos.y = agentGridPos.y + z;
-                // Ê¹ÓÃ»º´æµÄÍ¨ĞĞĞÔÊı¾İ£¨±ÜÃâÖØ¸´µ÷ÓÃGridManager£©
+                // ä½¿ç”¨ç¼“å­˜çš„é€šè¡Œæ€§æ•°æ®ï¼ˆé¿å…é‡å¤è°ƒç”¨GridManagerï¼‰
                 bool isObstacle = !IsPassable(checkPos);
                 sensor.AddObservation(isObstacle ? 1f : 0f);
             }
         }
     }
 
-    // ½ÓÊÕ¶¯×÷²¢Ö´ĞĞ£¨ÓÅ»¯½±Àøº¯ÊıºÍ¼ÆËãĞ§ÂÊ£©
+    // æ¥æ”¶åŠ¨ä½œå¹¶æ‰§è¡Œï¼ˆä¼˜åŒ–å¥–åŠ±å‡½æ•°å’Œè®¡ç®—æ•ˆç‡ï¼‰
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (target == null || gridManager == null) return;
 
-        // Ö´ĞĞÒÆ¶¯¶¯×÷£¨ÓÅ»¯£ºÊ¹ÓÃ¸ÕÌåÎïÀíÇı¶¯£¬¸üÎÈ¶¨£©
+        // æ‰§è¡Œç§»åŠ¨åŠ¨ä½œï¼ˆä¼˜åŒ–ï¼šä½¿ç”¨åˆšä½“ç‰©ç†é©±åŠ¨ï¼Œæ›´ç¨³å®šï¼‰
         MoveAgent(actions.DiscreteActions[0]);
 
-        // ¼ÆËãµ±Ç°¾àÀë²¢ÓÅ»¯½±Àøº¯Êı
+        // è®¡ç®—å½“å‰è·ç¦»å¹¶ä¼˜åŒ–å¥–åŠ±å‡½æ•°
         float distToTarget = Vector3.Distance(transform.position, target.position);
 
-        // 1. ÔöÁ¿½±Àø£ºÏòÄ¿±êÒÆ¶¯Ê±¶îÍâ½±Àø£¨Òıµ¼ÖÇÄÜÌå¸ßĞ§Ì½Ë÷£©
+        // 1. å¢é‡å¥–åŠ±ï¼šå‘ç›®æ ‡ç§»åŠ¨æ—¶é¢å¤–å¥–åŠ±ï¼ˆå¼•å¯¼æ™ºèƒ½ä½“é«˜æ•ˆæ¢ç´¢ï¼‰
         float distanceDelta = lastDistToTarget - distToTarget;
-        AddReward(distanceDelta * 0.1f); // ÏµÊı¿Éµ÷Õû
+        AddReward(distanceDelta * 0.1f); // ç³»æ•°å¯è°ƒæ•´
         lastDistToTarget = distToTarget;
 
-        // 2. ¾àÀë½±Àø£º±£ÁôÔ­ÓĞÂß¼­µ«½µµÍÈ¨ÖØ
+        // 2. è·ç¦»å¥–åŠ±ï¼šä¿ç•™åŸæœ‰é€»è¾‘ä½†é™ä½æƒé‡
         AddReward((1f - Mathf.Clamp01(distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f))) * 0.05f);
 
-        // 3. Åö×²ÕÏ°­Îï³Í·££¨Ê¹ÓÃ»º´æÊı¾İÅĞ¶Ï£©
-        Vector2Int currentGrid = gridManager.ÊÀ½ç×ªÕ¤¸ñ(transform.position);
+        // 3. ç¢°æ’éšœç¢ç‰©æƒ©ç½šï¼ˆä½¿ç”¨ç¼“å­˜æ•°æ®åˆ¤æ–­ï¼‰
+        Vector2Int currentGrid = gridManager.ä¸–ç•Œè½¬æ …æ ¼(transform.position);
         if (!IsPassable(currentGrid))
         {
             AddReward(-10f);
@@ -129,7 +129,7 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 4. µ½´ïÄ¿±ê½±Àø
+        // 4. åˆ°è¾¾ç›®æ ‡å¥–åŠ±
         if (distToTarget < 1f)
         {
             AddReward(20f);
@@ -137,24 +137,24 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    // ÒÆ¶¯·½·¨£¨ÓÅ»¯£ºÊ¹ÓÃ¸ÕÌåÁ¦Çı¶¯£¬¸ü·ûºÏÎïÀí¹æÂÉ£©
+    // ç§»åŠ¨æ–¹æ³•ï¼ˆä¼˜åŒ–ï¼šä½¿ç”¨åˆšä½“åŠ›é©±åŠ¨ï¼Œæ›´ç¬¦åˆç‰©ç†è§„å¾‹ï¼‰
     void MoveAgent(int action)
     {
         switch (action)
         {
-            case 0: // Ç°½ø£¨Ê¹ÓÃ¸ÕÌåÁ¦£¬±ÜÃâÖ±½ÓĞŞ¸ÄTransform£©
+            case 0: // å‰è¿›ï¼ˆä½¿ç”¨åˆšä½“åŠ›ï¼Œé¿å…ç›´æ¥ä¿®æ”¹Transformï¼‰
                 rb.AddForce(transform.forward * MaxSpeed, ForceMode.VelocityChange);
                 break;
-            case 1: // ×ó×ª
+            case 1: // å·¦è½¬
                 transform.Rotate(Vector3.up, -90f * Time.fixedDeltaTime);
                 break;
-            case 2: // ÓÒ×ª
+            case 2: // å³è½¬
                 transform.Rotate(Vector3.up, 90f * Time.fixedDeltaTime);
                 break;
         }
     }
 
-    // Ô¤»º´æÕ¤¸ñÍ¨ĞĞĞÔÊı¾İ£¨¼õÉÙÖØ¸´²éÑ¯GridManager£©
+    // é¢„ç¼“å­˜æ …æ ¼é€šè¡Œæ€§æ•°æ®ï¼ˆå‡å°‘é‡å¤æŸ¥è¯¢GridManagerï¼‰
     private void CachePassableGrid()
     {
         passableGrid = new bool[gridWidth, gridHeight];
@@ -162,12 +162,12 @@ public class USV_GlobalRLAgent : Agent
         {
             for (int z = 0; z < gridHeight; z++)
             {
-                passableGrid[x, z] = gridManager.Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ(new Vector2Int(x, z));
+                passableGrid[x, z] = gridManager.æ …æ ¼æ˜¯å¦å¯é€šè¡Œ(new Vector2Int(x, z));
             }
         }
     }
 
-    // Ô¤Éú³ÉËùÓĞ°²È«Î»ÖÃ£¨¼ÓËÙOnEpisodeBeginµÄÖØÖÃ¹ı³Ì£©
+    // é¢„ç”Ÿæˆæ‰€æœ‰å®‰å…¨ä½ç½®ï¼ˆåŠ é€ŸOnEpisodeBeginçš„é‡ç½®è¿‡ç¨‹ï¼‰
     private void GenerateSafePositions()
     {
         safePositions = new List<Vector3>();
@@ -176,7 +176,7 @@ public class USV_GlobalRLAgent : Agent
             for (float z = -9.5f; z <= 9.5f; z += 0.5f)
             {
                 Vector3 pos = new Vector3(x, 0.4f, z);
-                Vector2Int gridPos = gridManager.ÊÀ½ç×ªÕ¤¸ñ(pos);
+                Vector2Int gridPos = gridManager.ä¸–ç•Œè½¬æ …æ ¼(pos);
                 if (IsPassable(gridPos))
                 {
                     safePositions.Add(pos);
@@ -185,10 +185,10 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    // ¿ìËÙÅĞ¶ÏÕ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ£¨Ê¹ÓÃ»º´æÊı¾İ£©
+    // å¿«é€Ÿåˆ¤æ–­æ …æ ¼æ˜¯å¦å¯é€šè¡Œï¼ˆä½¿ç”¨ç¼“å­˜æ•°æ®ï¼‰
     private bool IsPassable(Vector2Int gridPos)
     {
-        // ±ß½ç¼ì²é£¨³¬³ö·¶Î§ÊÓÎªÕÏ°­Îï£©
+        // è¾¹ç•Œæ£€æŸ¥ï¼ˆè¶…å‡ºèŒƒå›´è§†ä¸ºéšœç¢ç‰©ï¼‰
         if (gridPos.x < 0 || gridPos.x >= gridWidth || gridPos.y < 0 || gridPos.y >= gridHeight)
             return false;
         return passableGrid[gridPos.x, gridPos.y];
