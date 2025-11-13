@@ -33,8 +33,8 @@ public class BoatController : MonoBehaviour
             return;
         }
         // 初始化刚体阻力（新增：增加阻尼，减少滑动）
-        rb.drag = 0.5f;
-        rb.angularDrag = 0.8f;
+        rb.linearDamping = 0.5f;
+        rb.angularDamping = 0.8f;
 
         if (pathfinder == null || gridManager == null)
         {
@@ -50,7 +50,7 @@ public class BoatController : MonoBehaviour
         if (collision.collider.CompareTag("USV") || collision.collider.CompareTag("Obstacle"))
         {
             Debug.LogError("发生碰撞！暂停并重新规划路径");
-            rb.velocity = Vector3.zero;
+            rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
             isReachedEnd = true; // 临时停止运动
             Invoke(nameof(ResumeMovement), 1f); // 1秒后恢复
@@ -104,7 +104,7 @@ public class BoatController : MonoBehaviour
         // 到达最后一个路径点
         if (currentWaypointIndex >= worldPath.Count)
         {
-            rb.velocity = Vector3.zero;
+            rb.linearVelocity = Vector3.zero;
             isReachedEnd = true;
             Debug.Log("已到达终点，停止移动");
             return;
@@ -157,6 +157,6 @@ public class BoatController : MonoBehaviour
         // 速度平滑过渡（避免突然加速/减速）
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.fixedDeltaTime * 2f);
         Vector3 moveDir = transform.forward * currentSpeed;
-        rb.velocity = new Vector3(moveDir.x, rb.velocity.y, moveDir.z);
+        rb.linearVelocity = new Vector3(moveDir.x, rb.linearVelocity.y, moveDir.z);
     }
 }

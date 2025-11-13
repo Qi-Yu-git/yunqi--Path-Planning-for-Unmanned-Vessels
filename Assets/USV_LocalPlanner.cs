@@ -6,106 +6,106 @@ using Unity.MLAgents.Actuators;
 [RequireComponent(typeof(USV_GlobalRLAgent), typeof(Rigidbody))]
 public class USV_LocalPlanner : MonoBehaviour
 {
-    // ºËĞÄÒÀÀµ×é¼ş
+    // æ ¸å¿ƒä¾èµ–ç»„ä»¶
     private USV_GlobalRLAgent globalAgent;
     private GridManager gridManager;
     private Rigidbody rb;
     private ImprovedAStar globalPathfinder;
 
-    // ¼¤¹âÀ×´ïÅäÖÃ£¨ĞèÔÚInspector¸³Öµ£©
-    public LidarSensor lidar; // ¼¤¹âÀ×´ï×é¼ş£¨×Ô¶¨Òå»òµÚÈı·½£©
-    public int lidarSampleCount = 360; // ¼¤¹âÀ×´ï²ÉÑùµãÊı£¨È«Ïò¼ì²â£©
+    // æ¿€å…‰é›·è¾¾é…ç½®ï¼ˆéœ€åœ¨Inspectorèµ‹å€¼ï¼‰
+    public LidarSensor lidar; // æ¿€å…‰é›·è¾¾ç»„ä»¶ï¼ˆè‡ªå®šä¹‰æˆ–ç¬¬ä¸‰æ–¹ï¼‰
+    public int lidarSampleCount = 360; // æ¿€å…‰é›·è¾¾é‡‡æ ·ç‚¹æ•°ï¼ˆå…¨å‘æ£€æµ‹ï¼‰
 
-    // ¾Ö²¿±ÜÕÏ²ÎÊı
-    public float localSafeDistance = 3f; // ¶¯Ì¬ÕÏ°­°²È«¾àÀë
-    public float colregsSafeDistance = 4f; // COLREGs¹æÔò°²È«¾àÀë£¨»á´¬Ê±£©
-    public float dwaPredictTime = 0.8f; // DWAÔ¤²âÊ±¼ä´°¿Ú
-    public float returnToPathThreshold = 2f; // »Ø¹éÈ«¾ÖÂ·¾¶µÄ¾àÀëãĞÖµ
+    // å±€éƒ¨é¿éšœå‚æ•°
+    public float localSafeDistance = 3f; // åŠ¨æ€éšœç¢å®‰å…¨è·ç¦»
+    public float colregsSafeDistance = 4f; // COLREGsè§„åˆ™å®‰å…¨è·ç¦»ï¼ˆä¼šèˆ¹æ—¶ï¼‰
+    public float dwaPredictTime = 0.8f; // DWAé¢„æµ‹æ—¶é—´çª—å£
+    public float returnToPathThreshold = 2f; // å›å½’å…¨å±€è·¯å¾„çš„è·ç¦»é˜ˆå€¼
 
-    // ¶¯Ì¬ÕÏ°­´æ´¢
+    // åŠ¨æ€éšœç¢å­˜å‚¨
     private List<Vector3> dynamicObstacles = new List<Vector3>();
-    private List<Vector3> dynamicObstacleVelocities = new List<Vector3>(); // ¶¯Ì¬ÕÏ°­ËÙ¶È£¨ÓÃÓÚCOLREGsÅĞ¶Ï£©
-    private bool isAvoidingDynamicObstacle = false; // ¾Ö²¿±ÜÕÏ¼¤»î×´Ì¬
-    private int currentGlobalWaypointIndex = 0; // ¸ú×Ùµ±Ç°È«¾Öº½µã
+    private List<Vector3> dynamicObstacleVelocities = new List<Vector3>(); // åŠ¨æ€éšœç¢é€Ÿåº¦ï¼ˆç”¨äºCOLREGsåˆ¤æ–­ï¼‰
+    private bool isAvoidingDynamicObstacle = false; // å±€éƒ¨é¿éšœæ¿€æ´»çŠ¶æ€
+    private int currentGlobalWaypointIndex = 0; // è·Ÿè¸ªå½“å‰å…¨å±€èˆªç‚¹
 
-    // DWAËÙ¶È´°¿ÚÅäÖÃ
-    private readonly float[] linearVelOptions = { 0f, 0.3f, 0.8f, 1.2f, 1.5f }; // ¿ÉĞĞÏßËÙ¶È£¨m/s£©
-    private readonly float[] angularVelOptions = { -45f, -30f, -15f, 0f, 15f, 30f, 45f }; // ¿ÉĞĞ½ÇËÙ¶È£¨¡ã/s£©
-    private const float MaxLinearVel = 1.5f; // ×î´óÏßËÙ¶È£¨ÓëÈ«¾ÖÅäÖÃÒ»ÖÂ£©
+    // DWAé€Ÿåº¦çª—å£é…ç½®
+    private readonly float[] linearVelOptions = { 0f, 0.3f, 0.8f, 1.2f, 1.5f }; // å¯è¡Œçº¿é€Ÿåº¦ï¼ˆm/sï¼‰
+    private readonly float[] angularVelOptions = { -45f, -30f, -15f, 0f, 15f, 30f, 45f }; // å¯è¡Œè§’é€Ÿåº¦ï¼ˆÂ°/sï¼‰
+    private const float MaxLinearVel = 1.5f; // æœ€å¤§çº¿é€Ÿåº¦ï¼ˆä¸å…¨å±€é…ç½®ä¸€è‡´ï¼‰
 
-    // COLREGs¹æÔò²ÎÊı
-    private const float StarboardAvoidAngle = 30f; // ÓÒÏÏ»á´¬±ÜÕÏ½Ç¶È
-    private const float PortAvoidAngle = -30f; // ×óÏÏ»á´¬±ÜÕÏ½Ç¶È
-    private const float HeadOnAvoidAngle = -45f; // ¶ÔÓö¾ÖÃæ±ÜÕÏ½Ç¶È
+    // COLREGsè§„åˆ™å‚æ•°
+    private const float StarboardAvoidAngle = 30f; // å³èˆ·ä¼šèˆ¹é¿éšœè§’åº¦
+    private const float PortAvoidAngle = -30f; // å·¦èˆ·ä¼šèˆ¹é¿éšœè§’åº¦
+    private const float HeadOnAvoidAngle = -45f; // å¯¹é‡å±€é¢é¿éšœè§’åº¦
 
     void Awake()
     {
-        // ³õÊ¼»¯ÒÀÀµ×é¼ş
+        // åˆå§‹åŒ–ä¾èµ–ç»„ä»¶
         globalAgent = GetComponent<USV_GlobalRLAgent>();
         rb = GetComponent<Rigidbody>();
         gridManager = FindObjectOfType<GridManager>();
         globalPathfinder = FindObjectOfType<ImprovedAStar>();
 
-        // ²ÎÊıĞ£Ñé
-        if (lidar == null) Debug.LogError("¾Ö²¿¹æ»®½Å±¾£ºÇë¸³Öµ¼¤¹âÀ×´ï×é¼ş£¡");
-        if (gridManager == null) Debug.LogError("¾Ö²¿¹æ»®½Å±¾£ºÎ´ÕÒµ½GridManager£¡");
-        if (globalPathfinder == null) Debug.LogError("¾Ö²¿¹æ»®½Å±¾£ºÎ´ÕÒµ½È«¾ÖÂ·¾¶¹æ»®Æ÷£¡");
+        // å‚æ•°æ ¡éªŒ
+        if (lidar == null) Debug.LogError("å±€éƒ¨è§„åˆ’è„šæœ¬ï¼šè¯·èµ‹å€¼æ¿€å…‰é›·è¾¾ç»„ä»¶ï¼");
+        if (gridManager == null) Debug.LogError("å±€éƒ¨è§„åˆ’è„šæœ¬ï¼šæœªæ‰¾åˆ°GridManagerï¼");
+        if (globalPathfinder == null) Debug.LogError("å±€éƒ¨è§„åˆ’è„šæœ¬ï¼šæœªæ‰¾åˆ°å…¨å±€è·¯å¾„è§„åˆ’å™¨ï¼");
     }
 
     void Start()
     {
-        // Í¬²½È«¾Öº½µãË÷Òı
+        // åŒæ­¥å…¨å±€èˆªç‚¹ç´¢å¼•
         if (globalPathfinder.path != null && globalPathfinder.path.Count > 0)
         {
             currentGlobalWaypointIndex = 0;
         }
 
-        // ³õÊ¼»¯¼¤¹âÀ×´ï
+        // åˆå§‹åŒ–æ¿€å…‰é›·è¾¾
         lidar.Initialize(lidarSampleCount);
     }
 
     /// <summary>
-    /// ÈÚºÏ¾Ö²¿±ÜÕÏµÄ¶¯×÷Ö´ĞĞ£¨Ìæ´úÔ­È«¾ÖAgentµÄ¶¯×÷Âß¼­£©
+    /// èåˆå±€éƒ¨é¿éšœçš„åŠ¨ä½œæ‰§è¡Œï¼ˆæ›¿ä»£åŸå…¨å±€Agentçš„åŠ¨ä½œé€»è¾‘ï¼‰
     /// </summary>
     public void OnAgentActionReceived(ActionBuffers actions)
     {
-        // 1. ¼ì²â¶¯Ì¬ÕÏ°­£¨È«¾ÖÕ¤¸ñÎ´±ê×¢µÄÍ»·¢ÕÏ°­£©
+        // 1. æ£€æµ‹åŠ¨æ€éšœç¢ï¼ˆå…¨å±€æ …æ ¼æœªæ ‡æ³¨çš„çªå‘éšœç¢ï¼‰
         DetectDynamicObstacles();
 
-        // 2. È·¶¨ÔË¶¯Ä¿±ê£¨¾Ö²¿±ÜÕÏ/È«¾Ö¸ú×Ù£©
+        // 2. ç¡®å®šè¿åŠ¨ç›®æ ‡ï¼ˆå±€éƒ¨é¿éšœ/å…¨å±€è·Ÿè¸ªï¼‰
         Vector3 targetVelocity;
         float targetRotation;
 
         if (dynamicObstacles.Count > 0)
         {
             isAvoidingDynamicObstacle = true;
-            // ¶¯Ì¬ÕÏ°­´æÔÚ£¬Ö´ĞĞ¾Ö²¿±ÜÕÏ£¨DWA+COLREGs£©
+            // åŠ¨æ€éšœç¢å­˜åœ¨ï¼Œæ‰§è¡Œå±€éƒ¨é¿éšœï¼ˆDWA+COLREGsï¼‰
             (targetVelocity, targetRotation) = LocalPlannerWithCOLREGs();
         }
         else
         {
-            // ÎŞ¶¯Ì¬ÕÏ°­£¬»Ø¹éÈ«¾ÖÂ·¾¶¸ú×Ù
+            // æ— åŠ¨æ€éšœç¢ï¼Œå›å½’å…¨å±€è·¯å¾„è·Ÿè¸ª
             if (isAvoidingDynamicObstacle && IsCloseToGlobalPath())
             {
                 isAvoidingDynamicObstacle = false;
-                Debug.Log("¾Ö²¿±ÜÕÏÍê³É£¬»Ø¹éÈ«¾ÖÂ·¾¶");
+                Debug.Log("å±€éƒ¨é¿éšœå®Œæˆï¼Œå›å½’å…¨å±€è·¯å¾„");
             }
 
-            // Ö´ĞĞÈ«¾ÖÇ¿»¯Ñ§Ï°¾ö²ß
+            // æ‰§è¡Œå…¨å±€å¼ºåŒ–å­¦ä¹ å†³ç­–
             (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
         }
 
-        // 3. Ó¦ÓÃÔË¶¯×´Ì¬£¨ÏŞÖÆ×î´óËÙ¶È£©
+        // 3. åº”ç”¨è¿åŠ¨çŠ¶æ€ï¼ˆé™åˆ¶æœ€å¤§é€Ÿåº¦ï¼‰
         targetVelocity = Vector3.ClampMagnitude(targetVelocity, MaxLinearVel);
-        rb.velocity = new Vector3(targetVelocity.x, rb.velocity.y, targetVelocity.z);
+        rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
         transform.Rotate(0, targetRotation * Time.deltaTime, 0);
 
-        // 4. ¾Ö²¿±ÜÕÏ½±Àø£¨ÈÚºÏµ½È«¾ÖÇ¿»¯Ñ§Ï°£©
+        // 4. å±€éƒ¨é¿éšœå¥–åŠ±ï¼ˆèåˆåˆ°å…¨å±€å¼ºåŒ–å­¦ä¹ ï¼‰
         AddLocalPlanningRewards();
     }
 
     /// <summary>
-    /// ¶¯Ì¬ÕÏ°­¼ì²â£¨¼¤¹âÀ×´ï+È«¾ÖÕ¤¸ñ¶Ô±È£©
+    /// åŠ¨æ€éšœç¢æ£€æµ‹ï¼ˆæ¿€å…‰é›·è¾¾+å…¨å±€æ …æ ¼å¯¹æ¯”ï¼‰
     /// </summary>
     private void DetectDynamicObstacles()
     {
@@ -114,22 +114,22 @@ public class USV_LocalPlanner : MonoBehaviour
 
         if (lidar == null) return;
 
-        // ¸üĞÂ¼¤¹âÀ×´ïÊı¾İ
+        // æ›´æ–°æ¿€å…‰é›·è¾¾æ•°æ®
         lidar.CompleteScan();
         float[] distances = lidar.GetDistances();
         Vector3[] obstacleWorldPositions = lidar.GetWorldPositions();
-        Vector3[] obstacleVelocities = lidar.GetObstacleVelocities(); // ¼¤¹âÀ×´ï»ñÈ¡ÕÏ°­ËÙ¶È
+        Vector3[] obstacleVelocities = lidar.GetObstacleVelocities(); // æ¿€å…‰é›·è¾¾è·å–éšœç¢é€Ÿåº¦
 
-        // ±éÀú¼ì²â½á¹û£¬É¸Ñ¡¶¯Ì¬ÕÏ°­
+        // éå†æ£€æµ‹ç»“æœï¼Œç­›é€‰åŠ¨æ€éšœç¢
         for (int i = 0; i < distances.Length; i++)
         {
             if (distances[i] < localSafeDistance)
             {
                 Vector3 obstaclePos = obstacleWorldPositions[i];
-                Vector2Int obstacleGridPos = gridManager.ÊÀ½ç×ªÕ¤¸ñ(obstaclePos);
+                Vector2Int obstacleGridPos = gridManager.ä¸–ç•Œè½¬æ …æ ¼(obstaclePos);
 
-                // ÅĞ¶¨Ìõ¼ş£ºÈ«¾ÖÕ¤¸ñ±ê¼ÇÎª¿ÉÍ¨ĞĞ£¬µ«¼¤¹âÀ×´ï¼ì²âµ½½ü¾àÀëÕÏ°­
-                if (gridManager.Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ(obstacleGridPos))
+                // åˆ¤å®šæ¡ä»¶ï¼šå…¨å±€æ …æ ¼æ ‡è®°ä¸ºå¯é€šè¡Œï¼Œä½†æ¿€å…‰é›·è¾¾æ£€æµ‹åˆ°è¿‘è·ç¦»éšœç¢
+                if (gridManager.æ …æ ¼æ˜¯å¦å¯é€šè¡Œ(obstacleGridPos))
                 {
                     dynamicObstacles.Add(obstaclePos);
                     dynamicObstacleVelocities.Add(obstacleVelocities[i]);
@@ -139,7 +139,7 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ¾Ö²¿¹æ»®ºËĞÄ£¨DWA+COLREGs¹æÔò£©
+    /// å±€éƒ¨è§„åˆ’æ ¸å¿ƒï¼ˆDWA+COLREGsè§„åˆ™ï¼‰
     /// </summary>
     private (Vector3 velocity, float rotation) LocalPlannerWithCOLREGs()
     {
@@ -147,32 +147,32 @@ public class USV_LocalPlanner : MonoBehaviour
         Vector3 bestVelocity = Vector3.zero;
         float bestRotation = 0f;
 
-        // »ñÈ¡µ±Ç°È«¾Öº½µã
+        // è·å–å½“å‰å…¨å±€èˆªç‚¹
         Vector3 nextGlobalWaypoint = GetCurrentGlobalWaypoint();
 
-        // ±éÀúËùÓĞËÙ¶È×éºÏ£¬¼ÆËã×îÓÅ½â
+        // éå†æ‰€æœ‰é€Ÿåº¦ç»„åˆï¼Œè®¡ç®—æœ€ä¼˜è§£
         foreach (float linearVel in linearVelOptions)
         {
-            foreach (float angularVel in angularVelOptions) // µ±Ç°ºòÑ¡½ÇËÙ¶È£ºangularVel
+            foreach (float angularVel in angularVelOptions) // å½“å‰å€™é€‰è§’é€Ÿåº¦ï¼šangularVel
             {
-                // Ô¤²âÎ´À´Î»ÖÃºÍ³¯Ïò
+                // é¢„æµ‹æœªæ¥ä½ç½®å’Œæœå‘
                 (Vector3 predictedPos, Quaternion predictedRot) = PredictMotion(linearVel, angularVel, dwaPredictTime);
 
-                // ¼ÆËã¸÷ÏîÆÀ¼ÛµÃ·Ö£º´«Èëµ±Ç°ºòÑ¡½ÇËÙ¶ÈangularVelµ½COLREGsÆÀ·Ö
+                // è®¡ç®—å„é¡¹è¯„ä»·å¾—åˆ†ï¼šä¼ å…¥å½“å‰å€™é€‰è§’é€Ÿåº¦angularVelåˆ°COLREGsè¯„åˆ†
                 float obstacleScore = CalculateObstacleScore(predictedPos);
                 float pathTrackScore = CalculatePathTrackScore(predictedPos, nextGlobalWaypoint);
-                float colregsScore = CalculateCOLREGsScore(predictedPos, predictedRot, angularVel); // ĞÂÔö²ÎÊı£ºµ±Ç°ºòÑ¡½ÇËÙ¶È
+                float colregsScore = CalculateCOLREGsScore(predictedPos, predictedRot, angularVel); // æ–°å¢å‚æ•°ï¼šå½“å‰å€™é€‰è§’é€Ÿåº¦
                 float smoothScore = CalculateSmoothScore(linearVel, angularVel);
 
-                // ×ÛºÏµÃ·Ö£¨±ÜÕÏÈ¨ÖØ×î¸ß£¬COLREGs´ÎÖ®£©
+                // ç»¼åˆå¾—åˆ†ï¼ˆé¿éšœæƒé‡æœ€é«˜ï¼ŒCOLREGsæ¬¡ä¹‹ï¼‰
                 float totalScore = obstacleScore * 0.5f + pathTrackScore * 0.3f + colregsScore * 0.15f + smoothScore * 0.05f;
 
-                // ¸üĞÂ×îÓÅ½â
+                // æ›´æ–°æœ€ä¼˜è§£
                 if (totalScore > bestScore)
                 {
                     bestScore = totalScore;
                     bestVelocity = predictedRot * Vector3.forward * linearVel;
-                    bestRotation = angularVel; // ½öÔÚ´Ë´¦¼ÇÂ¼×îÓÅ½ÇËÙ¶È
+                    bestRotation = angularVel; // ä»…åœ¨æ­¤å¤„è®°å½•æœ€ä¼˜è§’é€Ÿåº¦
                 }
             }
         }
@@ -181,44 +181,44 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ÆÀ¼ÛÖ¸±ê3£ºCOLREGs¹æÔòºÏ¹æĞÔ£¨ĞŞ¸´£º½ÓÊÕµ±Ç°ºòÑ¡½ÇËÙ¶È£©
+    /// è¯„ä»·æŒ‡æ ‡3ï¼šCOLREGsè§„åˆ™åˆè§„æ€§ï¼ˆä¿®å¤ï¼šæ¥æ”¶å½“å‰å€™é€‰è§’é€Ÿåº¦ï¼‰
     /// </summary>
-    private float CalculateCOLREGsScore(Vector3 predictedPos, Quaternion predictedRot, float currentAngularVel) // ĞÂÔö²ÎÊı£ºcurrentAngularVel
+    private float CalculateCOLREGsScore(Vector3 predictedPos, Quaternion predictedRot, float currentAngularVel) // æ–°å¢å‚æ•°ï¼šcurrentAngularVel
     {
-        float colregsScore = 1f; // ³õÊ¼µÃ·ÖÎª1£¨ÎŞ³åÍ»Ê±Âú·Ö£©
+        float colregsScore = 1f; // åˆå§‹å¾—åˆ†ä¸º1ï¼ˆæ— å†²çªæ—¶æ»¡åˆ†ï¼‰
 
         for (int i = 0; i < dynamicObstacles.Count; i++)
         {
             Vector3 obsPos = dynamicObstacles[i];
             Vector3 obsVel = dynamicObstacleVelocities[i];
 
-            // ¼ÆËãÏà¶ÔÎ»ÖÃºÍËÙ¶È
+            // è®¡ç®—ç›¸å¯¹ä½ç½®å’Œé€Ÿåº¦
             Vector3 relativePos = obsPos - predictedPos;
             float relativeAngle = Vector3.SignedAngle(predictedRot * Vector3.forward, relativePos, Vector3.up);
             float obsSpeed = obsVel.magnitude;
 
-            // 1. ¶ÔÓö¾ÖÃæ£¨´¬Í·Ïà¶Ô£¬ËÙ¶ÈÏà½ü£©
+            // 1. å¯¹é‡å±€é¢ï¼ˆèˆ¹å¤´ç›¸å¯¹ï¼Œé€Ÿåº¦ç›¸è¿‘ï¼‰
             if (Mathf.Abs(relativeAngle) < 20f && obsSpeed > 0.5f)
             {
-                // ĞèÏò×ó×ªÏò±ÜÕÏ£ºÊ¹ÓÃµ±Ç°ºòÑ¡½ÇËÙ¶ÈcurrentAngularVel£¨Ô­´íÎó£ºbestRotation£©
+                // éœ€å‘å·¦è½¬å‘é¿éšœï¼šä½¿ç”¨å½“å‰å€™é€‰è§’é€Ÿåº¦currentAngularVelï¼ˆåŸé”™è¯¯ï¼šbestRotationï¼‰
                 float rotationDiff = Mathf.Abs(currentAngularVel - HeadOnAvoidAngle);
                 colregsScore *= Mathf.Clamp(1 - (rotationDiff / 90f), 0.3f, 1f);
             }
-            // 2. ÓÒÏÏÀ´´¬£¨COLREGs¹æÔò£º±£³Öº½Ïò£¬ÈÃ¶Ô·½±ÜÈÃ£©
+            // 2. å³èˆ·æ¥èˆ¹ï¼ˆCOLREGsè§„åˆ™ï¼šä¿æŒèˆªå‘ï¼Œè®©å¯¹æ–¹é¿è®©ï¼‰
             else if (relativeAngle > 0f && relativeAngle < 120f)
             {
-                // ¾¡Á¿±£³ÖÔ­º½Ïò£ºÊ¹ÓÃµ±Ç°ºòÑ¡½ÇËÙ¶ÈcurrentAngularVel
+                // å°½é‡ä¿æŒåŸèˆªå‘ï¼šä½¿ç”¨å½“å‰å€™é€‰è§’é€Ÿåº¦currentAngularVel
                 colregsScore *= Mathf.Clamp(1 - (Mathf.Abs(currentAngularVel) / 30f), 0.4f, 1f);
             }
-            // 3. ×óÏÏÀ´´¬£¨COLREGs¹æÔò£ºÖ÷¶¯±ÜÈÃ£©
+            // 3. å·¦èˆ·æ¥èˆ¹ï¼ˆCOLREGsè§„åˆ™ï¼šä¸»åŠ¨é¿è®©ï¼‰
             else if (relativeAngle < 0f && relativeAngle > -120f)
             {
-                // ĞèÏòÓÒ×ªÏò±ÜÕÏ£ºÊ¹ÓÃµ±Ç°ºòÑ¡½ÇËÙ¶ÈcurrentAngularVel
+                // éœ€å‘å³è½¬å‘é¿éšœï¼šä½¿ç”¨å½“å‰å€™é€‰è§’é€Ÿåº¦currentAngularVel
                 float rotationDiff = Mathf.Abs(currentAngularVel - StarboardAvoidAngle);
                 colregsScore *= Mathf.Clamp(1 - (rotationDiff / 60f), 0.3f, 1f);
             }
 
-            // »á´¬Ê±Ğè±£³Ö¸üÔ¶°²È«¾àÀë
+            // ä¼šèˆ¹æ—¶éœ€ä¿æŒæ›´è¿œå®‰å…¨è·ç¦»
             float distToObs = Vector3.Distance(predictedPos, obsPos);
             if (distToObs < colregsSafeDistance)
             {
@@ -230,22 +230,22 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// Ô¤²âÔË¶¯×´Ì¬£¨»ùÓÚµ±Ç°ËÙ¶ÈºÍ½ÇËÙ¶È£©
+    /// é¢„æµ‹è¿åŠ¨çŠ¶æ€ï¼ˆåŸºäºå½“å‰é€Ÿåº¦å’Œè§’é€Ÿåº¦ï¼‰
     /// </summary>
     private (Vector3 pos, Quaternion rot) PredictMotion(float linearVel, float angularVel, float time)
     {
         Vector3 predictedPos = transform.position;
         Quaternion predictedRot = transform.rotation;
 
-        // ·Ö¶ÎÔ¤²â£¨Ìá¸ß¾«¶È£©
+        // åˆ†æ®µé¢„æµ‹ï¼ˆæé«˜ç²¾åº¦ï¼‰
         int steps = 5;
         float stepTime = time / steps;
 
         for (int i = 0; i < steps; i++)
         {
-            // Ğı×ª¸üĞÂ
+            // æ—‹è½¬æ›´æ–°
             predictedRot *= Quaternion.Euler(0, angularVel * stepTime, 0);
-            // Î»ÖÃ¸üĞÂ
+            // ä½ç½®æ›´æ–°
             predictedPos += predictedRot * Vector3.forward * linearVel * stepTime;
         }
 
@@ -253,7 +253,7 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ÆÀ¼ÛÖ¸±ê1£º±ÜÕÏ°²È«ĞÔ£¨¾àÀëÕÏ°­Ô½Ô¶µÃ·ÖÔ½¸ß£©
+    /// è¯„ä»·æŒ‡æ ‡1ï¼šé¿éšœå®‰å…¨æ€§ï¼ˆè·ç¦»éšœç¢è¶Šè¿œå¾—åˆ†è¶Šé«˜ï¼‰
     /// </summary>
     private float CalculateObstacleScore(Vector3 predictedPos)
     {
@@ -261,52 +261,52 @@ public class USV_LocalPlanner : MonoBehaviour
         foreach (Vector3 obsPos in dynamicObstacles)
         {
             float dist = Vector3.Distance(predictedPos, obsPos);
-            // ¾àÀëÔ½½üµÃ·ÖÔ½µÍ£¬µÍÓÚ°²È«ãĞÖµÔòµÃ0·Ö
+            // è·ç¦»è¶Šè¿‘å¾—åˆ†è¶Šä½ï¼Œä½äºå®‰å…¨é˜ˆå€¼åˆ™å¾—0åˆ†
             totalScore += Mathf.Clamp(dist / localSafeDistance, 0f, 1f);
         }
-        // Æ½¾ùµÃ·Ö£¨ÊÊÅä¶à¸öÕÏ°­³¡¾°£©
+        // å¹³å‡å¾—åˆ†ï¼ˆé€‚é…å¤šä¸ªéšœç¢åœºæ™¯ï¼‰
         return dynamicObstacles.Count > 0 ? totalScore / dynamicObstacles.Count : 1f;
     }
 
     /// <summary>
-    /// ÆÀ¼ÛÖ¸±ê2£ºÈ«¾ÖÂ·¾¶¸ú×Ù£¨¿¿½üº½µãµÃ·ÖÔ½¸ß£©
+    /// è¯„ä»·æŒ‡æ ‡2ï¼šå…¨å±€è·¯å¾„è·Ÿè¸ªï¼ˆé è¿‘èˆªç‚¹å¾—åˆ†è¶Šé«˜ï¼‰
     /// </summary>
     private float CalculatePathTrackScore(Vector3 predictedPos, Vector3 nextWaypoint)
     {
         float distToWaypoint = Vector3.Distance(predictedPos, nextWaypoint);
-        // ¹éÒ»»¯µÃ·Ö£¨×î´ó¾àÀëÎª°²È«¾àÀëµÄ2±¶£©
+        // å½’ä¸€åŒ–å¾—åˆ†ï¼ˆæœ€å¤§è·ç¦»ä¸ºå®‰å…¨è·ç¦»çš„2å€ï¼‰
         return Mathf.Clamp(1 - (distToWaypoint / (localSafeDistance * 2)), 0f, 1f);
     }
 
-   
+
 
     /// <summary>
-    /// ÆÀ¼ÛÖ¸±ê4£ºÔË¶¯Æ½»¬ĞÔ£¨±ÜÃâ¼±¼Ó¼õËÙºÍ¼±×ªÍä£©
+    /// è¯„ä»·æŒ‡æ ‡4ï¼šè¿åŠ¨å¹³æ»‘æ€§ï¼ˆé¿å…æ€¥åŠ å‡é€Ÿå’Œæ€¥è½¬å¼¯ï¼‰
     /// </summary>
     private float CalculateSmoothScore(float linearVel, float angularVel)
     {
-        // ÏßËÙ¶ÈÆ½»¬£º½Ó½üµ±Ç°ËÙ¶ÈµÃ·Ö¸ß
-        float currentLinearVel = Vector3.Dot(transform.forward, rb.velocity);
+        // çº¿é€Ÿåº¦å¹³æ»‘ï¼šæ¥è¿‘å½“å‰é€Ÿåº¦å¾—åˆ†é«˜
+        float currentLinearVel = Vector3.Dot(transform.forward, rb.linearVelocity);
         float linearSmooth = 1 - Mathf.Abs(linearVel - currentLinearVel) / MaxLinearVel;
 
-        // ½ÇËÙ¶ÈÆ½»¬£º×ª½ÇÔ½Ğ¡µÃ·Ö¸ß
+        // è§’é€Ÿåº¦å¹³æ»‘ï¼šè½¬è§’è¶Šå°å¾—åˆ†é«˜
         float angularSmooth = 1 - Mathf.Abs(angularVel) / 45f;
 
         return (linearSmooth + angularSmooth) / 2f;
     }
 
     /// <summary>
-    /// »ñÈ¡µ±Ç°¸ú×ÙµÄÈ«¾Öº½µã
+    /// è·å–å½“å‰è·Ÿè¸ªçš„å…¨å±€èˆªç‚¹
     /// </summary>
     private Vector3 GetCurrentGlobalWaypoint()
     {
         if (globalPathfinder.path == null || globalPathfinder.path.Count == 0)
         {
-            return globalAgent.target.position; // ÎŞÈ«¾ÖÂ·¾¶Ê±£¬Ö±½ÓÖ¸ÏòÄ¿±êµã
+            return globalAgent.target.position; // æ— å…¨å±€è·¯å¾„æ—¶ï¼Œç›´æ¥æŒ‡å‘ç›®æ ‡ç‚¹
         }
 
-        // ¸üĞÂµ±Ç°º½µã£¨µ½´ïºóÇĞ»»ÏÂÒ»¸ö£©
-        Vector3 currentWaypoint = gridManager.Õ¤¸ñ×ªÊÀ½ç(globalPathfinder.path[currentGlobalWaypointIndex]);
+        // æ›´æ–°å½“å‰èˆªç‚¹ï¼ˆåˆ°è¾¾ååˆ‡æ¢ä¸‹ä¸€ä¸ªï¼‰
+        Vector3 currentWaypoint = gridManager.æ …æ ¼è½¬ä¸–ç•Œ(globalPathfinder.path[currentGlobalWaypointIndex]);
         float distToWaypoint = Vector3.Distance(transform.position, currentWaypoint);
 
         if (distToWaypoint < 1f && currentGlobalWaypointIndex < globalPathfinder.path.Count - 1)
@@ -318,7 +318,7 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ¼ì²éÊÇ·ñ½Ó½üÈ«¾ÖÂ·¾¶£¨ÓÃÓÚ»Ø¹éÅĞ¶Ï£©
+    /// æ£€æŸ¥æ˜¯å¦æ¥è¿‘å…¨å±€è·¯å¾„ï¼ˆç”¨äºå›å½’åˆ¤æ–­ï¼‰
     /// </summary>
     private bool IsCloseToGlobalPath()
     {
@@ -327,12 +327,12 @@ public class USV_LocalPlanner : MonoBehaviour
             return true;
         }
 
-        // ¼ÆËãµ±Ç°Î»ÖÃµ½È«¾ÖÂ·¾¶µÄ×î¶Ì¾àÀë
+        // è®¡ç®—å½“å‰ä½ç½®åˆ°å…¨å±€è·¯å¾„çš„æœ€çŸ­è·ç¦»
         float minDistToPath = float.MaxValue;
         for (int i = 0; i < globalPathfinder.path.Count - 1; i++)
         {
-            Vector3 waypointA = gridManager.Õ¤¸ñ×ªÊÀ½ç(globalPathfinder.path[i]);
-            Vector3 waypointB = gridManager.Õ¤¸ñ×ªÊÀ½ç(globalPathfinder.path[i + 1]);
+            Vector3 waypointA = gridManager.æ …æ ¼è½¬ä¸–ç•Œ(globalPathfinder.path[i]);
+            Vector3 waypointB = gridManager.æ …æ ¼è½¬ä¸–ç•Œ(globalPathfinder.path[i + 1]);
             float distToSegment = DistanceToLineSegment(transform.position, waypointA, waypointB);
             minDistToPath = Mathf.Min(minDistToPath, distToSegment);
         }
@@ -341,7 +341,7 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ¼ÆËãµãµ½Ïß¶ÎµÄ×î¶Ì¾àÀë
+    /// è®¡ç®—ç‚¹åˆ°çº¿æ®µçš„æœ€çŸ­è·ç¦»
     /// </summary>
     private float DistanceToLineSegment(Vector3 point, Vector3 lineStart, Vector3 lineEnd)
     {
@@ -358,13 +358,13 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ¾Ö²¿¹æ»®½±Àøº¯Êı£¨ÈÚºÏµ½È«¾ÖÇ¿»¯Ñ§Ï°£©
+    /// å±€éƒ¨è§„åˆ’å¥–åŠ±å‡½æ•°ï¼ˆèåˆåˆ°å…¨å±€å¼ºåŒ–å­¦ä¹ ï¼‰
     /// </summary>
     private void AddLocalPlanningRewards()
     {
         if (dynamicObstacles.Count == 0) return;
 
-        // 1. ±ÜÕÏ°²È«½±Àø£¨¾àÀë×î½üÕÏ°­Ô½Ô¶£¬½±ÀøÔ½¸ß£©
+        // 1. é¿éšœå®‰å…¨å¥–åŠ±ï¼ˆè·ç¦»æœ€è¿‘éšœç¢è¶Šè¿œï¼Œå¥–åŠ±è¶Šé«˜ï¼‰
         float minDistToObs = float.MaxValue;
         foreach (Vector3 obsPos in dynamicObstacles)
         {
@@ -372,12 +372,12 @@ public class USV_LocalPlanner : MonoBehaviour
         }
         globalAgent.AddReward(minDistToObs / localSafeDistance * 1.5f);
 
-        // 2. COLREGsºÏ¹æ½±Àø
-        float currentAngularVel = transform.eulerAngles.y * Time.deltaTime; // »ñÈ¡µ±Ç°ÎŞÈË´¬Êµ¼Ê½ÇËÙ¶È
+        // 2. COLREGsåˆè§„å¥–åŠ±
+        float currentAngularVel = transform.eulerAngles.y * Time.deltaTime; // è·å–å½“å‰æ— äººèˆ¹å®é™…è§’é€Ÿåº¦
         float colregsReward = CalculateCOLREGsScore(transform.position, transform.rotation, currentAngularVel);
         globalAgent.AddReward(colregsReward * 0.5f);
 
-        // 3. ±ÜÕÏÊ±²»Æ«ÀëÈ«¾ÖÂ·¾¶¹ıÔ¶½±Àø
+        // 3. é¿éšœæ—¶ä¸åç¦»å…¨å±€è·¯å¾„è¿‡è¿œå¥–åŠ±
         if (IsCloseToGlobalPath())
         {
             globalAgent.AddReward(0.3f);
@@ -385,7 +385,7 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// ×ª»»È«¾ÖAgent¶¯×÷µ½ËÙ¶ÈºÍ×ªÏò£¨ÊÊÅäÔ­È«¾ÖÂß¼­£©
+    /// è½¬æ¢å…¨å±€AgentåŠ¨ä½œåˆ°é€Ÿåº¦å’Œè½¬å‘ï¼ˆé€‚é…åŸå…¨å±€é€»è¾‘ï¼‰
     /// </summary>
     private (Vector3 velocity, float rotation) GetGlobalActionVelocity(int action)
     {
@@ -394,14 +394,14 @@ public class USV_LocalPlanner : MonoBehaviour
 
         switch (action)
         {
-            case 0: // Ç°½ø
+            case 0: // å‰è¿›
                 velocity = transform.forward * MaxLinearVel;
                 break;
-            case 1: // ×ó×ª
+            case 1: // å·¦è½¬
                 rotation = -30f;
                 velocity = transform.forward * MaxLinearVel * 0.7f;
                 break;
-            case 2: // ÓÒ×ª
+            case 2: // å³è½¬
                 rotation = 30f;
                 velocity = transform.forward * MaxLinearVel * 0.7f;
                 break;
@@ -410,14 +410,14 @@ public class USV_LocalPlanner : MonoBehaviour
         return (velocity, rotation);
     }
 
-    // ¹©È«¾ÖAgentµ÷ÓÃµÄ¶¯×÷Èë¿Ú
+    // ä¾›å…¨å±€Agentè°ƒç”¨çš„åŠ¨ä½œå…¥å£
     public void ForwardActionToLocalPlanner(ActionBuffers actions)
     {
         OnAgentActionReceived(actions);
     }
 }
 
-// ¼¤¹âÀ×´ï´«¸ĞÆ÷½Ó¿Ú£¨ĞèÓëÊµ¼Ê¼¤¹âÀ×´ï×é¼şÊÊÅä£©
+// æ¿€å…‰é›·è¾¾ä¼ æ„Ÿå™¨æ¥å£ï¼ˆéœ€ä¸å®é™…æ¿€å…‰é›·è¾¾ç»„ä»¶é€‚é…ï¼‰
 public abstract class LidarSensor : MonoBehaviour
 {
     public abstract void Initialize(int sampleCount);
