@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_EnablePreReleasePackages: 0
-  m_AdvancedSettingsExpanded: 1
+  m_AdvancedSettingsExpanded: 0
   m_ScopedRegistriesSettingsExpanded: 1
   m_SeeAllPackageVersions: 0
   m_DismissPreviewPackagesInUse: 0
@@ -30,7 +30,18 @@ MonoBehaviour:
     m_Compliance:
       m_Status: 0
       m_Violations: []
-  m_UserSelectedRegistryName: 
+  - m_Id: scoped:project:NuGet.org
+    m_Name: NuGet.org
+    m_Url: https://api.nuget.org/v3/index.json
+    m_Scopes:
+    - org.nuget
+    m_IsDefault: 0
+    m_Capabilities: 0
+    m_ConfigSource: 4
+    m_Compliance:
+      m_Status: 0
+      m_Violations: []
+  m_UserSelectedRegistryName: NuGet.org
   m_UserAddingNewScopedRegistry: 0
   m_RegistryInfoDraft:
     m_Modified: 0

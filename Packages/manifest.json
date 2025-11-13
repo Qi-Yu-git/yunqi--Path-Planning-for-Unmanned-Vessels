@@ -1,8 +1,10 @@
 {
   "dependencies": {
+    "com.github-glitchenzo.nugetforunity": "https://github.com/GlitchEnzo/NuGetForUnity.git?path=src/NuGetForUnity",
     "com.unity.collab-proxy": "2.10.0",
     "com.unity.feature.development": "1.0.1",
     "com.unity.ml-agents": "2.0.2",
+    "com.unity.nuget.newtonsoft-json": "3.2.2",
     "com.unity.render-pipelines.high-definition": "14.0.12",
     "com.unity.textmeshpro": "3.0.7",
     "com.unity.timeline": "1.7.7",
@@ -40,5 +42,14 @@
     "com.unity.modules.vr": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
     "com.unity.modules.xr": "1.0.0"
-  }
+  },
+  "scopedRegistries": [
+    {
+      "name": "NuGet.org",
+      "url": "https://api.nuget.org/v3/index.json",
+      "scopes": [
+        "org.nuget"
+      ]
+    }
+  ]
 }

@@ -12,9 +12,8 @@ public class USV_LocalPlanner : MonoBehaviour
     private Rigidbody rb;
     private ImprovedAStar globalPathfinder;
 
-    // 激光雷达配置（需在Inspector赋值）
-    public LidarSensor lidar; // 激光雷达组件（自定义或第三方）
-    public int lidarSampleCount = 360; // 激光雷达采样点数（全向检测）
+    // YOLOv8视觉检测配置（需在Inspector赋值）
+    public YOLOv8Detector yoloDetector; // YOLO检测器实例
 
     // 局部避障参数
     public float localSafeDistance = 3f; // 动态障碍安全距离
@@ -24,7 +23,7 @@ public class USV_LocalPlanner : MonoBehaviour
 
     // 动态障碍存储
     private List<Vector3> dynamicObstacles = new List<Vector3>();
-    private List<Vector3> dynamicObstacleVelocities = new List<Vector3>(); // 动态障碍速度（用于COLREGs判断）
+    private List<Vector3> dynamicObstacleVelocities = new List<Vector3>(); // 动态障碍速度（YOLO暂用0，可优化）
     private bool isAvoidingDynamicObstacle = false; // 局部避障激活状态
     private int currentGlobalWaypointIndex = 0; // 跟踪当前全局航点
 
@@ -43,11 +42,12 @@ public class USV_LocalPlanner : MonoBehaviour
         // 初始化依赖组件
         globalAgent = GetComponent<USV_GlobalRLAgent>();
         rb = GetComponent<Rigidbody>();
-        gridManager = FindObjectOfType<GridManager>();
-        globalPathfinder = FindObjectOfType<ImprovedAStar>();
+        // 修复后（使用新API）
+        gridManager = FindFirstObjectByType<GridManager>();
+        globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
 
         // 参数校验
-        if (lidar == null) Debug.LogError("局部规划脚本：请赋值激光雷达组件！");
+        if (yoloDetector == null) Debug.LogError("局部规划脚本：请赋值YOLOv8Detector组件！");
         if (gridManager == null) Debug.LogError("局部规划脚本：未找到GridManager！");
         if (globalPathfinder == null) Debug.LogError("局部规划脚本：未找到全局路径规划器！");
     }
@@ -59,9 +59,6 @@ public class USV_LocalPlanner : MonoBehaviour
         {
             currentGlobalWaypointIndex = 0;
         }
-
-        // 初始化激光雷达
-        lidar.Initialize(lidarSampleCount);
     }
 
     /// <summary>
@@ -105,35 +102,27 @@ public class USV_LocalPlanner : MonoBehaviour
     }
 
     /// <summary>
-    /// 动态障碍检测（激光雷达+全局栅格对比）
+    /// 动态障碍检测（YOLOv8视觉检测+全局栅格对比）
     /// </summary>
     private void DetectDynamicObstacles()
     {
         dynamicObstacles.Clear();
         dynamicObstacleVelocities.Clear();
 
-        if (lidar == null) return;
+        if (yoloDetector == null) return;
 
-        // 更新激光雷达数据
-        lidar.CompleteScan();
-        float[] distances = lidar.GetDistances();
-        Vector3[] obstacleWorldPositions = lidar.GetWorldPositions();
-        Vector3[] obstacleVelocities = lidar.GetObstacleVelocities(); // 激光雷达获取障碍速度
+        // 从YOLO获取检测到的障碍物世界坐标
+        List<Vector3> obstaclePositions = yoloDetector.GetDetectedObstaclePositions();
 
-        // 遍历检测结果，筛选动态障碍
-        for (int i = 0; i < distances.Length; i++)
+        foreach (Vector3 obstaclePos in obstaclePositions)
         {
-            if (distances[i] < localSafeDistance)
-            {
-                Vector3 obstaclePos = obstacleWorldPositions[i];
-                Vector2Int obstacleGridPos = gridManager.世界转栅格(obstaclePos);
+            Vector2Int obstacleGridPos = gridManager.世界转栅格(obstaclePos);
 
-                // 判定条件：全局栅格标记为可通行，但激光雷达检测到近距离障碍
-                if (gridManager.栅格是否可通行(obstacleGridPos))
-                {
-                    dynamicObstacles.Add(obstaclePos);
-                    dynamicObstacleVelocities.Add(obstacleVelocities[i]);
-                }
+            // 判定条件：全局栅格标记为可通行，但视觉检测到近距离障碍
+            if (gridManager.栅格是否可通行(obstacleGridPos))
+            {
+                dynamicObstacles.Add(obstaclePos);
+                dynamicObstacleVelocities.Add(Vector3.zero); // YOLO暂不支持速度检测，默认0（可优化帧间差计算）
             }
         }
     }
@@ -278,8 +267,6 @@ public class USV_LocalPlanner : MonoBehaviour
         return Mathf.Clamp(1 - (distToWaypoint / (localSafeDistance * 2)), 0f, 1f);
     }
 
-
-
     /// <summary>
     /// 评价指标4：运动平滑性（避免急加减速和急转弯）
     /// </summary>
@@ -415,14 +402,4 @@ public class USV_LocalPlanner : MonoBehaviour
     {
         OnAgentActionReceived(actions);
     }
-}
-
-// 激光雷达传感器接口（需与实际激光雷达组件适配）
-public abstract class LidarSensor : MonoBehaviour
-{
-    public abstract void Initialize(int sampleCount);
-    public abstract void CompleteScan();
-    public abstract float[] GetDistances();
-    public abstract Vector3[] GetWorldPositions();
-    public abstract Vector3[] GetObstacleVelocities();
 }

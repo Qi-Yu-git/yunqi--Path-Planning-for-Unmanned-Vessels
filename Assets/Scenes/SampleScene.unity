@@ -762,8 +762,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27cf9ba6050ba1e418a4002ba81ec937, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  lidar: {fileID: 1137107877}
-  lidarSampleCount: 360
+  yoloDetector: {fileID: 2004669449}
   localSafeDistance: 3
   colregsSafeDistance: 4
   dwaPredictTime: 0.8
@@ -1615,7 +1614,7 @@ Light:
   m_BounceIntensity: 1
   m_ColorTemperature: 6570
   m_UseColorTemperature: 1
-  m_BoundingSphereOverride: {x: 9.1835e-41, y: 1.8293632e-37, z: 7.484593e-39, w: 1.102026e-39}
+  m_BoundingSphereOverride: {x: 0, y: 1.8293632e-37, z: 0, w: 0}
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
@@ -2699,22 +2698,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fff798bbe74b4394aa5ac6134bae6fb5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxDetectionDistance: 3
-  obstacleLayer:
-    serializedVersion: 2
-    m_Bits: 72
-  raycastHeight: 0
-  displayOffsetX: 0
-  displayOffsetZ: 0
-  offsetX: 0
-  offsetY: 0
-  offsetZ: 0
-  useParentBinding: 0
-  usvTransform: {fileID: 173794670}
-  maxConcurrentRays: 30
-  scanInterval: 0.05
-  obstacleGizmoColor: {r: 1, g: 0, b: 0, a: 0.627451}
-  defaultSampleCount: 36
 --- !u!4 &1137107878
 Transform:
   m_ObjectHideFlags: 0
@@ -2742,12 +2725,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ae4dc04440807c742bbff070d88a6c59, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  radarCore: {fileID: 1137107877}
-  rayLength: 10
-  rayCount: 36
-  noObstacleColor: {r: 0, g: 0, b: 1, a: 1}
-  hasObstacleColor: {r: 1, g: 0, b: 0, a: 1}
-  originSize: 0.5
 --- !u!114 &1137107880
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3619,6 +3596,60 @@ Transform:
   m_Children: []
   m_Father: {fileID: 976173188}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2004669448
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2004669450}
+  - component: {fileID: 2004669449}
+  m_Layer: 0
+  m_Name: YOLO_Detector
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2004669449
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2004669448}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6319afbdcf50ed04e95f9fe77ce29b4d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  modelPath: Assets/Models/yolov8n.onnx
+  confidenceThreshold: 0.5
+  iouThreshold: 0.4
+  detectionCamera: {fileID: 963194227}
+  maxDetectionDistance: 20
+  obstacleLayers:
+    serializedVersion: 2
+    m_Bits: 9
+  detectionIntervalMs: 100
+  useAsyncDetection: 1
+--- !u!4 &2004669450
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2004669448}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -4.5077333, y: -15.9289255, z: 2.6155877}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2064088795
 GameObject:
   m_ObjectHideFlags: 0
@@ -3990,3 +4021,4 @@ SceneRoots:
   - {fileID: 398022123}
   - {fileID: 41255707}
   - {fileID: 688525660}
+  - {fileID: 2004669450}
