@@ -20,13 +20,12 @@ internal struct Node
 
 public class GridManager : MonoBehaviour
 {
-
     public float 栅格尺寸 = 1f;
     public Transform 水域平面;
     public LayerMask obstacleLayer;
     public Vector3 栅格原点;
-    public int 栅格宽度;
-    public int 栅格高度;
+    public int 栅格宽度; // 已存在的中文变量（与Agent中调用的gridWidth对应）
+    public int 栅格高度; // 已存在的中文变量（与Agent中调用的gridHeight对应）
     private Node[,] 栅格地图;
     private int 初始化索引 = 0;
     private bool isInitializing = false;
@@ -39,19 +38,23 @@ public class GridManager : MonoBehaviour
 
     [Header("障碍物检测配置")]
     [Tooltip("障碍物检测半径（值越小，检测边界越精准，默认0.5f）")]
-    public float obstacleCheckRadius = 0.5f; // 新增：可调控检测半径
+    public float obstacleCheckRadius = 0.5f;
     [Tooltip("检测半径偏移量（额外扩展/收缩检测范围，默认0f）")]
-    public float radiusOffset = 0f; // 新增：偏移量，精细调整
+    public float radiusOffset = 0f;
 
     [Header("Gizmos显示设置（降低明显度）")]
     [Tooltip("栅格线高度（越低越不明显）")]
-    public float 栅格线高度 = 0.1f; // 降低高度，接近水面
+    public float 栅格线高度 = 0.1f;
     [Tooltip("障碍物显示高度")]
     public float 障碍物显示高度 = 0.2f;
     [Tooltip("栅格线颜色（降低alpha值使其更透明）")]
-    public Color 栅格线颜色 = new Color(0.5f, 0.5f, 0.5f, 0.1f); // 更淡的灰色+低透明度
+    public Color 栅格线颜色 = new Color(0.5f, 0.5f, 0.5f, 0.1f);
     [Tooltip("障碍物颜色")]
-    public Color 障碍物颜色 = new Color(1f, 0f, 0f, 0.7f); // 障碍物保持一定可见度
+    public Color 障碍物颜色 = new Color(1f, 0f, 0f, 0.7f);
+
+    // 新增：公开英文属性，适配Agent中的调用（避免修改Agent逻辑）
+    public int gridWidth => 栅格宽度;
+    public int gridHeight => 栅格高度;
 
     void Start()
     {
@@ -128,6 +131,13 @@ public class GridManager : MonoBehaviour
         }
     }
 
+    // 修复：使用中文变量名（栅格宽度/栅格高度），与类成员一致
+    public bool IsValidGridPosition(Vector2Int gridPos)
+    {
+        return gridPos.x >= 0 && gridPos.x < 栅格宽度
+            && gridPos.y >= 0 && gridPos.y < 栅格高度;
+    }
+
     public bool IsGridReady()
     {
         return isGridReady;
@@ -135,8 +145,7 @@ public class GridManager : MonoBehaviour
 
     public void 标记障碍物(Camera 主相机 = null)
     {
-        // 原代码：float 检测半径 = 栅格半尺寸 + 0.5f;
-        float 检测半径 = 栅格半尺寸 + obstacleCheckRadius + radiusOffset; // 改为可调控参数
+        float 检测半径 = 栅格半尺寸 + obstacleCheckRadius + radiusOffset;
         int 起始X = 0, 结束X = 栅格宽度;
         int 起始Z = 0, 结束Z = 栅格高度;
         for (int x = 起始X; x < 结束X; x += 4)
@@ -149,7 +158,7 @@ public class GridManager : MonoBehaviour
                     Node 节点 = 栅格地图[xInner, z];
                     int 碰撞数量 = Physics.OverlapSphereNonAlloc(
                         节点.worldPosition,
-                        检测半径, // 使用修改后的检测半径
+                        检测半径,
                         碰撞检测结果,
                         obstacleLayer,
                         QueryTriggerInteraction.Ignore
@@ -231,6 +240,7 @@ public class GridManager : MonoBehaviour
 
     public bool 栅格是否可通行(Vector2Int 栅格坐标)
     {
+        if (栅格地图 == null) return false;
         if (栅格坐标.x < 0 || 栅格坐标.x >= 栅格宽度 || 栅格坐标.y < 0 || 栅格坐标.y >= 栅格高度)
             return false;
         return 栅格地图[栅格坐标.x, 栅格坐标.y].walkable;
@@ -271,28 +281,25 @@ public class GridManager : MonoBehaviour
             return;
         }
 
-        // 绘制水域外框（弱化处理）
         Gizmos.color = new Color(0.3f, 0.3f, 0.3f, 0.1f);
         Gizmos.DrawWireCube(水域平面.position, new Vector3(水域大小缓存.x, 0.1f, 水域大小缓存.y));
 
         if (栅格地图 == null) return;
 
-        // 绘制栅格线（更细、更淡）
         Gizmos.color = 栅格线颜色;
         for (int x = 0; x <= 栅格宽度; x++)
         {
             Vector3 起点 = 栅格原点 + new Vector3(x * 栅格尺寸, 栅格线高度, 0);
             Vector3 终点 = 栅格原点 + new Vector3(x * 栅格尺寸, 栅格线高度, 栅格高度 * 栅格尺寸);
-            Gizmos.DrawLine(起点, 终点); // 只画单条线，不画双线（减少视觉干扰）
+            Gizmos.DrawLine(起点, 终点);
         }
         for (int z = 0; z <= 栅格高度; z++)
         {
             Vector3 起点 = 栅格原点 + new Vector3(0, 栅格线高度, z * 栅格尺寸);
             Vector3 终点 = 栅格原点 + new Vector3(栅格宽度 * 栅格尺寸, 栅格线高度, z * 栅格尺寸);
-            Gizmos.DrawLine(起点, 终点); // 只画单条线
+            Gizmos.DrawLine(起点, 终点);
         }
 
-        // 绘制障碍物（保持可见度以便区分）
         Gizmos.color = 障碍物颜色;
         for (int x = 0; x < 栅格宽度; x++)
         {
@@ -309,7 +316,6 @@ public class GridManager : MonoBehaviour
 
         if (!isGridReady) return;
 
-        // 栅格外框弱化
         Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.05f);
         Gizmos.DrawWireCube(
             栅格原点 + new Vector3(栅格宽度 / 2f, 栅格线高度, 栅格高度 / 2f),
