@@ -2,6 +2,8 @@ using UnityEngine;
 using System.Collections.Generic;
 using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
+// 添加命名空间引用，因为ImageInputSelector在PPUV.YOLOv8命名空间下
+using PPUV.YOLOv8;
 
 [RequireComponent(typeof(USV_GlobalRLAgent), typeof(Rigidbody))]
 public class USV_LocalPlanner : MonoBehaviour
@@ -12,20 +14,20 @@ public class USV_LocalPlanner : MonoBehaviour
     private Rigidbody rb;
     private ImprovedAStar globalPathfinder;
 
-    // YOLOv8视觉检测配置（需在Inspector赋值）
-    public YOLOv8Detector yoloDetector; // YOLO检测器实例
+    // 替换为ImageInputSelector（原ImageInputSelector）
+    public ImageInputSelector imageInputSelector;// 需在Inspector赋值ImageInputSelector实例
 
-    // 局部避障参数
-    public float localSafeDistance = 3f; // 动态障碍安全距离
-    public float colregsSafeDistance = 4f; // COLREGs规则安全距离（会船时）
-    public float dwaPredictTime = 0.8f; // DWA预测时间窗口
-    public float returnToPathThreshold = 2f; // 回归全局路径的距离阈值
+    // 局部避障参数（保持不变）
+    public float localSafeDistance = 3f;
+    public float colregsSafeDistance = 4f;
+    public float dwaPredictTime = 0.8f;
+    public float returnToPathThreshold = 2f;
 
-    // 动态障碍存储
+    // 动态障碍存储（保持不变）
     private List<Vector3> dynamicObstacles = new List<Vector3>();
-    private List<Vector3> dynamicObstacleVelocities = new List<Vector3>(); // 动态障碍速度（YOLO暂用0，可优化）
-    private bool isAvoidingDynamicObstacle = false; // 局部避障激活状态
-    private int currentGlobalWaypointIndex = 0; // 跟踪当前全局航点
+    private List<Vector3> dynamicObstacleVelocities = new List<Vector3>();
+    private bool isAvoidingDynamicObstacle = false;
+    private int currentGlobalWaypointIndex = 0;
 
     // DWA速度窗口配置
     private readonly float[] linearVelOptions = { 0f, 0.3f, 0.8f, 1.2f, 1.5f }; // 可行线速度（m/s）
@@ -46,8 +48,8 @@ public class USV_LocalPlanner : MonoBehaviour
         gridManager = FindFirstObjectByType<GridManager>();
         globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
 
-        // 参数校验
-        if (yoloDetector == null) Debug.LogError("局部规划脚本：请赋值YOLOv8Detector组件！");
+        // 参数校验：将yoloDetector改为imageInputSelector（变量名统一）
+        if (imageInputSelector == null) Debug.LogError("局部规划脚本：请赋值ImageInputSelector组件！");
         if (gridManager == null) Debug.LogError("局部规划脚本：未找到GridManager！");
         if (globalPathfinder == null) Debug.LogError("局部规划脚本：未找到全局路径规划器！");
     }
@@ -109,10 +111,11 @@ public class USV_LocalPlanner : MonoBehaviour
         dynamicObstacles.Clear();
         dynamicObstacleVelocities.Clear();
 
-        if (yoloDetector == null) return;
+        // 将yoloDetector改为imageInputSelector（变量名统一）
+        if (imageInputSelector == null) return;
 
         // 从YOLO获取检测到的障碍物世界坐标
-        List<Vector3> obstaclePositions = yoloDetector.GetDetectedObstaclePositions();
+        List<Vector3> obstaclePositions = imageInputSelector.GetDetectedObstaclePositions();
 
         foreach (Vector3 obstaclePos in obstaclePositions)
         {
@@ -189,7 +192,7 @@ public class USV_LocalPlanner : MonoBehaviour
             // 1. 对遇局面（船头相对，速度相近）
             if (Mathf.Abs(relativeAngle) < 20f && obsSpeed > 0.5f)
             {
-                // 需向左转向避障：使用当前候选角速度currentAngularVel（原错误：bestRotation）
+                // 需向左转向避障：使用当前候选角速度currentAngularVel
                 float rotationDiff = Mathf.Abs(currentAngularVel - HeadOnAvoidAngle);
                 colregsScore *= Mathf.Clamp(1 - (rotationDiff / 90f), 0.3f, 1f);
             }

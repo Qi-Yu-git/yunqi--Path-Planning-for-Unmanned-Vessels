@@ -63,7 +63,7 @@
   <ItemGroup>
     <Compile Include="Assets\GridManager.cs" />
     <Compile Include="Assets\RandomSpawnManager.cs" />
-    <Compile Include="Assets\YOLOv8Detector.cs" />
+    <Compile Include="Assets\Scripts\ImageInputSelector.cs" />
     <Compile Include="Assets\USV_LocalPlanner.cs" />
     <Compile Include="Assets\BoatController.cs" />
     <Compile Include="Assets\Encounter an unmanned vessel.cs" />
@@ -75,6 +75,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\config\usv_config.yaml.txt" />
+    <None Include="Assets\Images\放入.jpg图片.txt" />
     <None Include="Assets\Packages\OpenCvSharp4.4.8.0.20230708\lib\netstandard2.1\OpenCvSharp.xml" />
     <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.8.0.20230708\runtimes\win-x64\native\opencv_videoio_ffmpeg480_64.dll" />
     <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.8.0.20230708\runtimes\win-x86\native\opencv_videoio_ffmpeg480.dll" />
