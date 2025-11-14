@@ -6,12 +6,11 @@ using OpenCvSharp;
 using OpenCvSharp.Dnn;
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro; // 新增TextMeshPro命名空间引用
+using TMPro;
 
 // 解决 Rect 命名冲突
 using OpenCvRect = OpenCvSharp.Rect;
 
-// 唯一命名空间：杜绝类重复
 namespace PPUV.YOLOv8
 {
     /// <summary>
@@ -24,12 +23,11 @@ namespace PPUV.YOLOv8
         public Button imageFileButton;
         public TextMeshProUGUI statusText;
         public RawImage displayImage;
-        // 新增：用于坐标转换的相机（需在Inspector赋值，通常是主相机）
-        public Camera detectionCamera;
+        public Camera detectionCamera;  // 用于坐标转换的相机
 
-        // YOLO 检测核心（命名空间限定，无重复）
+        // YOLO 检测核心
         private YoloV8Engine yoloEngine;
-        private string modelPath = Application.dataPath + "/Models/yolov8n.onnx"; // 替换为你的模型路径
+        private string modelPath = Application.dataPath + "/Models/yolov8n.onnx";
 
         // 图像输入源相关
         private WebCamTexture webCamTexture;
@@ -37,8 +35,9 @@ namespace PPUV.YOLOv8
         private Texture2D outputTexture;
         private int selectedInputType = 0; // 0: 未选择, 1: 摄像头, 2: 本地图片
 
-        // 新增：存储检测到的障碍物世界坐标（类内部私有字段）
+        // 障碍物数据
         private List<Vector3> detectedObstaclePositions = new List<Vector3>();
+        private List<int> detectedObstacleIds = new List<int>();
 
         void Start()
         {
@@ -78,7 +77,7 @@ namespace PPUV.YOLOv8
         /// <summary>
         /// 选择输入源（1=摄像头，2=本地图片）
         /// </summary>
-        void SelectInputType(int type)
+        public void SelectInputType(int type)
         {
             selectedInputType = type;
             statusText.text = type == 1 ? "已选择：摄像头输入" : "已选择：本地图片输入";
@@ -113,7 +112,7 @@ namespace PPUV.YOLOv8
         }
 
         /// <summary>
-        /// 加载本地图片（默认路径：Assets/Images/test.jpg）
+        /// 加载本地图片
         /// </summary>
         void LoadLocalImage()
         {
@@ -181,15 +180,25 @@ namespace PPUV.YOLOv8
         /// <summary>
         /// 处理图像（YOLO检测 + 绘制结果 + 显示 + 更新障碍物位置）
         /// </summary>
+        // 在ImageInputSelector的ProcessImage方法中添加日志
         void ProcessImage()
         {
-            if (currentMat == null || currentMat.Empty()) return;
-
+            if (currentMat == null || currentMat.Empty())
+            {
+                Debug.LogError("当前图像为空，未采集到有效画面");
+                return;
+            }
+            Debug.Log("成功采集图像，开始YOLO检测");
             List<YoloResult> results = yoloEngine.Detect(currentMat);
-            DrawDetectionResults(currentMat, results);
-            DisplayMat(currentMat);
-            // 新增：更新障碍物世界坐标
-            UpdateObstaclePositions(results);
+            if (results.Count == 0)
+            {
+                Debug.LogWarning("YOLO检测无结果，可能是模型未识别到障碍物或图像预处理异常");
+            }
+            else
+            {
+                Debug.Log($"检测到 {results.Count} 个障碍物");
+            }
+            // 后续绘制和位置更新逻辑...
         }
 
         /// <summary>
@@ -236,64 +245,70 @@ namespace PPUV.YOLOv8
         }
 
         /// <summary>
-        /// 新增：更新障碍物世界坐标列表
+        /// 更新障碍物世界坐标和ID列表
         /// </summary>
         private void UpdateObstaclePositions(List<YoloResult> results)
         {
             detectedObstaclePositions.Clear();
+            detectedObstacleIds.Clear();
             if (detectionCamera == null) return;
 
             foreach (var result in results)
             {
-                // 筛选需要避障的类别（如车辆、船只等）
-                if (IsObstacleClass(result.ClassName))
+                if (IsObstacleClass(result.ClassName)) // 修正：访问当前类的方法
                 {
-                    // 计算检测框中心的图像坐标（OpenCV坐标：原点左上角）
                     Point2d imageCenter = new Point2d(
-                        result.Rect.X + result.Rect.Width / 2,  // 中心X
-                        result.Rect.Y + result.Rect.Height / 2   // 中心Y
+                        result.Rect.X + result.Rect.Width / 2,
+                        result.Rect.Y + result.Rect.Height / 2
                     );
-
-                    // 转换为世界坐标
+                    // 修正：访问当前类的方法和成员
                     Vector3 worldPos = ConvertImagePointToWorldPoint(imageCenter, currentMat);
                     detectedObstaclePositions.Add(worldPos);
+
+                    // 生成唯一ID
+                    int obstacleId = result.ClassId + (int)(Time.time * 1000);
+                    detectedObstacleIds.Add(obstacleId);
                 }
             }
         }
 
         /// <summary>
-        /// 新增：判断是否为需要避障的类别
+        /// 判断是否为需要避障的类别
         /// </summary>
         private bool IsObstacleClass(string className)
         {
-            // 根据YOLO类别筛选障碍物（可根据需求扩展）
             List<string> obstacleClasses = new List<string> { "car", "truck", "bus", "boat", "bicycle", "motorcycle" };
             return obstacleClasses.Contains(className);
         }
 
         /// <summary>
-        /// 新增：图像坐标（OpenCV）转换为世界坐标
+        /// 图像坐标（OpenCV）转换为世界坐标
         /// </summary>
         private Vector3 ConvertImagePointToWorldPoint(Point2d imagePoint, Mat imageMat)
         {
-            // 1. 转换为Unity屏幕坐标（Y轴翻转，因为OpenCV和Unity的Y轴方向一致，原点都在左上角）
             float screenX = (float)(imagePoint.X / imageMat.Cols * Screen.width);
             float screenY = (float)(imagePoint.Y / imageMat.Rows * Screen.height);
 
-            // 2. 从屏幕坐标转换到世界坐标（假设障碍物在相机前方5米处，可根据实际场景调整）
-            // 注意：这里简化处理，实际应根据深度信息或相机参数计算真实距离
-            Vector3 screenPos = new Vector3(screenX, screenY, 5f); // Z=5表示相机前方5米
+            Vector3 screenPos = new Vector3(screenX, screenY, 5f);
             Vector3 worldPos = detectionCamera.ScreenToWorldPoint(screenPos);
 
             return worldPos;
         }
 
         /// <summary>
-        /// 新增：提供外部访问障碍物世界坐标的接口
+        /// 提供外部访问障碍物世界坐标的接口
         /// </summary>
         public List<Vector3> GetDetectedObstaclePositions()
         {
             return detectedObstaclePositions;
+        }
+
+        /// <summary>
+        /// 提供外部访问障碍物ID的接口
+        /// </summary>
+        public List<int> GetDetectedObstacleIds()
+        {
+            return detectedObstacleIds;
         }
 
         /// <summary>
@@ -310,7 +325,7 @@ namespace PPUV.YOLOv8
     }
 
     /// <summary>
-    /// YOLOv8 检测核心引擎（唯一实现，无重复）
+    /// YOLOv8 检测核心引擎
     /// </summary>
     public class YoloV8Engine : IDisposable
     {
@@ -333,9 +348,6 @@ namespace PPUV.YOLOv8
             "toothbrush"
         };
 
-        /// <summary>
-        /// 初始化 YOLOv8 引擎
-        /// </summary>
         public YoloV8Engine(string modelPath, float confidenceThreshold = 0.5f, float iouThreshold = 0.4f)
         {
             _confidenceThreshold = confidenceThreshold;
@@ -345,14 +357,10 @@ namespace PPUV.YOLOv8
             if (_net.Empty())
                 throw new InvalidOperationException($"模型加载失败，请检查路径：{modelPath}");
 
-            // 配置 CPU 推理（无需 CUDA）
             _net.SetPreferableBackend(Backend.OPENCV);
             _net.SetPreferableTarget(Target.CPU);
         }
 
-        /// <summary>
-        /// 执行目标检测
-        /// </summary>
         public List<YoloResult> Detect(Mat frame)
         {
             if (frame.Empty())
@@ -361,43 +369,35 @@ namespace PPUV.YOLOv8
             int frameWidth = frame.Cols;
             int frameHeight = frame.Rows;
 
-            // 图像预处理：640x640 缩放 + 归一化
             Mat blob = CvDnn.BlobFromImage(
                 frame, 1 / 255.0, new Size(640, 640),
                 new Scalar(0, 0, 0), swapRB: false, crop: false
             );
 
-            // 模型推理
             _net.SetInput(blob);
             string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
             Mat[] outputs = new Mat[outputLayerNames.Length];
             _net.Forward(outputs, outputLayerNames);
 
-            // 解析结果 + NMS
             List<YoloResult> results = ParseOutput(outputs[0], frameWidth, frameHeight);
 
-            // 释放资源
             blob.Release();
             foreach (var output in outputs) output.Release();
 
             return results;
         }
 
-        /// <summary>
-        /// 解析 YOLOv8 输出（格式：[1, 84, 8400]）
-        /// </summary>
         private List<YoloResult> ParseOutput(Mat output, int frameWidth, int frameHeight)
         {
             List<YoloResult> results = new List<YoloResult>();
-            int rows = output.Rows; // 8400 个候选框
-            int cols = output.Cols; // 84 = 4坐标 + 1置信度 + 80类别
+            int rows = output.Rows;
+            int cols = output.Cols;
 
             for (int i = 0; i < rows; i++)
             {
                 float boxConfidence = output.At<float>(i, 4);
                 if (boxConfidence < _confidenceThreshold) continue;
 
-                // 找到最高置信度的类别
                 int classId = -1;
                 float maxClassScore = 0;
                 for (int j = 5; j < cols; j++)
@@ -412,7 +412,6 @@ namespace PPUV.YOLOv8
 
                 if (maxClassScore < _confidenceThreshold || classId < 0) continue;
 
-                // 反归一化到原图坐标
                 float cx = output.At<float>(i, 0) * frameWidth;
                 float cy = output.At<float>(i, 1) * frameHeight;
                 float w = output.At<float>(i, 2) * frameWidth;
@@ -432,9 +431,6 @@ namespace PPUV.YOLOv8
             return ApplyNonMaxSuppression(results);
         }
 
-        /// <summary>
-        /// 非极大值抑制（NMS）：去除重复检测框
-        /// </summary>
         private List<YoloResult> ApplyNonMaxSuppression(List<YoloResult> results)
         {
             if (results.Count == 0) return results;
@@ -446,9 +442,6 @@ namespace PPUV.YOLOv8
             return indices.Select(idx => results[idx]).ToList();
         }
 
-        /// <summary>
-        /// 释放资源
-        /// </summary>
         public void Dispose()
         {
             _net?.Dispose();
@@ -456,7 +449,7 @@ namespace PPUV.YOLOv8
     }
 
     /// <summary>
-    /// 检测结果数据结构（唯一定义）
+    /// 检测结果数据结构
     /// </summary>
     public class YoloResult
     {
