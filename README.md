@@ -57,3 +57,4 @@ yunqi--Path-Planning-for-Unmanned-Vessels/
 
 [在Anaconda中配置的库.txt](https://github.com/user-attachments/files/23282735/Anaconda.txt)
 
+[版本同步与回滚.docx](https://github.com/user-attachments/files/23560031/default.docx)
