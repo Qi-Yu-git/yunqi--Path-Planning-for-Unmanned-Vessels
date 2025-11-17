@@ -177,6 +177,14 @@ public class GridManager : MonoBehaviour
         Debug.Log("栅格已重置，重新标记障碍物完成");
     }
 
+    // 新增：适配RandomSpawnManager的“初始化栅格”方法调用
+    public void 初始化栅格()
+    {
+        重新初始化栅格数据();
+        标记障碍物();
+        Debug.Log("栅格初始化完成");
+    }
+
     private void 重新初始化栅格数据()
     {
         if (水域平面 == null) return;
