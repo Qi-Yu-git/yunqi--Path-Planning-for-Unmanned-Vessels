@@ -8,8 +8,8 @@
       "hash": "34432703a177c97631a4eb1d908f086037c67969"
     },
     "com.unity.barracuda": {
-      "version": "3.0.0",
-      "depth": 1,
+      "version": "3.0.2",
+      "depth": 0,
       "source": "registry",
       "dependencies": {
         "com.unity.burst": "1.6.0",
@@ -20,7 +20,7 @@
     },
     "com.unity.burst": {
       "version": "1.8.25",
-      "depth": 2,
+      "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.mathematics": "1.2.1",

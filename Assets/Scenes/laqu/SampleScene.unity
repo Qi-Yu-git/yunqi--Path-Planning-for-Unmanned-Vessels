@@ -93,7 +93,7 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
-  m_LightingDataAsset: {fileID: 112000000, guid: c4311db58e8b19447bd85f450c69e724, type: 2}
+  m_LightingDataAsset: {fileID: 112000000, guid: 6276023127718f942afcbeefcc5c9497, type: 2}
   m_LightingSettings: {fileID: 0}
 --- !u!196 &4
 NavMeshSettings:
@@ -885,6 +885,7 @@ MonoBehaviour:
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1
+  m_DeterministicInference: 0
   m_ObservableAttributeHandling: 0
 --- !u!114 &173794674
 MonoBehaviour:
@@ -1622,7 +1623,7 @@ Camera:
   m_Depth: 1
   m_CullingMask:
     serializedVersion: 2
-    m_Bits: 89
+    m_Bits: 25
   m_RenderingPath: -1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
@@ -1912,7 +1913,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 688525660}
-  m_Layer: 6
+  m_Layer: 0
   m_Name: "\u5E72\u6270\u7528\u65E0\u4EBA\u8239"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2119,7 +2120,7 @@ Light:
   m_BounceIntensity: 1
   m_ColorTemperature: 6570
   m_UseColorTemperature: 1
-  m_BoundingSphereOverride: {x: 0, y: 1.8293632e-37, z: 0, w: 0}
+  m_BoundingSphereOverride: {x: 3.313e-42, y: 2.524355e-29, z: 0, w: -5.51013e-40}
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
@@ -3251,7 +3252,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1052049563}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: "\u9646\u5730"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3661,10 +3662,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Profile: {fileID: 11400000, guid: 959f4212c30eed9438a71759b737256c, type: 2}
-  m_StaticLightingSkyUniqueID: 1
+  m_StaticLightingSkyUniqueID: 3
   m_StaticLightingCloudsUniqueID: 0
   m_StaticLightingVolumetricClouds: 1
-  bounces: 1
+  bounces: 2
 --- !u!4 &1325994584
 Transform:
   m_ObjectHideFlags: 1
@@ -4621,7 +4622,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2004669450}
   - component: {fileID: 2004669451}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: ImageInputSystem
   m_TagString: Untagged
   m_Icon: {fileID: 0}
