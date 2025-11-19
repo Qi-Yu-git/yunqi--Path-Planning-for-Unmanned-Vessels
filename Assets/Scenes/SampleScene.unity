@@ -1140,8 +1140,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1fa9dafdf73227469212fea55def618, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  "\u6805\u683C\u5C3A\u5BF8": 1
-  "\u6C34\u57DF\u5E73\u9762": {fileID: 0}
+  "\u6805\u683C\u5C3A\u5BF8": 2
+  "\u6C34\u57DF\u5E73\u9762": {fileID: 318416866}
   obstacleLayer:
     serializedVersion: 2
     m_Bits: 0
@@ -1675,7 +1675,7 @@ Transform:
   m_GameObject: {fileID: 537956244}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0.0003168881, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -0.26, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -4838,7 +4838,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.32
+      value: -0.6
       objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalPosition.z
