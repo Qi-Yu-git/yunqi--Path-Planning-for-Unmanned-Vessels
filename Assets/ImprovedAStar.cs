@@ -201,60 +201,37 @@ public class ImprovedAStar : MonoBehaviour
         return worldPos;
     }
 
-    // 带搜索半径的螺旋式有效栅格查找
+    // ImprovedAStar.cs - FindValidGrid() 方法增强
     private Vector2Int FindValidGrid(Vector2Int originalGrid, int searchRange = NEIGHBOR_SEARCH_RANGE)
     {
-        Debug.Log($"原始栅格：{originalGrid}，搜索半径：{searchRange}，是否有效且可通行：{IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid)}");
+        // 先检查原始栅格是否有效
         if (IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid))
-            return originalGrid;
-
-        // 按搜索半径螺旋遍历
-        for (int layer = 1; layer <= searchRange; layer++)
         {
-            Debug.Log($"开始搜索第{layer}层栅格...");
-            // 上边缘
-            for (int x = -layer; x <= layer; x++)
+            return originalGrid;
+        }
+
+        // 扩大搜索范围（从5→10），增加找到有效栅格的概率
+        for (int range = 1; range <= searchRange; range++)
+        {
+            for (int x = -range; x <= range; x++)
             {
-                var checkPos = new Vector2Int(originalGrid.x + x, originalGrid.y - layer);
-                if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
+                for (int y = -range; y <= range; y++)
                 {
-                    Debug.Log($"找到有效栅格（上边缘）：{checkPos}");
-                    return checkPos;
-                }
-            }
-            // 右边缘
-            for (int y = -layer + 1; y <= layer; y++)
-            {
-                var checkPos = new Vector2Int(originalGrid.x + layer, originalGrid.y + y);
-                if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
-                {
-                    Debug.Log($"找到有效栅格（右边缘）：{checkPos}");
-                    return checkPos;
-                }
-            }
-            // 下边缘
-            for (int x = layer - 1; x >= -layer; x--)
-            {
-                var checkPos = new Vector2Int(originalGrid.x + x, originalGrid.y + layer);
-                if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
-                {
-                    Debug.Log($"找到有效栅格（下边缘）：{checkPos}");
-                    return checkPos;
-                }
-            }
-            // 左边缘
-            for (int y = layer - 1; y > -layer; y--)
-            {
-                var checkPos = new Vector2Int(originalGrid.x - layer, originalGrid.y + y);
-                if (IsValidGrid(checkPos) && gridManager.栅格是否可通行(checkPos))
-                {
-                    Debug.Log($"找到有效栅格（左边缘）：{checkPos}");
-                    return checkPos;
+                    if (Mathf.Abs(x) == range || Mathf.Abs(y) == range) // 只检查当前范围的边界
+                    {
+                        Vector2Int checkGrid = new Vector2Int(originalGrid.x + x, originalGrid.y + y);
+                        if (IsValidGrid(checkGrid) && gridManager.栅格是否可通行(checkGrid))
+                        {
+                            Debug.Log($"在范围 {range} 找到有效栅格: {checkGrid}");
+                            return checkGrid;
+                        }
+                    }
                 }
             }
         }
-        Debug.LogError($"搜索半径{searchRange}内未找到有效栅格！");
-        return new Vector2Int(-1, -1);
+
+        Debug.LogError($"未找到有效栅格，原始栅格: {originalGrid}");
+        return new Vector2Int(-1, -1); // 无效标记
     }
 
     // 校验栅格是否在边界内
@@ -415,29 +392,27 @@ public class ImprovedAStar : MonoBehaviour
     private List<Vector2Int> SimplifyPath(List<Vector2Int> path)
     {
         if (path == null || path.Count <= 2) return path;
-
         List<Vector2Int> simplified = new List<Vector2Int>();
         Vector2Int last = path[0];
         simplified.Add(last);
-        Vector2Int directionPrev = path[1] - path[0]; // 上一移动方向
+        Vector2Int directionPrev = path[1] - path[0];
 
         for (int i = 2; i < path.Count; i++)
         {
             Vector2Int directionCurr = path[i] - path[i - 1];
-            // 方向改变时保留节点
-            if (directionCurr != directionPrev)
+            // 优化：允许微小方向变化（比如方向向量点积>0.95，视为同一方向）
+            // 关键修复：将 Vector2Int 转换为 Vector2（浮点向量）后再调用 normalized
+            float dot = Vector2.Dot(((Vector2)directionPrev).normalized, ((Vector2)directionCurr).normalized);
+            if (dot < 0.95f) // 方向变化较大时才保留节点
             {
                 simplified.Add(path[i - 1]);
                 directionPrev = directionCurr;
             }
         }
-
-        // 添加终点
         simplified.Add(path[path.Count - 1]);
         Debug.Log($"路径简化完成：原始{path.Count}个点 → 简化后{simplified.Count}个点");
         return simplified;
     }
-
     // NodeData结构体定义
     private struct NodeData
     {

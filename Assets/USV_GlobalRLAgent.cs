@@ -1,8 +1,10 @@
+using System.Collections;  // 关键：导入IEnumerator所在的命名空间
 using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using System.Collections.Generic;
+
 
 public class USV_GlobalRLAgent : Agent
 {
@@ -22,25 +24,39 @@ public class USV_GlobalRLAgent : Agent
     private ImprovedAStar globalPathfinder;
     private int currentWaypointIndex = 0;
 
+    // USV_GlobalRLAgent.cs - Awake() 方法修改
     void Awake()
     {
-        // 修复过时API：替换FindObjectOfType
         gridManager = Object.FindFirstObjectByType<GridManager>();
         globalPathfinder = Object.FindFirstObjectByType<ImprovedAStar>();
         rb = GetComponent<Rigidbody>();
 
         if (gridManager != null)
         {
-            // 读取GridManager的公开变量（需在GridManager中定义）
-            gridWidth = gridManager.gridWidth;
-            gridHeight = gridManager.gridHeight;
-            CachePassableGrid();
-            GenerateSafePositions();
+            // 等待GridManager初始化完成后再缓存数据（关键修复）
+            StartCoroutine(WaitForGridInit());
         }
         else
         {
             Debug.LogError("未找到GridManager组件！");
         }
+    }
+
+    // 新增协程：等待GridManager初始化
+    private IEnumerator WaitForGridInit()  // 协程应返回非泛型IEnumerator
+    {
+        // 循环等待直到栅格就绪
+        while (!gridManager.IsGridReady())
+        {
+            Debug.Log("等待GridManager初始化...");
+            yield return new WaitForSeconds(0.5f);
+        }
+
+        // 栅格就绪后再缓存数据
+        gridWidth = gridManager.gridWidth;
+        gridHeight = gridManager.gridHeight;
+        CachePassableGrid();
+        GenerateSafePositions();
     }
 
     public override void Initialize()
@@ -193,33 +209,25 @@ public class USV_GlobalRLAgent : Agent
         lastDistToTarget = distToTarget;
     }
 
+    // USV_GlobalRLAgent.cs - MoveAgent() 方法修改
     void MoveAgent(int action)
     {
-        // 动作空间优化：降低旋转速度，增加前进阻力匹配
         switch (action)
         {
             case 0: // 前进
                 rb.AddForce(transform.forward * MaxSpeed * 0.8f, ForceMode.VelocityChange);
                 break;
-            // 修改后（减小角度至20°）
-            case 1: // 左转（降低角速度）
-                transform.Rotate(Vector3.up, -20f * Time.fixedDeltaTime);
+            case 1: // 左转（进一步降低角速度，从20°→15°）
+                transform.Rotate(Vector3.up, -15f * Time.fixedDeltaTime);
                 break;
-            case 2: // 右转（降低角速度）
-                transform.Rotate(Vector3.up, 20f * Time.fixedDeltaTime);
+            case 2: // 右转（同上）
+                transform.Rotate(Vector3.up, 15f * Time.fixedDeltaTime);
                 break;
-            case 3: // 新增：减速
+            case 3: // 减速
                 rb.linearVelocity *= 0.9f;
                 break;
         }
-
-        // 限制最大速度
-        if (rb.linearVelocity.magnitude > MaxSpeed)
-        {
-            rb.linearVelocity = rb.linearVelocity.normalized * MaxSpeed;
-        }
     }
-
     // 检查栅格是否可通行
     private bool IsPassable(Vector2Int gridPos)
     {

@@ -48,6 +48,11 @@ public class GridManager : MonoBehaviour
     [Tooltip("障碍物颜色")]
     public Color 障碍物颜色 = new Color(1f, 0f, 0f, 0.7f);
 
+    // 初始化超时配置
+    [Header("初始化超时保护")]
+    [Tooltip("栅格初始化超时时间（秒），避免卡死后续流程")]
+    public float initTimeout = 10f; // 默认10秒超时
+
     // 适配Agent的英文属性调用（无需修改Agent逻辑）
     public int gridWidth => 栅格宽度;
     public int gridHeight => 栅格高度;
@@ -59,6 +64,7 @@ public class GridManager : MonoBehaviour
     private Collider[] 碰撞检测结果 = new Collider[1]; // 复用数组，减少GC
     private Vector2 水域大小缓存;
     private float 栅格半尺寸;
+    private float initTimer = 0f; // 初始化计时器（用于超时检测）
 
     void Start()
     {
@@ -82,11 +88,27 @@ public class GridManager : MonoBehaviour
         // 启动分帧初始化
         isInitializing = true;
         初始化索引 = 0;
+        initTimer = 0f; // 重置超时计时器
         Debug.Log($"GridManager：开始分帧初始化，栅格参数：{栅格宽度}x{栅格高度}，每帧处理{每帧初始化数量}个节点");
     }
 
     void Update()
     {
+        // 初始化超时检测（优先处理，避免卡死）
+        if (isInitializing)
+        {
+            initTimer += Time.deltaTime;
+            if (initTimer > initTimeout)
+            {
+                isInitializing = false;
+                isGridReady = true; // 强制标记为就绪，避免后续流程阻塞
+                标记障碍物(); // 尝试标记已初始化的节点
+                Debug.LogError($"GridManager：初始化超时（{initTimeout}秒），强制标记为就绪！请检查：1.水域平面是否正确赋值 2.栅格尺寸是否合理 3.场景是否有过多节点导致初始化缓慢");
+                initTimer = 0f;
+                return;
+            }
+        }
+
         // 分帧处理栅格初始化，避免单帧卡顿
         if (isInitializing)
         {
@@ -115,9 +137,10 @@ public class GridManager : MonoBehaviour
             if (初始化索引 >= 总节点数)
             {
                 isInitializing = false;
-                isGridReady = true;
+                isGridReady = true; // 强制标记为就绪
                 标记障碍物();
                 Debug.Log($"GridManager：分帧初始化完成，共{总节点数}个节点，已自动标记障碍物");
+                initTimer = 0f; // 重置计时器
             }
         }
     }
@@ -143,7 +166,11 @@ public class GridManager : MonoBehaviour
     /// </summary>
     public void 标记障碍物(Camera 主相机 = null)
     {
-        if (栅格地图 == null) return;
+        if (栅格地图 == null)
+        {
+            Debug.LogWarning("GridManager：标记障碍物失败，栅格地图未初始化！");
+            return;
+        }
 
         float 实际检测半径 = 栅格半尺寸 + obstacleCheckRadius + radiusOffset;
         int 总节点数 = 栅格宽度 * 栅格高度;
@@ -170,6 +197,8 @@ public class GridManager : MonoBehaviour
                 栅格地图[x, z] = 节点;
             }
         }
+
+        Debug.Log($"GridManager：障碍物标记完成，共检测{总节点数}个节点");
     }
 
     /// <summary>
@@ -197,7 +226,11 @@ public class GridManager : MonoBehaviour
     /// </summary>
     private void 重新初始化栅格数据()
     {
-        if (水域平面 == null) return;
+        if (水域平面 == null)
+        {
+            Debug.LogError("GridManager：重新初始化失败，未赋值水域平面！");
+            return;
+        }
 
         计算水域大小();
         int 新宽度 = Mathf.CeilToInt(水域大小缓存.x / 栅格尺寸);
@@ -229,17 +262,37 @@ public class GridManager : MonoBehaviour
         }
 
         isGridReady = true;
+        initTimer = 0f;
+        Debug.Log($"GridManager：重新初始化完成，栅格参数：{栅格宽度}x{栅格高度}");
     }
 
     /// <summary>
     /// 计算水域实际大小（基于缩放）
     /// </summary>
+    /// <summary>
+    /// 计算水域实际大小（基于缩放）
+    /// </summary>
     private void 计算水域大小()
     {
-        水域大小缓存 = new Vector2(
-            水域平面.lossyScale.x * 10, // 假设水域原始尺寸为10x10（可根据实际模型调整）
+        if (水域平面 == null)
+        {
+            水域大小缓存 = Vector2.zero;
+            Debug.LogError("GridManager：计算水域大小失败，未赋值水域平面！");
+            return;
+        }
+
+        // 计算新的水域尺寸
+        Vector2 新水域尺寸 = new Vector2(
+            水域平面.lossyScale.x * 10,
             水域平面.lossyScale.z * 10
         );
+
+        // 仅当尺寸变化时才打印日志
+        if (新水域尺寸 != 水域大小缓存)
+        {
+            水域大小缓存 = 新水域尺寸;
+            Debug.Log($"GridManager：计算水域大小完成，尺寸：{水域大小缓存.x}x{水域大小缓存.y}");//删除 Debug.Log 这一行，仅保留错误检测逻辑
+        }
     }
 
     /// <summary>
@@ -247,7 +300,11 @@ public class GridManager : MonoBehaviour
     /// </summary>
     public Vector2Int 世界转栅格(Vector3 世界坐标)
     {
-        if (!isGridReady) return Vector2Int.zero;
+        if (!isGridReady)
+        {
+            Debug.LogWarning("GridManager：世界转栅格失败，栅格未初始化完成！");
+            return Vector2Int.zero;
+        }
 
         Vector3 偏移 = 世界坐标 - 栅格原点;
         int x = Mathf.FloorToInt(偏移.x / 栅格尺寸);
@@ -263,7 +320,11 @@ public class GridManager : MonoBehaviour
     /// </summary>
     public Vector3 栅格转世界(Vector2Int 栅格坐标)
     {
-        if (!isGridReady) return Vector3.zero;
+        if (!isGridReady)
+        {
+            Debug.LogWarning("GridManager：栅格转世界失败，栅格未初始化完成！");
+            return Vector3.zero;
+        }
 
         int x = Mathf.Clamp(栅格坐标.x, 0, 栅格宽度 - 1);
         int z = Mathf.Clamp(栅格坐标.y, 0, 栅格高度 - 1);
@@ -279,8 +340,16 @@ public class GridManager : MonoBehaviour
     /// </summary>
     public bool 栅格是否可通行(Vector2Int 栅格坐标)
     {
-        if (!isGridReady || 栅格地图 == null) return false;
-        if (!IsValidGridPosition(栅格坐标)) return false;
+        if (!isGridReady || 栅格地图 == null)
+        {
+            Debug.LogWarning("GridManager：检查栅格可通行性失败，栅格未初始化完成！");
+            return false;
+        }
+        if (!IsValidGridPosition(栅格坐标))
+        {
+            Debug.LogWarning($"GridManager：栅格坐标{栅格坐标}无效，不可通行！");
+            return false;
+        }
         return 栅格地图[栅格坐标.x, 栅格坐标.y].walkable;
     }
 
@@ -372,6 +441,7 @@ public class GridManager : MonoBehaviour
             栅格原点 + new Vector3(栅格宽度 * 栅格尺寸 / 2, 栅格线高度, 栅格高度 * 栅格尺寸 / 2),
             new Vector3(栅格宽度 * 栅格尺寸, 0.1f, 栅格高度 * 栅格尺寸)
         );
+
         // 绘制A*规划的路径
         ImprovedAStar pathfinder = FindFirstObjectByType<ImprovedAStar>();
         if (pathfinder != null && pathfinder.path != null && pathfinder.path.Count > 1)
@@ -389,9 +459,7 @@ public class GridManager : MonoBehaviour
                 Gizmos.DrawSphere(start, 栅格尺寸 * 0.3f);
             }
             // 绘制终点
-
             Gizmos.DrawSphere(栅格转世界(pathfinder.path[pathfinder.path.Count - 1]), 栅格尺寸 * 0.4f);
         }
-
     }
 }
