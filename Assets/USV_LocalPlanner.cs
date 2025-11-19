@@ -26,7 +26,8 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
     // 优化动作空间
     private readonly float[] linearVelOptions = { 0f, 0.3f, 0.6f, 0.9f, 1.2f };
-    private readonly float[] angularVelOptions = { -45f, -30f, -15f, 0f, 15f, 30f, 45f };
+    // 修改后（进一步缩小范围至±15°）
+    private readonly float[] angularVelOptions = { -15f, -5f, 0f, 5f, 15f };
     private const float MaxLinearVel = 1.2f;
 
     // COLREGs参数
@@ -224,10 +225,12 @@ public partial class USV_LocalPlanner : MonoBehaviour
                 float colregsScore = CalculateCOLREGsScore(predictedPos, predictedRot, angularVel);
                 float smoothScore = CalculateSmoothScore(linearVel, angularVel);
 
-                float totalScore = obstacleScore * 0.5f
-                                 + pathTrackScore * 0.3f
+                // 调整权重
+                float totalScore = obstacleScore * 0.3f    // 降低避障权重
+                                 + pathTrackScore * 0.5f    // 提高路径跟踪权重
                                  + colregsScore * 0.15f
                                  + smoothScore * 0.05f;
+
 
                 if (totalScore > bestScore)
                 {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -19,7 +20,6 @@ public class ImprovedAStar : MonoBehaviour
     [SerializeField] private GridManager gridManager;
     [SerializeField] private Transform startPos;
     [SerializeField] private Transform targetPos;
-    // 修复：将path改为public，允许外部访问
     public List<Vector2Int> path;
 
     // 栅格参数缓存
@@ -39,10 +39,15 @@ public class ImprovedAStar : MonoBehaviour
         Debug.Log("A*路径准备计算（等待目标点生成）");
         if (CheckDependencies())
         {
-            CacheGridParameters();
-            InitializeNodeDataArray();
-            Invoke(nameof(CalculatePathAfterDelay), 0.5f);
+            StartCoroutine(DelayCalculatePath(0.5f));
         }
+    }
+
+    // 延迟启动路径计算
+    private IEnumerator DelayCalculatePath(float delayTime)
+    {
+        yield return new WaitForSeconds(delayTime);
+        StartCoroutine(CalculatePathCoroutine());
     }
 
     private void CacheGridParameters()
@@ -57,7 +62,7 @@ public class ImprovedAStar : MonoBehaviour
     private void InitializeNodeDataArray()
     {
         nodeDataArray = new NodeData[gridWidth, gridHeight];
-        // 预初始化所有节点（避免重复分配）
+        // 预初始化所有节点
         for (int x = 0; x < gridWidth; x++)
         {
             for (int y = 0; y < gridHeight; y++)
@@ -88,40 +93,101 @@ public class ImprovedAStar : MonoBehaviour
         return true;
     }
 
-    // 原私有方法修改为公开方法，允许外部脚本调用
+    // 外部调用接口
     public void CalculatePathAfterDelay()
     {
-        if (gridManager == null) return;
-        Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
-        startPos.position = startWorldPos;
-        Debug.Log($"起点原始世界坐标：{startPos.position}，限制后世界坐标：{startWorldPos}");
-        Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
-        targetPos.position = targetWorldPos;
-        Debug.Log($"目标原始世界坐标：{targetPos.position}，限制后世界坐标：{targetWorldPos}");
-        Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
-        Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
-        Debug.Log($"起点栅格：{startGrid}，目标栅格：{targetGrid}");
-        startGrid = FindValidGrid(startGrid);
-        if (startGrid.x == -1)
-        {
-            Debug.LogError("A*路径计算失败：扩大范围后仍无可用起点栅格！");
-            path = null;
-            return;
-        }
-        startWorldPos = gridManager.栅格转世界(startGrid);
-        startWorldPos.y = WATER_Y_HEIGHT;
-        startPos.position = startWorldPos;
-        Debug.Log($"修正后起点栅格：{startGrid}，世界坐标：{startWorldPos}");
-        if (!gridManager.栅格是否可通行(targetGrid))
-        {
-            Debug.LogError($"A*路径计算失败：终点栅格{targetGrid}不可通行！");
-            path = null;
-            return;
-        }
-        path = FindPath(startGrid, targetGrid);
-        Debug.Log($"A*路径计算完成，目标点：{targetWorldPos}，路径点数量：{path?.Count ?? 0}");
+        StartCoroutine(CalculatePathCoroutine());
     }
 
+    // 协程版路径计算（带重试机制）
+    private IEnumerator CalculatePathCoroutine()
+    {
+        int retryCount = 0;
+        while (retryCount < 3)
+        {
+            if (gridManager == null)
+            {
+                Debug.LogError("A*路径计算失败：gridManager 未赋值！");
+                path = null;
+                yield break;
+            }
+
+            // 等待栅格初始化
+            float waitTime = 0f;
+            while (!gridManager.IsGridReady() && waitTime < 5f)
+            {
+                Debug.LogWarning($"A*等待栅格初始化...已等待{waitTime:F1}秒");
+                waitTime += 0.5f;
+                yield return new WaitForSeconds(0.5f);
+            }
+
+            if (!gridManager.IsGridReady())
+            {
+                Debug.LogError("A*路径计算失败：栅格初始化超时！");
+                path = null;
+                yield break;
+            }
+
+            CacheGridParameters();
+            InitializeNodeDataArray();
+
+            // 校验并修正起点/终点
+            Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
+            Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
+            Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
+            Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
+
+            // 调用带搜索半径的FindValidGrid
+            startGrid = FindValidGrid(startGrid, 5);
+            targetGrid = FindValidGrid(targetGrid, 5);
+
+            if (startGrid.x == -1 || targetGrid.x == -1)
+            {
+                Debug.LogError($"第{retryCount + 1}次重试：无法找到有效起点/终点！");
+                retryCount++;
+                yield return new WaitForSeconds(1f);
+                continue;
+            }
+
+            // 更新起点/终点世界坐标
+            startWorldPos = gridManager.栅格转世界(startGrid);
+            startWorldPos.y = WATER_Y_HEIGHT;
+            startPos.position = startWorldPos;
+            targetWorldPos = gridManager.栅格转世界(targetGrid);
+            targetWorldPos.y = WATER_Y_HEIGHT;
+            targetPos.position = targetWorldPos;
+
+            // 计算路径（包含简化）
+            path = FindPath(startGrid, targetGrid);
+            if (path != null && path.Count > 1)
+            {
+                
+                Debug.Log($"路径计算成功，包含{path.Count}个点：{string.Join("->", path)}");
+
+                yield break;
+            }
+            else
+            {
+                Debug.LogError("路径为空或只有一个点，无法显示");
+
+                retryCount++;
+                yield return new WaitForSeconds(1f);
+            }
+        }
+
+        // 修复：使用Unity 6推荐的API替换过时的FindObjectOfType
+        Debug.LogError("A*路径计算失败：3次重试后仍为空！尝试重新生成起点终点...");
+        RandomSpawnManager spawnManager = FindFirstObjectByType<RandomSpawnManager>();
+        if (spawnManager != null)
+        {
+            spawnManager.Regenerate();
+            yield return new WaitForSeconds(0.3f);
+            StartCoroutine(CalculatePathCoroutine()); // 重新计算路径
+        }
+        path = null;
+    }
+
+    // 限制坐标在栅格范围内
     private Vector3 ClampPositionToGrid(Vector3 worldPos)
     {
         worldPos.y = WATER_Y_HEIGHT;
@@ -135,13 +201,15 @@ public class ImprovedAStar : MonoBehaviour
         return worldPos;
     }
 
-    // 螺旋式搜索更高效的寻找可用栅格
-    private Vector2Int FindValidGrid(Vector2Int originalGrid)
+    // 带搜索半径的螺旋式有效栅格查找
+    private Vector2Int FindValidGrid(Vector2Int originalGrid, int searchRange = NEIGHBOR_SEARCH_RANGE)
     {
-        Debug.Log($"原始栅格：{originalGrid}，是否有效且可通行：{IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid)}");
+        Debug.Log($"原始栅格：{originalGrid}，搜索半径：{searchRange}，是否有效且可通行：{IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid)}");
         if (IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid))
             return originalGrid;
-        for (int layer = 1; layer <= NEIGHBOR_SEARCH_RANGE; layer++)
+
+        // 按搜索半径螺旋遍历
+        for (int layer = 1; layer <= searchRange; layer++)
         {
             Debug.Log($"开始搜索第{layer}层栅格...");
             // 上边缘
@@ -185,16 +253,18 @@ public class ImprovedAStar : MonoBehaviour
                 }
             }
         }
-        Debug.LogError("未找到有效栅格！");
+        Debug.LogError($"搜索半径{searchRange}内未找到有效栅格！");
         return new Vector2Int(-1, -1);
     }
 
+    // 校验栅格是否在边界内
     private bool IsValidGrid(Vector2Int gridPos)
     {
         return gridPos.x >= 0 && gridPos.x < gridWidth &&
                gridPos.y >= 0 && gridPos.y < gridHeight;
     }
 
+    // 核心A*寻路逻辑
     private List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
     {
         ResetNodeData();
@@ -205,18 +275,22 @@ public class ImprovedAStar : MonoBehaviour
         nodeDataArray[start.x, start.y].FCost = hCost;
         nodeDataArray[start.x, start.y].InOpenSet = true;
         openQueue.Enqueue(start, hCost);
+
         while (openQueue.Count > 0)
         {
             Vector2Int current = openQueue.Dequeue();
             // 标记为已处理
             nodeDataArray[current.x, current.y].IsClosed = true;
             nodeDataArray[current.x, current.y].InOpenSet = false;
-            // 到达目标
+
+            // 到达目标，重构并简化路径
             if (current.Equals(target))
             {
-                return ReconstructPath(target);
+                List<Vector2Int> rawPath = ReconstructPath(target);
+                return SimplifyPath(rawPath);
             }
-            // 获取邻居
+
+            // 遍历邻居
             neighborBuffer.Clear();
             GetNeighbors(current, neighborBuffer);
             foreach (Vector2Int neighbor in neighborBuffer)
@@ -225,10 +299,11 @@ public class ImprovedAStar : MonoBehaviour
                     continue;
                 if (!gridManager.栅格是否可通行(neighbor))
                     continue;
+
                 // 计算新G值
                 float newGCost = nodeDataArray[current.x, current.y].GCost +
                                 CalculateDistance(current, neighbor) * cellSize;
-                // 发现更优路径
+                // 更新更优路径
                 if (newGCost < nodeDataArray[neighbor.x, neighbor.y].GCost)
                 {
                     nodeDataArray[neighbor.x, neighbor.y].GCost = newGCost;
@@ -236,6 +311,7 @@ public class ImprovedAStar : MonoBehaviour
                     float neighborFCost = newGCost + neighborHCost;
                     nodeDataArray[neighbor.x, neighbor.y].FCost = neighborFCost;
                     nodeDataArray[neighbor.x, neighbor.y].Parent = current;
+
                     if (nodeDataArray[neighbor.x, neighbor.y].InOpenSet)
                     {
                         openQueue.UpdatePriority(neighbor, neighborFCost);
@@ -251,6 +327,7 @@ public class ImprovedAStar : MonoBehaviour
         return null; // 无路径
     }
 
+    // 重置节点数据
     private void ResetNodeData()
     {
         for (int x = 0; x < gridWidth; x++)
@@ -266,6 +343,7 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
+    // 获取8方向邻居
     private void GetNeighbors(Vector2Int node, List<Vector2Int> buffer)
     {
         foreach (var offset in NeighborOffsets)
@@ -279,14 +357,15 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
+    // 启发式函数（对角线距离）
     private float CalculateHeuristic(Vector2Int a, Vector2Int b)
     {
         int dx = Mathf.Abs(a.x - b.x);
         int dy = Mathf.Abs(a.y - b.y);
-        // 优化的启发式：结合曼哈顿和对角线距离（更精确）
         return (dx + dy + (DIAGONAL_COST - 2) * Mathf.Min(dx, dy)) * cellSizeHeuristic;
     }
 
+    // 计算节点间距离（直走/对角线）
     private float CalculateDistance(Vector2Int a, Vector2Int b)
     {
         int dx = Mathf.Abs(a.x - b.x);
@@ -294,14 +373,15 @@ public class ImprovedAStar : MonoBehaviour
         return dx == 0 || dy == 0 ? STRAIGHT_COST : DIAGONAL_COST;
     }
 
+    // 重构路径
     private List<Vector2Int> ReconstructPath(Vector2Int end)
     {
         pathBuffer.Clear();
         Vector2Int current = end;
-        int safetyCount = 0; // 防止死循环
+        int safetyCount = 0;
+
         while (current.x != -1)
         {
-            // 避免重复添加同一节点
             if (pathBuffer.Contains(current))
             {
                 Debug.LogWarning("路径存在循环节点，已中断！");
@@ -309,7 +389,8 @@ public class ImprovedAStar : MonoBehaviour
             }
             pathBuffer.Add(current);
             current = nodeDataArray[current.x, current.y].Parent;
-            // 安全检查：超过栅格总节点数则中断
+
+            // 防死循环
             safetyCount++;
             if (safetyCount > gridWidth * gridHeight)
             {
@@ -318,80 +399,46 @@ public class ImprovedAStar : MonoBehaviour
                 return null;
             }
         }
+
         if (pathBuffer.Count == 0)
         {
             Debug.LogError("路径重构失败，无有效节点！");
             return null;
         }
+
         pathBuffer.Reverse();
-        // 输出路径点详情，验证是否在栅格范围内
-        Debug.Log($"路径重构完成，节点数：{pathBuffer.Count}，首节点：{pathBuffer[0]}，尾节点：{pathBuffer[pathBuffer.Count - 1]}");
+        Debug.Log($"路径重构完成，原始节点数：{pathBuffer.Count}，首节点：{pathBuffer[0]}，尾节点：{pathBuffer[pathBuffer.Count - 1]}");
         return new List<Vector2Int>(pathBuffer);
     }
 
-    // 聚焦路径右键菜单
-    [ContextMenu("聚焦路径")]
-    public void FocusPath()
+    // 路径简化方法
+    private List<Vector2Int> SimplifyPath(List<Vector2Int> path)
     {
-        if (path == null || path.Count == 0 || gridManager == null)
+        if (path == null || path.Count <= 2) return path;
+
+        List<Vector2Int> simplified = new List<Vector2Int>();
+        Vector2Int last = path[0];
+        simplified.Add(last);
+        Vector2Int directionPrev = path[1] - path[0]; // 上一移动方向
+
+        for (int i = 2; i < path.Count; i++)
         {
-            Debug.LogWarning("无路径可聚焦！");
-            return;
+            Vector2Int directionCurr = path[i] - path[i - 1];
+            // 方向改变时保留节点
+            if (directionCurr != directionPrev)
+            {
+                simplified.Add(path[i - 1]);
+                directionPrev = directionCurr;
+            }
         }
-        // 计算路径中心点
-        Vector3 center = Vector3.zero;
-        foreach (var gridPos in path)
-        {
-            center += gridManager.栅格转世界(gridPos);
-        }
-        center /= path.Count;
-        // 聚焦到路径中心（适用于Scene视图）
-        Camera sceneCamera = Camera.main;
-        if (sceneCamera == null)
-        {
-            Debug.LogWarning("找不到主相机，无法自动聚焦");
-            return;
-        }
-        sceneCamera.transform.position = center + new Vector3(0, 10, -10); // 路径上方视角
-        sceneCamera.transform.LookAt(center);
-        Debug.Log("已聚焦到路径中心");
+
+        // 添加终点
+        simplified.Add(path[path.Count - 1]);
+        Debug.Log($"路径简化完成：原始{path.Count}个点 → 简化后{simplified.Count}个点");
+        return simplified;
     }
 
-    private void DrawPath()
-    {
-        if (path == null || path.Count <= 1)
-        {
-            Debug.Log("路径为空或点数不足，无法绘制");
-            return;
-        }
-        Debug.Log($"执行路径绘制，共{path.Count}个点");
-        // 输出前3个路径点的世界坐标，验证转换是否正确
-        for (int i = 0; i < Mathf.Min(3, path.Count); i++)
-        {
-            Vector3 worldPos = gridManager.栅格转世界(path[i]);
-            Debug.Log($"路径点{i + 1} 栅格坐标：{path[i]} → 世界坐标：{worldPos}");
-        }
-    }
-
-    private void OnDrawGizmos()
-    {
-        // 1. 验证依赖
-        if (gridManager == null || path == null || path.Count < 2)
-            return;
-        // 2. 绘制细绿色路径线
-        Gizmos.color = new Color(0, 1, 0, 0.6f); // 半透明绿色，更柔和
-        for (int i = 0; i < path.Count - 1; i++)
-        {
-            Vector3 start = gridManager.栅格转世界(path[i]);
-            Vector3 end = gridManager.栅格转世界(path[i + 1]);
-            start.y = end.y = 0.1f; // 贴近水面高度，不突兀
-            Gizmos.DrawLine(start, end);
-        }
-        // 3. 轻微标记起点（避免完全隐形）
-        Gizmos.color = new Color(0, 1, 0, 0.8f);
-        Gizmos.DrawSphere(gridManager.栅格转世界(path[0]), 0.2f);
-    }
-
+    // NodeData结构体定义
     private struct NodeData
     {
         public float GCost;
@@ -399,6 +446,7 @@ public class ImprovedAStar : MonoBehaviour
         public Vector2Int Parent;
         public bool IsClosed;
         public bool InOpenSet;
+
         public NodeData(float gCost, float fCost, Vector2Int parent, bool isClosed, bool inOpenSet)
         {
             GCost = gCost;
@@ -409,15 +457,15 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
-    // 二叉堆实现的优先级队列（O(log n)操作复杂度）
+    // 二叉堆优先级队列实现
     private class BinaryHeapPriorityQueue
     {
-        // 使用类而不是结构体解决CS1612错误
         private class HeapItem
         {
             public Vector2Int Node;
             public float Priority;
             public int Index;
+
             public HeapItem(Vector2Int node, float priority)
             {
                 Node = node;
@@ -425,16 +473,20 @@ public class ImprovedAStar : MonoBehaviour
                 Index = -1;
             }
         }
+
         private readonly List<HeapItem> items;
         private readonly Dictionary<Vector2Int, HeapItem> nodeMap;
         private int count;
+
         public int Count => count;
+
         public BinaryHeapPriorityQueue(int initialCapacity)
         {
             items = new List<HeapItem>(initialCapacity);
             nodeMap = new Dictionary<Vector2Int, HeapItem>(initialCapacity);
             count = 0;
         }
+
         public void Enqueue(Vector2Int node, float priority)
         {
             if (nodeMap.TryGetValue(node, out var existing))
@@ -445,44 +497,54 @@ public class ImprovedAStar : MonoBehaviour
                 }
                 return;
             }
+
             var newItem = new HeapItem(node, priority) { Index = count };
             items.Add(newItem);
             nodeMap[node] = newItem;
             count++;
             BubbleUp(count - 1);
         }
+
         public Vector2Int Dequeue()
         {
             if (count == 0)
                 throw new InvalidOperationException("队列已空");
+
             var topItem = items[0];
             count--;
-            // 替换堆顶元素并更新索引（解决CS1612）
+
+            // 替换堆顶元素
             var lastItem = items[count];
             lastItem.Index = 0;
             items[0] = lastItem;
             items.RemoveAt(count);
             nodeMap.Remove(topItem.Node);
+
             BubbleDown(0);
             return topItem.Node;
         }
+
         public void UpdatePriority(Vector2Int node, float newPriority)
         {
             if (!nodeMap.TryGetValue(node, out var item))
                 return;
+
             int index = item.Index;
             item.Priority = newPriority;
             items[index] = item;
             nodeMap[node] = item;
+
             BubbleUp(index);
             BubbleDown(index);
         }
+
         public void Clear()
         {
             items.Clear();
             nodeMap.Clear();
             count = 0;
         }
+
         private void BubbleUp(int index)
         {
             while (index > 0)
@@ -490,10 +552,12 @@ public class ImprovedAStar : MonoBehaviour
                 int parentIndex = (index - 1) >> 1; // (index-1)/2
                 if (items[parentIndex].Priority <= items[index].Priority)
                     break;
+
                 Swap(index, parentIndex);
                 index = parentIndex;
             }
         }
+
         private void BubbleDown(int index)
         {
             while (true)
@@ -501,25 +565,29 @@ public class ImprovedAStar : MonoBehaviour
                 int leftChild = (index << 1) + 1; // 2*index +1
                 int rightChild = leftChild + 1;
                 int smallest = index;
+
                 if (leftChild < count && items[leftChild].Priority < items[smallest].Priority)
                     smallest = leftChild;
                 if (rightChild < count && items[rightChild].Priority < items[smallest].Priority)
                     smallest = rightChild;
+
                 if (smallest == index)
                     break;
+
                 Swap(index, smallest);
                 index = smallest;
             }
         }
+
         private void Swap(int i, int j)
         {
-            // 交换元素并更新索引（解决CS1612）
             HeapItem temp = items[i];
             items[i] = items[j];
             items[j] = temp;
+
             items[i].Index = i;
             items[j].Index = j;
-            // 更新字典映射
+
             nodeMap[items[i].Node] = items[i];
             nodeMap[items[j].Node] = items[j];
         }

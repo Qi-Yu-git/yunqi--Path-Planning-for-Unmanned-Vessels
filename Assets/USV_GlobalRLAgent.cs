@@ -201,11 +201,12 @@ public class USV_GlobalRLAgent : Agent
             case 0: // 前进
                 rb.AddForce(transform.forward * MaxSpeed * 0.8f, ForceMode.VelocityChange);
                 break;
+            // 修改后（减小角度至20°）
             case 1: // 左转（降低角速度）
-                transform.Rotate(Vector3.up, -45f * Time.fixedDeltaTime);
+                transform.Rotate(Vector3.up, -20f * Time.fixedDeltaTime);
                 break;
             case 2: // 右转（降低角速度）
-                transform.Rotate(Vector3.up, 45f * Time.fixedDeltaTime);
+                transform.Rotate(Vector3.up, 20f * Time.fixedDeltaTime);
                 break;
             case 3: // 新增：减速
                 rb.linearVelocity *= 0.9f;

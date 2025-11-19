@@ -1,175 +1,128 @@
-using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
 
 public class RandomSpawnManager : MonoBehaviour
 {
-    [Header("关联核心组件")]
-    public GridManager gridManager;
-    public Transform startPos; // 无人船起点
-    public Transform targetPos; // 目标点
-    public GameObject obstaclePrefab; // 障碍物预制体
+    [SerializeField] private GridManager gridManager;
+    [SerializeField] private Transform startPos;
+    [SerializeField] private Transform targetPos;
+    [SerializeField] private Vector2 spawnRangeX = new Vector2(-10, 10); // 随机X范围
+    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-10, 10); // 随机Z范围
+    [SerializeField] private float minStartTargetDistance = 8f; // 起点终点最小距离
+    [SerializeField] private int maxSinglePosRetries = 5; // 单个位置最大重试次数
+    [SerializeField] private float retryOffsetRange = 2f; // 重试偏移范围（小范围保证随机性）
 
-    [Header("生成配置")]
-    public int obstacleCount = 3; // 减少障碍物数量，降低初始难度
-    public float obstacleY = 0.5f;
-    public Vector2 fixedSpawnRangeX = new Vector2(-14.5f, 14.5f);
-    public Vector2 fixedSpawnRangeZ = new Vector2(-9.5f, 9.5f);
-
-    private List<Vector3> spawnedObstaclePositions = new List<Vector3>();
-    private float xRangeSize;
-    private float zRangeSize;
-    private int maxRetryCount = 100; // 统一重试次数配置
-
-    void Start()
+    private void Start()
     {
-        // 预计算范围大小，避免重复计算
-        xRangeSize = fixedSpawnRangeX.y - fixedSpawnRangeX.x;
-        zRangeSize = fixedSpawnRangeZ.y - fixedSpawnRangeZ.x;
-
-        SpawnRandomObstacles();
-
-        if (gridManager != null)
-            gridManager.初始化栅格(); // 修复：调用GridManager新增的“初始化栅格”方法
-
-        SetRandomStartPos();
-        SetRandomTargetPos();
-    }
-
-    // 生成随机位置（起点/目标点）
-    public Vector3 GetRandomPos()
-    {
-        Vector3 randomSpawnPos;
-        int tryCount = 0;
-        do
+        if (gridManager == null)
         {
-            // 使用更高效的随机位置计算方式
-            float x = fixedSpawnRangeX.x + Random.value * xRangeSize;
-            float z = fixedSpawnRangeZ.x + Random.value * zRangeSize;
-            randomSpawnPos = new Vector3(x, 0.4f, z);
-            tryCount++;
-        } while (!IsValidSpawnPos(randomSpawnPos) && tryCount < maxRetryCount);
-        return randomSpawnPos;
-    }
-
-    // 检查位置是否有效（使用缓存的Vector3避免重复创建）
-    private bool IsValidSpawnPos(Vector3 pos)
-    {
-        // 1. 检查是否在水域范围内
-        if (pos.x < fixedSpawnRangeX.x || pos.x > fixedSpawnRangeX.y ||
-            pos.z < fixedSpawnRangeZ.x || pos.z > fixedSpawnRangeZ.y)
-            return false;
-
-        // 2. 检查栅格是否可通行
-        if (gridManager != null)
-        {
-            Vector2Int gridPos = gridManager.世界转栅格(pos);
-            if (!gridManager.栅格是否可通行(gridPos))
-                return false;
-        }
-
-        return true;
-    }
-
-    // 生成障碍物
-    private void SpawnRandomObstacles()
-    {
-        if (obstaclePrefab == null || gridManager == null)
-        {
-            Debug.LogError("缺少障碍物预制体或GridManager！");
+            Debug.LogError("RandomSpawnManager：GridManager未赋值！");
             return;
         }
-        spawnedObstaclePositions.Clear();
-        // 预分配列表容量
-        spawnedObstaclePositions.Capacity = obstacleCount;
-
-        for (int i = 0; i < obstacleCount; i++)
-        {
-            Vector3 pos = GetObstacleRandomPos();
-            Instantiate(obstaclePrefab, pos, Quaternion.identity, transform);
-            spawnedObstaclePositions.Add(pos);
-        }
+        // 等待栅格初始化
+        StartCoroutine(WaitForGridInitThenSpawn());
     }
 
-    // 获取障碍物随机位置
-    private Vector3 GetObstacleRandomPos()
+    private IEnumerator WaitForGridInitThenSpawn()
     {
-        Vector3 pos = new Vector3(0, obstacleY, 0);
-        int tryCount = 0;
-        while (tryCount < maxRetryCount)
+        while (!gridManager.IsGridReady())
         {
-            tryCount++;
-            float x = fixedSpawnRangeX.x + Random.value * xRangeSize;
-            float z = fixedSpawnRangeZ.x + Random.value * zRangeSize;
-            pos.x = x;
-            pos.z = z;
-            if (IsObstaclePosValid(pos))
-                break;
+            yield return new WaitForSeconds(0.2f);
         }
-        return pos;
+        GenerateRandomStartAndTarget();
     }
 
-    // 检查障碍物位置是否有效
-    private bool IsObstaclePosValid(Vector3 pos)
+    // 生成随机起点和终点（动态校验+轻量重试）
+    public void GenerateRandomStartAndTarget()
     {
-        // 1. 检查是否在水域内
-        if (pos.x < fixedSpawnRangeX.x || pos.x > fixedSpawnRangeX.y ||
-            pos.z < fixedSpawnRangeZ.x || pos.z > fixedSpawnRangeZ.y)
-            return false;
-
-        // 2. 检查是否在栅格内
-        Vector2Int gridPos = gridManager.世界转栅格(pos);
-        if (gridPos.x < 0 || gridPos.x >= gridManager.gridWidth ||
-            gridPos.y < 0 || gridPos.y >= gridManager.gridHeight)
-            return false;
-
-        // 3. 检查是否与其他障碍物重叠（使用平方距离，避免开方运算）
-        const float minDistanceSquared = 9f; // 最小间距3米
-        foreach (var p in spawnedObstaclePositions)
+        // 生成有效起点
+        Vector3 validStart = GenerateValidRandomPos();
+        if (IsInvalidPos(validStart))
         {
-            float dx = pos.x - p.x;
-            float dz = pos.z - p.z;
-            if (dx * dx + dz * dz < minDistanceSquared)
-                return false;
+            Debug.LogError("无法生成有效起点！");
+            return;
         }
 
+        // 生成有效终点（确保与起点距离）
+        Vector3 validTarget = Vector3.zero;
+        int targetRetry = 0;
+        do
+        {
+            validTarget = GenerateValidRandomPos();
+            targetRetry++;
+        } while (IsInvalidPos(validTarget) ||
+                 Vector3.Distance(validStart, validTarget) < minStartTargetDistance &&
+                 targetRetry < maxSinglePosRetries * 2);
+
+        if (IsInvalidPos(validTarget))
+        {
+            Debug.LogError("无法生成有效终点！");
+            return;
+        }
+
+        // 赋值位置
+        startPos.position = validStart;
+        targetPos.position = validTarget;
+        Debug.Log($"生成起点：{validStart}，终点：{validTarget}（距离：{Vector3.Distance(validStart, validTarget):F2}m）");
+    }
+
+    // 生成单个有效随机位置（核心轻量逻辑）
+    private Vector3 GenerateValidRandomPos()
+    {
+        Vector3 randomPos;
+        int retryCount = 0;
+
+        do
+        {
+            // 基础随机位置（在指定范围内）
+            float x = Random.Range(spawnRangeX.x, spawnRangeX.y);
+            float z = Random.Range(spawnRangeZ.x, spawnRangeZ.y);
+            randomPos = new Vector3(x, 0.4f, z);
+
+            // 若无效，小范围偏移重试（保持随机性）
+            if (retryCount > 0)
+            {
+                float offsetX = Random.Range(-retryOffsetRange, retryOffsetRange);
+                float offsetZ = Random.Range(-retryOffsetRange, retryOffsetRange);
+                randomPos.x += offsetX;
+                randomPos.z += offsetZ;
+                // 限制在范围内，避免偏移出界
+                randomPos.x = Mathf.Clamp(randomPos.x, spawnRangeX.x, spawnRangeX.y);
+                randomPos.z = Mathf.Clamp(randomPos.z, spawnRangeZ.x, spawnRangeZ.y);
+            }
+
+            retryCount++;
+        }
+        // 校验条件：栅格可通行 + 远离障碍物（轻量校验）
+        while (!IsPosValid(randomPos) && retryCount < maxSinglePosRetries);
+
+        // 若多次重试仍无效，返回无效标记
+        return retryCount < maxSinglePosRetries ? randomPos : Vector3.negativeInfinity;
+    }
+
+    // 轻量校验位置有效性（核心优化点）
+    private bool IsPosValid(Vector3 worldPos)
+    {
+        // 1. 转换为栅格坐标
+        Vector2Int gridPos = gridManager.世界转栅格(worldPos);
+        // 2. 校验栅格是否有效且可通行（最关键）
+        if (!gridManager.IsValidGridPosition(gridPos) || !gridManager.栅格是否可通行(gridPos))
+            return false;
+        // 3. 简单碰撞检测（只检测自身位置，不检测周围，降低消耗）
+        if (Physics.CheckSphere(worldPos, 0.5f, LayerMask.GetMask("Obstacle")))
+            return false;
         return true;
     }
 
-    // 设置起点位置
-    private void SetRandomStartPos()
+    private bool IsInvalidPos(Vector3 pos)
     {
-        if (startPos != null)
-        {
-            startPos.position = GetRandomPos();
-            startPos.gameObject.SetActive(true);
-            Debug.Log($"无人船起点：{startPos.position}");
-        }
-        else
-            Debug.LogError("未设置startPos！");
+        return pos == Vector3.negativeInfinity;
     }
 
-    // 设置目标点位置
-    private void SetRandomTargetPos()
+    // 供外部调用（重新生成路径时）
+    public void Regenerate()
     {
-        if (targetPos != null && startPos != null)
-        {
-            Vector3 newTargetPos;
-            int tryCount = 0;
-            const float minDistanceSquared = 25f; // 起点与目标最小距离5米
-            float dx, dz; // 声明在循环外部
-            do
-            {
-                newTargetPos = GetRandomPos();
-                tryCount++;
-                // 平方距离比较，效率更高
-                dx = newTargetPos.x - startPos.position.x;
-                dz = newTargetPos.z - startPos.position.z;
-            } while (dx * dx + dz * dz < minDistanceSquared && tryCount < maxRetryCount);
-
-            targetPos.position = newTargetPos;
-            Debug.Log($"目标点位置：{newTargetPos}");
-        }
-        else
-            Debug.LogError("未设置targetPos或startPos！");
+        GenerateRandomStartAndTarget();
     }
 }

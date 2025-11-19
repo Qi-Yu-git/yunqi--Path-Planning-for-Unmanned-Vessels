@@ -156,6 +156,7 @@ MonoBehaviour:
   "\u6805\u683C\u539F\u70B9": {x: -15, y: 0, z: -10}
   "\u6805\u683C\u5BBD\u5EA6": 100
   "\u6805\u683C\u9AD8\u5EA6": 67
+  "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 200
   obstacleCheckRadius: 0.001
   radiusOffset: -0.01
   "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.5
@@ -898,11 +899,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27cf9ba6050ba1e418a4002ba81ec937, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  imageInputSelector: {fileID: 2004669451}
   localSafeDistance: 3
   colregsSafeDistance: 4
   dwaPredictTime: 0.8
   returnToPathThreshold: 2
+  dynamicObstacles: []
+  dynamicObstacleVelocities: []
   predictionTime: 2
   collisionThreshold: 2.5
   avoidDistance: 3
@@ -1171,11 +1173,11 @@ MonoBehaviour:
   gridManager: {fileID: 41255706}
   startPos: {fileID: 173794670}
   targetPos: {fileID: 1521328185}
-  obstaclePrefab: {fileID: 795777207}
-  obstacleCount: 75
-  obstacleY: 0
-  fixedSpawnRangeX: {x: -14.5, y: 14.5}
-  fixedSpawnRangeZ: {x: -9.5, y: 9.5}
+  spawnRangeX: {x: -10, y: 10}
+  spawnRangeZ: {x: -10, y: 10}
+  minStartTargetDistance: 8
+  maxSinglePosRetries: 5
+  retryOffsetRange: 2
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
