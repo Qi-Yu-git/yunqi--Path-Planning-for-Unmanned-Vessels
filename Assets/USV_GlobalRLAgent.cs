@@ -8,6 +8,14 @@ using System.Collections.Generic;
 
 public class USV_GlobalRLAgent : Agent
 {
+    // 新增参数：控制接近目标的平滑性
+    [Tooltip("接近目标的平滑系数，值越小减速越早")]
+    public float targetProximitySmoothing = 0.3f;
+    [Tooltip("最大单步奖励上限")]
+    public float maxStepReward = 2f;
+    [Tooltip("最小单步惩罚下限")]
+    public float minStepPenalty = -1f;
+
     public Transform target; // 目标点（公开，供LocalPlanner访问）
     private GridManager gridManager; // 栅格管理器
     private Rigidbody rb; // 刚体组件
@@ -159,64 +167,84 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
+    // 修改OnActionReceived方法中的奖励计算部分
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (target == null || gridManager == null) return;
 
-        // 执行移动动作
+        // 执行移动动作（保持不变）
         MoveAgent(actions.DiscreteActions[0]);
 
-        // 奖励函数优化
+        // 优化奖励函数：限制单次奖励幅度，防止突进
         float distToTarget = Vector3.Distance(transform.position, target.position);
         float distanceDelta = lastDistToTarget - distToTarget;
 
-        // 增强靠近目标的奖励
-        AddReward(distanceDelta * 0.5f);
+        // 1. 基于距离变化的奖励（限制幅度）
+        float proximityFactor = Mathf.Clamp01(1 - (distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f)));
+        float stepReward = distanceDelta * (1 + proximityFactor * targetProximitySmoothing);
+        stepReward = Mathf.Clamp(stepReward, minStepPenalty, maxStepReward);
+        AddReward(stepReward);
 
-        // 碰撞惩罚增强
+        // 2. 增加平滑移动奖励（鼓励稳定速度）
+        float currentSpeed = rb.linearVelocity.magnitude;
+        float speedStabilityReward = 0.1f * (1 - Mathf.Abs(currentSpeed - MaxSpeed * 0.5f) / (MaxSpeed * 0.5f));
+        AddReward(speedStabilityReward);
+
+        // 3. 碰撞惩罚（保持不变）
         Vector2Int currentGrid = gridManager.世界转栅格(transform.position);
         if (!IsPassable(currentGrid))
         {
-            AddReward(-50f); // 提高惩罚
+            AddReward(-50f);
             EndEpisode();
             return;
         }
 
-        // 到达目标奖励
+        // 4. 到达目标奖励（增加距离检查，防止未减速）
         if (distToTarget < 1f)
         {
-            AddReward(100f); // 提高奖励
+            // 检查是否减速到位
+            if (currentSpeed < MaxSpeed * 0.3f)
+            {
+                AddReward(100f); // 完全减速到达给予全额奖励
+            }
+            else
+            {
+                AddReward(50f); // 未减速到达给予部分奖励
+            }
             EndEpisode();
         }
 
-        // 超时惩罚（防止无限循环）
+        // 5. 超时惩罚（保持不变）
         if (StepCount > 5000)
         {
             AddReward(-20f);
             EndEpisode();
         }
 
-        // 更新路径点索引
-        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > currentWaypointIndex)
-        {
-            float distToWaypoint = Vector3.Distance(transform.position, gridManager.栅格转世界(globalPathfinder.path[currentWaypointIndex]));
-            if (distToWaypoint < 1.5f)
-            {
-                currentWaypointIndex = Mathf.Min(currentWaypointIndex + 1, globalPathfinder.path.Count - 1);
-            }
-        }
-
+        // 更新路径点索引和距离记录
+        UpdateWaypointIndex();
         lastDistToTarget = distToTarget;
     }
-
     // USV_GlobalRLAgent.cs - MoveAgent() 方法修改
     void MoveAgent(int action)
     {
+        // 当前速度
+        float currentSpeed = rb.linearVelocity.magnitude;
+
         switch (action)
         {
-            case 0: // 前进
-                rb.AddForce(transform.forward * MaxSpeed * 0.8f, ForceMode.VelocityChange);
+            case 0: // 前进（根据当前速度动态调整加速度）
+                if (currentSpeed < MaxSpeed * 0.8f)
+                {
+                    rb.AddForce(transform.forward * MaxSpeed * 0.6f, ForceMode.VelocityChange);
+                }
+                else
+                {
+                    // 接近最大速度时减小加速度，防止超速突进
+                    rb.AddForce(transform.forward * MaxSpeed * 0.2f, ForceMode.VelocityChange);
+                }
                 break;
+   
             case 1: // 左转（进一步降低角速度，从20°→15°）
                 transform.Rotate(Vector3.up, -15f * Time.fixedDeltaTime);
                 break;
@@ -228,6 +256,19 @@ public class USV_GlobalRLAgent : Agent
                 break;
         }
     }
+    // 新增路径点索引更新方法
+    private void UpdateWaypointIndex()
+    {
+        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > currentWaypointIndex)
+        {
+            float distToWaypoint = Vector3.Distance(transform.position, gridManager.栅格转世界(globalPathfinder.path[currentWaypointIndex]));
+            if (distToWaypoint < 1.5f)
+            {
+                currentWaypointIndex = Mathf.Min(currentWaypointIndex + 1, globalPathfinder.path.Count - 1);
+            }
+        }
+    }
+
     // 检查栅格是否可通行
     private bool IsPassable(Vector2Int gridPos)
     {

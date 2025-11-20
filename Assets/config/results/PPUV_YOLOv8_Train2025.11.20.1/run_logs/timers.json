@@ -1,0 +1,42 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1763644336",
+        "python_version": "3.8.20 (default, Oct  3 2024, 15:19:54) [MSC v.1929 64 bit (AMD64)]",
+        "command_line_arguments": "D:\\conda_envs\\mlagents_train\\Scripts\\mlagents-learn trainer_config.yaml --run-id=PPUV_YOLOv8_Train2025.11.20.1 --results-dir=results",
+        "mlagents_version": "0.30.0",
+        "mlagents_envs_version": "0.30.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.4.1+cpu",
+        "numpy_version": "1.21.2",
+        "end_time_seconds": "1763644404"
+    },
+    "total": 68.6725093,
+    "count": 1,
+    "self": 0.008591800000004923,
+    "children": {
+        "run_training.setup": {
+            "total": 0.12576759999999965,
+            "count": 1,
+            "self": 0.12576759999999965
+        },
+        "TrainerController.start_learning": {
+            "total": 68.5381499,
+            "count": 1,
+            "self": 0.00015409999998894364,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 68.5379801,
+                    "count": 1,
+                    "self": 68.5379801
+                },
+                "TrainerController._save_models": {
+                    "total": 1.5700000005836046e-05,
+                    "count": 1,
+                    "self": 1.5700000005836046e-05
+                }
+            }
+        }
+    }
+}

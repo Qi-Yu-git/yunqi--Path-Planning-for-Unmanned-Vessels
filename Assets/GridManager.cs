@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+ï»¿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
@@ -20,446 +20,379 @@ internal struct Node
 
 public class GridManager : MonoBehaviour
 {
-    [Header("Õ¤¸ñ»ù´¡ÅäÖÃ")]
-    public float Õ¤¸ñ³ß´ç = 1f;
-    public Transform Ë®ÓòÆ½Ãæ;
+    [Header("æ …æ ¼åŸºç¡€é…ç½®")]
+    public float æ …æ ¼å°ºå¯¸ = 1f;
+    public Transform æ°´åŸŸå¹³é¢;
     public LayerMask obstacleLayer;
-    public Vector3 Õ¤¸ñÔ­µã;
-    public int Õ¤¸ñ¿í¶È; // ÖĞÎÄ±äÁ¿£¨ÓëAgentµÄgridWidth¶ÔÓ¦£©
-    public int Õ¤¸ñ¸ß¶È; // ÖĞÎÄ±äÁ¿£¨ÓëAgentµÄgridHeight¶ÔÓ¦£©
+    public Vector3 æ …æ ¼åŸç‚¹;
+    public int æ …æ ¼å®½åº¦;
+    public int æ …æ ¼é«˜åº¦;
 
-    [Header("³õÊ¼»¯ĞÔÄÜÓÅ»¯")]
-    [Tooltip("Ã¿Ö¡×î´ó³õÊ¼»¯½ÚµãÊı£¨ÖµÔ½Ğ¡Ô½Á÷³©£¬Ä¬ÈÏ100£©")]
-    public int Ã¿Ö¡³õÊ¼»¯ÊıÁ¿ = 100; // ÓÅ»¯£º´Ó200½µÖÁ100£¬½µµÍÃ¿Ö¡¿ªÏú
+    [Header("åˆå§‹åŒ–æ€§èƒ½ä¼˜åŒ–")]
+    public int æ¯å¸§åˆå§‹åŒ–æ•°é‡ = 100;
 
-    [Header("ÕÏ°­Îï¼ì²âÅäÖÃ")]
-    [Tooltip("ÕÏ°­Îï¼ì²â°ë¾¶£¨ÖµÔ½Ğ¡Ô½¾«×¼£¬Ä¬ÈÏ0.5f£©")]
+    [Header("éšœç¢ç‰©æ£€æµ‹é…ç½®")]
     public float obstacleCheckRadius = 0.5f;
-    [Tooltip("¼ì²â°ë¾¶Æ«ÒÆÁ¿£¨À©Õ¹/ÊÕËõ¼ì²â·¶Î§£¬Ä¬ÈÏ0f£©")]
     public float radiusOffset = 0f;
 
-    [Header("GizmosÏÔÊ¾ÉèÖÃ£¨½µµÍÃ÷ÏÔ¶È£©")]
-    [Tooltip("Õ¤¸ñÏß¸ß¶È£¨Ô½µÍÔ½²»Ã÷ÏÔ£©")]
-    public float Õ¤¸ñÏß¸ß¶È = 0.1f;
-    [Tooltip("ÕÏ°­ÎïÏÔÊ¾¸ß¶È")]
-    public float ÕÏ°­ÎïÏÔÊ¾¸ß¶È = 0.2f;
-    [Tooltip("Õ¤¸ñÏßÑÕÉ«£¨alphaÖµÔ½µÍÔ½Í¸Ã÷£©")]
-    public Color Õ¤¸ñÏßÑÕÉ« = new Color(0.5f, 0.5f, 0.5f, 0.1f);
-    [Tooltip("ÕÏ°­ÎïÑÕÉ«")]
-    public Color ÕÏ°­ÎïÑÕÉ« = new Color(1f, 0f, 0f, 0.7f);
+    [Header("Gizmosæ˜¾ç¤ºè®¾ç½®")]
+    public float æ …æ ¼çº¿é«˜åº¦ = 0.1f;
+    public float éšœç¢ç‰©æ˜¾ç¤ºé«˜åº¦ = 0.2f;
+    public Color æ …æ ¼çº¿é¢œè‰² = new Color(0.5f, 0.5f, 0.5f, 0.1f);
+    public Color éšœç¢ç‰©é¢œè‰² = new Color(1f, 0f, 0f, 0.7f);
 
-    // ³õÊ¼»¯³¬Ê±ÅäÖÃ
-    [Header("³õÊ¼»¯³¬Ê±±£»¤")]
-    [Tooltip("Õ¤¸ñ³õÊ¼»¯³¬Ê±Ê±¼ä£¨Ãë£©£¬±ÜÃâ¿¨ËÀºóĞøÁ÷³Ì")]
-    public float initTimeout = 10f; // Ä¬ÈÏ10Ãë³¬Ê±
+    [Header("åˆå§‹åŒ–è¶…æ—¶ä¿æŠ¤")]
+    public float initTimeout = 10f;
 
-    // ÊÊÅäAgentµÄÓ¢ÎÄÊôĞÔµ÷ÓÃ£¨ÎŞĞèĞŞ¸ÄAgentÂß¼­£©
-    public int gridWidth => Õ¤¸ñ¿í¶È;
-    public int gridHeight => Õ¤¸ñ¸ß¶È;
+    public int gridWidth => æ …æ ¼å®½åº¦;
+    public int gridHeight => æ …æ ¼é«˜åº¦;
 
-    private Node[,] Õ¤¸ñµØÍ¼;
-    private int ³õÊ¼»¯Ë÷Òı = 0;
+    private Node[,] æ …æ ¼åœ°å›¾;
+    private int åˆå§‹åŒ–ç´¢å¼• = 0;
     private bool isInitializing = false;
     private bool isGridReady = false;
-    private Collider[] Åö×²¼ì²â½á¹û = new Collider[1]; // ¸´ÓÃÊı×é£¬¼õÉÙGC
-    private Vector2 Ë®Óò´óĞ¡»º´æ;
-    private float Õ¤¸ñ°ë³ß´ç;
-    private float initTimer = 0f; // ³õÊ¼»¯¼ÆÊ±Æ÷£¨ÓÃÓÚ³¬Ê±¼ì²â£©
+    private Collider[] ç¢°æ’æ£€æµ‹ç»“æœ = new Collider[1];
+    private Vector2 æ°´åŸŸå¤§å°ç¼“å­˜;
+    private float æ …æ ¼åŠå°ºå¯¸;
+    private float initTimer = 0f;
 
     void Start()
     {
-        if (Ë®ÓòÆ½Ãæ == null)
+        if (æ°´åŸŸå¹³é¢ == null)
         {
-            Debug.LogError("GridManager£ºÎ´¸³ÖµË®ÓòÆ½Ãæ£¡");
+            Debug.LogError("GridManagerï¼šæœªèµ‹å€¼æ°´åŸŸå¹³é¢ï¼");
             return;
         }
 
-        Õ¤¸ñ°ë³ß´ç = Õ¤¸ñ³ß´ç / 2f;
-        ¼ÆËãË®Óò´óĞ¡();
+        æ …æ ¼åŠå°ºå¯¸ = æ …æ ¼å°ºå¯¸ / 2f;
+        è®¡ç®—æ°´åŸŸå¤§å°();
 
-        // ³õÊ¼»¯Õ¤¸ñ¿í¸ß£¨×îĞ¡10x10£¬±ÜÃâ¹ıĞ¡£©
-        Õ¤¸ñ¿í¶È = Mathf.Max(10, Mathf.CeilToInt(Ë®Óò´óĞ¡»º´æ.x / Õ¤¸ñ³ß´ç));
-        Õ¤¸ñ¸ß¶È = Mathf.Max(10, Mathf.CeilToInt(Ë®Óò´óĞ¡»º´æ.y / Õ¤¸ñ³ß´ç));
+        æ …æ ¼å®½åº¦ = Mathf.Max(10, Mathf.CeilToInt(æ°´åŸŸå¤§å°ç¼“å­˜.x / æ …æ ¼å°ºå¯¸));
+        æ …æ ¼é«˜åº¦ = Mathf.Max(10, Mathf.CeilToInt(æ°´åŸŸå¤§å°ç¼“å­˜.y / æ …æ ¼å°ºå¯¸));
 
-        // ¼ÆËãÕ¤¸ñÔ­µã£¨Ë®ÓòÖĞĞÄ¶ÔÆë£©
-        Õ¤¸ñÔ­µã = Ë®ÓòÆ½Ãæ.position - new Vector3(Ë®Óò´óĞ¡»º´æ.x / 2, 0, Ë®Óò´óĞ¡»º´æ.y / 2);
-        Õ¤¸ñµØÍ¼ = new Node[Õ¤¸ñ¿í¶È, Õ¤¸ñ¸ß¶È];
+        æ …æ ¼åŸç‚¹ = æ°´åŸŸå¹³é¢.position - new Vector3(æ°´åŸŸå¤§å°ç¼“å­˜.x / 2, 0, æ°´åŸŸå¤§å°ç¼“å­˜.y / 2);
+        æ …æ ¼åœ°å›¾ = new Node[æ …æ ¼å®½åº¦, æ …æ ¼é«˜åº¦];
 
-        // Æô¶¯·ÖÖ¡³õÊ¼»¯
         isInitializing = true;
-        ³õÊ¼»¯Ë÷Òı = 0;
-        initTimer = 0f; // ÖØÖÃ³¬Ê±¼ÆÊ±Æ÷
-        Debug.Log($"GridManager£º¿ªÊ¼·ÖÖ¡³õÊ¼»¯£¬Õ¤¸ñ²ÎÊı£º{Õ¤¸ñ¿í¶È}x{Õ¤¸ñ¸ß¶È}£¬Ã¿Ö¡´¦Àí{Ã¿Ö¡³õÊ¼»¯ÊıÁ¿}¸ö½Úµã");
+        åˆå§‹åŒ–ç´¢å¼• = 0;
+        initTimer = 0f;
+        Debug.Log($"GridManagerï¼šå¼€å§‹åˆ†å¸§åˆå§‹åŒ–ï¼Œæ …æ ¼å‚æ•°ï¼š{æ …æ ¼å®½åº¦}x{æ …æ ¼é«˜åº¦}ï¼Œæ¯å¸§å¤„ç†{æ¯å¸§åˆå§‹åŒ–æ•°é‡}ä¸ªèŠ‚ç‚¹");
     }
 
     void Update()
     {
-        // ³õÊ¼»¯³¬Ê±¼ì²â£¨ÓÅÏÈ´¦Àí£¬±ÜÃâ¿¨ËÀ£©
         if (isInitializing)
         {
             initTimer += Time.deltaTime;
             if (initTimer > initTimeout)
             {
                 isInitializing = false;
-                isGridReady = true; // Ç¿ÖÆ±ê¼ÇÎª¾ÍĞ÷£¬±ÜÃâºóĞøÁ÷³Ì×èÈû
-                ±ê¼ÇÕÏ°­Îï(); // ³¢ÊÔ±ê¼ÇÒÑ³õÊ¼»¯µÄ½Úµã
-                Debug.LogError($"GridManager£º³õÊ¼»¯³¬Ê±£¨{initTimeout}Ãë£©£¬Ç¿ÖÆ±ê¼ÇÎª¾ÍĞ÷£¡Çë¼ì²é£º1.Ë®ÓòÆ½ÃæÊÇ·ñÕıÈ·¸³Öµ 2.Õ¤¸ñ³ß´çÊÇ·ñºÏÀí 3.³¡¾°ÊÇ·ñÓĞ¹ı¶à½Úµãµ¼ÖÂ³õÊ¼»¯»ºÂı");
+                isGridReady = true;
+                æ ‡è®°éšœç¢ç‰©();
+                Debug.LogError($"GridManagerï¼šåˆå§‹åŒ–è¶…æ—¶ï¼ˆ{initTimeout}ç§’ï¼‰ï¼Œå¼ºåˆ¶æ ‡è®°ä¸ºå°±ç»ªï¼");
                 initTimer = 0f;
                 return;
             }
         }
 
-        // ·ÖÖ¡´¦ÀíÕ¤¸ñ³õÊ¼»¯£¬±ÜÃâµ¥Ö¡¿¨¶Ù
         if (isInitializing)
         {
-            int ×Ü½ÚµãÊı = Õ¤¸ñ¿í¶È * Õ¤¸ñ¸ß¶È;
-            int ±¾´Î½áÊøË÷Òı = Mathf.Min(³õÊ¼»¯Ë÷Òı + Ã¿Ö¡³õÊ¼»¯ÊıÁ¿, ×Ü½ÚµãÊı);
+            int æ€»èŠ‚ç‚¹æ•° = æ …æ ¼å®½åº¦ * æ …æ ¼é«˜åº¦;
+            int æœ¬æ¬¡ç»“æŸç´¢å¼• = Mathf.Min(åˆå§‹åŒ–ç´¢å¼• + æ¯å¸§åˆå§‹åŒ–æ•°é‡, æ€»èŠ‚ç‚¹æ•°);
 
-            // ÅúÁ¿³õÊ¼»¯½Úµã£¨¼õÉÙÑ­»·ÄÚÖØ¸´¼ÆËã£©
-            while (³õÊ¼»¯Ë÷Òı < ±¾´Î½áÊøË÷Òı)
+            while (åˆå§‹åŒ–ç´¢å¼• < æœ¬æ¬¡ç»“æŸç´¢å¼•)
             {
-                int x = ³õÊ¼»¯Ë÷Òı / Õ¤¸ñ¸ß¶È;
-                int z = ³õÊ¼»¯Ë÷Òı % Õ¤¸ñ¸ß¶È;
+                int x = åˆå§‹åŒ–ç´¢å¼• / æ …æ ¼é«˜åº¦;
+                int z = åˆå§‹åŒ–ç´¢å¼• % æ …æ ¼é«˜åº¦;
 
-                // ¼ÆËã½ÚµãÊÀ½ç×ø±ê
-                Vector3 ½ÚµãÎ»ÖÃ = Õ¤¸ñÔ­µã + new Vector3(
-                    x * Õ¤¸ñ³ß´ç + Õ¤¸ñ°ë³ß´ç,
-                    Ë®ÓòÆ½Ãæ.position.y,
-                    z * Õ¤¸ñ³ß´ç + Õ¤¸ñ°ë³ß´ç
+                Vector3 èŠ‚ç‚¹ä½ç½® = æ …æ ¼åŸç‚¹ + new Vector3(
+                    x * æ …æ ¼å°ºå¯¸ + æ …æ ¼åŠå°ºå¯¸,
+                    æ°´åŸŸå¹³é¢.position.y,
+                    z * æ …æ ¼å°ºå¯¸ + æ …æ ¼åŠå°ºå¯¸
                 );
 
-                // ³õÊ¼»¯¿ÉÍ¨ĞĞ½Úµã£¨ÕÏ°­Îï±ê¼ÇºóĞøÍ³Ò»´¦Àí£©
-                Õ¤¸ñµØÍ¼[x, z] = new Node(true, ½ÚµãÎ»ÖÃ, x, z);
-                ³õÊ¼»¯Ë÷Òı++;
+                æ …æ ¼åœ°å›¾[x, z] = new Node(true, èŠ‚ç‚¹ä½ç½®, x, z);
+                åˆå§‹åŒ–ç´¢å¼•++;
             }
 
-            // ³õÊ¼»¯Íê³Éºó±ê¼ÇÕÏ°­Îï
-            if (³õÊ¼»¯Ë÷Òı >= ×Ü½ÚµãÊı)
+            if (åˆå§‹åŒ–ç´¢å¼• >= æ€»èŠ‚ç‚¹æ•°)
             {
                 isInitializing = false;
-                isGridReady = true; // Ç¿ÖÆ±ê¼ÇÎª¾ÍĞ÷
-                ±ê¼ÇÕÏ°­Îï();
-                Debug.Log($"GridManager£º·ÖÖ¡³õÊ¼»¯Íê³É£¬¹²{×Ü½ÚµãÊı}¸ö½Úµã£¬ÒÑ×Ô¶¯±ê¼ÇÕÏ°­Îï");
-                initTimer = 0f; // ÖØÖÃ¼ÆÊ±Æ÷
+                isGridReady = true;
+                æ ‡è®°éšœç¢ç‰©();
+                Debug.Log($"GridManagerï¼šåˆ†å¸§åˆå§‹åŒ–å®Œæˆï¼Œå…±{æ€»èŠ‚ç‚¹æ•°}ä¸ªèŠ‚ç‚¹ï¼Œå·²è‡ªåŠ¨æ ‡è®°éšœç¢ç‰©");
+                initTimer = 0f;
             }
         }
     }
 
-    /// <summary>
-    /// ÑéÖ¤Õ¤¸ñ×ø±êÊÇ·ñÓĞĞ§£¨·ÀÖ¹Êı×éÔ½½ç£©
-    /// </summary>
     public bool IsValidGridPosition(Vector2Int gridPos)
     {
-        return gridPos.x >= 0 && gridPos.x < Õ¤¸ñ¿í¶È && gridPos.y >= 0 && gridPos.y < Õ¤¸ñ¸ß¶È;
+        return gridPos.x >= 0 && gridPos.x < æ …æ ¼å®½åº¦ && gridPos.y >= 0 && gridPos.y < æ …æ ¼é«˜åº¦;
     }
 
-    /// <summary>
-    /// ¼ì²éÕ¤¸ñÊÇ·ñ³õÊ¼»¯Íê³É
-    /// </summary>
     public bool IsGridReady()
     {
         return isGridReady;
     }
 
-    /// <summary>
-    /// ÅúÁ¿±ê¼ÇÕÏ°­Îï£¨ÓÅ»¯¼ì²âĞ§ÂÊ£¬¼õÉÙGC£©
-    /// </summary>
-    public void ±ê¼ÇÕÏ°­Îï(Camera Ö÷Ïà»ú = null)
+    public void æ ‡è®°éšœç¢ç‰©(Camera ä¸»ç›¸æœº = null)
     {
-        if (Õ¤¸ñµØÍ¼ == null)
+        if (æ …æ ¼åœ°å›¾ == null)
         {
-            Debug.LogWarning("GridManager£º±ê¼ÇÕÏ°­ÎïÊ§°Ü£¬Õ¤¸ñµØÍ¼Î´³õÊ¼»¯£¡");
+            Debug.LogWarning("GridManagerï¼šæ ‡è®°éšœç¢ç‰©å¤±è´¥ï¼Œæ …æ ¼åœ°å›¾æœªåˆå§‹åŒ–ï¼");
             return;
         }
 
-        float Êµ¼Ê¼ì²â°ë¾¶ = Õ¤¸ñ°ë³ß´ç + obstacleCheckRadius + radiusOffset;
-        int ×Ü½ÚµãÊı = Õ¤¸ñ¿í¶È * Õ¤¸ñ¸ß¶È;
+        float å®é™…æ£€æµ‹åŠå¾„ = æ …æ ¼åŠå°ºå¯¸ + obstacleCheckRadius + radiusOffset;
+        int æ€»èŠ‚ç‚¹æ•° = æ …æ ¼å®½åº¦ * æ …æ ¼é«˜åº¦;
+        int éšœç¢ç‰©æ•°é‡ = 0;
 
-        // ·ÖÅú´Î¼ì²â£¨Ã¿Åú8¸ö½Úµã£¬Æ½ºâĞ§ÂÊÓë¿ªÏú£©
-        for (int i = 0; i < ×Ü½ÚµãÊı; i += 8)
+        for (int i = 0; i < æ€»èŠ‚ç‚¹æ•°; i += 8)
         {
-            for (int j = 0; j < 8 && (i + j) < ×Ü½ÚµãÊı; j++)
+            for (int j = 0; j < 8 && (i + j) < æ€»èŠ‚ç‚¹æ•°; j++)
             {
-                int Ë÷Òı = i + j;
-                int x = Ë÷Òı / Õ¤¸ñ¸ß¶È;
-                int z = Ë÷Òı % Õ¤¸ñ¸ß¶È;
+                int ç´¢å¼• = i + j;
+                int x = ç´¢å¼• / æ …æ ¼é«˜åº¦;
+                int z = ç´¢å¼• % æ …æ ¼é«˜åº¦;
 
-                Node ½Úµã = Õ¤¸ñµØÍ¼[x, z];
-                // ·Ç·ÖÅäÊ½Åö×²¼ì²â£¨¸´ÓÃÊı×é£¬±ÜÃâÆµ·±´´½¨£©
-                int Åö×²ÊıÁ¿ = Physics.OverlapSphereNonAlloc(
-                    ½Úµã.worldPosition,
-                    Êµ¼Ê¼ì²â°ë¾¶,
-                    Åö×²¼ì²â½á¹û,
+                Node èŠ‚ç‚¹ = æ …æ ¼åœ°å›¾[x, z];
+                int ç¢°æ’æ•°é‡ = Physics.OverlapSphereNonAlloc(
+                    èŠ‚ç‚¹.worldPosition,
+                    å®é™…æ£€æµ‹åŠå¾„,
+                    ç¢°æ’æ£€æµ‹ç»“æœ,
                     obstacleLayer,
                     QueryTriggerInteraction.Ignore
                 );
-                ½Úµã.walkable = Åö×²ÊıÁ¿ == 0;
-                Õ¤¸ñµØÍ¼[x, z] = ½Úµã;
+
+                if (ç¢°æ’æ•°é‡ > 0)
+                {
+                    èŠ‚ç‚¹.walkable = false;
+                    éšœç¢ç‰©æ•°é‡++;
+                }
+                else
+                {
+                    èŠ‚ç‚¹.walkable = true;
+                }
+
+                æ …æ ¼åœ°å›¾[x, z] = èŠ‚ç‚¹;
             }
         }
 
-        Debug.Log($"GridManager£ºÕÏ°­Îï±ê¼ÇÍê³É£¬¹²¼ì²â{×Ü½ÚµãÊı}¸ö½Úµã");
+        Debug.Log($"GridManagerï¼šéšœç¢ç‰©æ ‡è®°å®Œæˆï¼Œå…±æ£€æµ‹{æ€»èŠ‚ç‚¹æ•°}ä¸ªèŠ‚ç‚¹ï¼Œå‘ç°{éšœç¢ç‰©æ•°é‡}ä¸ªéšœç¢ç‰©èŠ‚ç‚¹");
     }
 
-    /// <summary>
-    /// ÖØÖÃÕ¤¸ñÊı¾İ²¢ÖØĞÂ±ê¼ÇÕÏ°­Îï
-    /// </summary>
-    public void ÖØÖÃÕ¤¸ñ()
+    public void é‡ç½®æ …æ ¼()
     {
-        ÖØĞÂ³õÊ¼»¯Õ¤¸ñÊı¾İ();
-        ±ê¼ÇÕÏ°­Îï();
-        Debug.Log("GridManager£ºÕ¤¸ñÒÑÖØÖÃ²¢ÖØĞÂ±ê¼ÇÕÏ°­Îï");
+        é‡æ–°åˆå§‹åŒ–æ …æ ¼æ•°æ®();
+        æ ‡è®°éšœç¢ç‰©();
+        Debug.Log("GridManagerï¼šæ …æ ¼å·²é‡ç½®å¹¶é‡æ–°æ ‡è®°éšœç¢ç‰©");
     }
 
-    /// <summary>
-    /// ÊÊÅäRandomSpawnManagerµÄ³õÊ¼»¯µ÷ÓÃ
-    /// </summary>
-    public void ³õÊ¼»¯Õ¤¸ñ()
+    public void åˆå§‹åŒ–æ …æ ¼()
     {
-        ÖØĞÂ³õÊ¼»¯Õ¤¸ñÊı¾İ();
-        ±ê¼ÇÕÏ°­Îï();
-        Debug.Log("GridManager£ºÕ¤¸ñ³õÊ¼»¯Íê³É£¨ÊÊÅäSpawnManagerµ÷ÓÃ£©");
+        é‡æ–°åˆå§‹åŒ–æ …æ ¼æ•°æ®();
+        æ ‡è®°éšœç¢ç‰©();
+        Debug.Log("GridManagerï¼šæ …æ ¼åˆå§‹åŒ–å®Œæˆï¼ˆé€‚é…SpawnManagerè°ƒç”¨ï¼‰");
     }
 
-    /// <summary>
-    /// ÖØĞÂ³õÊ¼»¯Õ¤¸ñ»ù´¡Êı¾İ£¨È«Á¿Í¬²½£¬·Ç·ÖÖ¡£©
-    /// </summary>
-    private void ÖØĞÂ³õÊ¼»¯Õ¤¸ñÊı¾İ()
+    private void é‡æ–°åˆå§‹åŒ–æ …æ ¼æ•°æ®()
     {
-        if (Ë®ÓòÆ½Ãæ == null)
+        if (æ°´åŸŸå¹³é¢ == null)
         {
-            Debug.LogError("GridManager£ºÖØĞÂ³õÊ¼»¯Ê§°Ü£¬Î´¸³ÖµË®ÓòÆ½Ãæ£¡");
+            Debug.LogError("GridManagerï¼šé‡æ–°åˆå§‹åŒ–å¤±è´¥ï¼Œæœªèµ‹å€¼æ°´åŸŸå¹³é¢ï¼");
             return;
         }
 
-        ¼ÆËãË®Óò´óĞ¡();
-        int ĞÂ¿í¶È = Mathf.CeilToInt(Ë®Óò´óĞ¡»º´æ.x / Õ¤¸ñ³ß´ç);
-        int ĞÂ¸ß¶È = Mathf.CeilToInt(Ë®Óò´óĞ¡»º´æ.y / Õ¤¸ñ³ß´ç);
+        è®¡ç®—æ°´åŸŸå¤§å°();
+        int æ–°å®½åº¦ = Mathf.CeilToInt(æ°´åŸŸå¤§å°ç¼“å­˜.x / æ …æ ¼å°ºå¯¸);
+        int æ–°é«˜åº¦ = Mathf.CeilToInt(æ°´åŸŸå¤§å°ç¼“å­˜.y / æ …æ ¼å°ºå¯¸);
 
-        // ½öµ±³ß´ç±ä»¯Ê±ÖØ½¨Êı×é£¨¼õÉÙÄÚ´æ·ÖÅä£©
-        if (Õ¤¸ñµØÍ¼ == null || Õ¤¸ñµØÍ¼.GetLength(0) != ĞÂ¿í¶È || Õ¤¸ñµØÍ¼.GetLength(1) != ĞÂ¸ß¶È)
+        if (æ …æ ¼åœ°å›¾ == null || æ …æ ¼åœ°å›¾.GetLength(0) != æ–°å®½åº¦ || æ …æ ¼åœ°å›¾.GetLength(1) != æ–°é«˜åº¦)
         {
-            Õ¤¸ñµØÍ¼ = new Node[ĞÂ¿í¶È, ĞÂ¸ß¶È];
+            æ …æ ¼åœ°å›¾ = new Node[æ–°å®½åº¦, æ–°é«˜åº¦];
         }
 
-        Õ¤¸ñ¿í¶È = ĞÂ¿í¶È;
-        Õ¤¸ñ¸ß¶È = ĞÂ¸ß¶È;
-        Õ¤¸ñÔ­µã = Ë®ÓòÆ½Ãæ.position - new Vector3(Ë®Óò´óĞ¡»º´æ.x / 2, 0, Ë®Óò´óĞ¡»º´æ.y / 2);
-        Õ¤¸ñ°ë³ß´ç = Õ¤¸ñ³ß´ç / 2f;
+        æ …æ ¼å®½åº¦ = æ–°å®½åº¦;
+        æ …æ ¼é«˜åº¦ = æ–°é«˜åº¦;
+        æ …æ ¼åŸç‚¹ = æ°´åŸŸå¹³é¢.position - new Vector3(æ°´åŸŸå¤§å°ç¼“å­˜.x / 2, 0, æ°´åŸŸå¤§å°ç¼“å­˜.y / 2);
+        æ …æ ¼åŠå°ºå¯¸ = æ …æ ¼å°ºå¯¸ / 2f;
 
-        // È«Á¿³õÊ¼»¯½Úµã£¨ÖØÖÃÊ±Ê¹ÓÃ£¬·Ç·ÖÖ¡£©
-        int ×Ü½ÚµãÊı = Õ¤¸ñ¿í¶È * Õ¤¸ñ¸ß¶È;
-        for (int i = 0; i < ×Ü½ÚµãÊı; i++)
+        int æ€»èŠ‚ç‚¹æ•° = æ …æ ¼å®½åº¦ * æ …æ ¼é«˜åº¦;
+        for (int i = 0; i < æ€»èŠ‚ç‚¹æ•°; i++)
         {
-            int x = i / Õ¤¸ñ¸ß¶È;
-            int z = i % Õ¤¸ñ¸ß¶È;
-            Vector3 ½ÚµãÎ»ÖÃ = Õ¤¸ñÔ­µã + new Vector3(
-                x * Õ¤¸ñ³ß´ç + Õ¤¸ñ°ë³ß´ç,
-                Ë®ÓòÆ½Ãæ.position.y,
-                z * Õ¤¸ñ³ß´ç + Õ¤¸ñ°ë³ß´ç
+            int x = i / æ …æ ¼é«˜åº¦;
+            int z = i % æ …æ ¼é«˜åº¦;
+            Vector3 èŠ‚ç‚¹ä½ç½® = æ …æ ¼åŸç‚¹ + new Vector3(
+                x * æ …æ ¼å°ºå¯¸ + æ …æ ¼åŠå°ºå¯¸,
+                æ°´åŸŸå¹³é¢.position.y,
+                z * æ …æ ¼å°ºå¯¸ + æ …æ ¼åŠå°ºå¯¸
             );
-            Õ¤¸ñµØÍ¼[x, z] = new Node(true, ½ÚµãÎ»ÖÃ, x, z);
+            æ …æ ¼åœ°å›¾[x, z] = new Node(true, èŠ‚ç‚¹ä½ç½®, x, z);
         }
 
         isGridReady = true;
         initTimer = 0f;
-        Debug.Log($"GridManager£ºÖØĞÂ³õÊ¼»¯Íê³É£¬Õ¤¸ñ²ÎÊı£º{Õ¤¸ñ¿í¶È}x{Õ¤¸ñ¸ß¶È}");
+        Debug.Log($"GridManagerï¼šé‡æ–°åˆå§‹åŒ–å®Œæˆï¼Œæ …æ ¼å‚æ•°ï¼š{æ …æ ¼å®½åº¦}x{æ …æ ¼é«˜åº¦}");
     }
 
-    /// <summary>
-    /// ¼ÆËãË®ÓòÊµ¼Ê´óĞ¡£¨»ùÓÚËõ·Å£©
-    /// </summary>
-    /// <summary>
-    /// ¼ÆËãË®ÓòÊµ¼Ê´óĞ¡£¨»ùÓÚËõ·Å£©
-    /// </summary>
-    private void ¼ÆËãË®Óò´óĞ¡()
+    private void è®¡ç®—æ°´åŸŸå¤§å°()
     {
-        if (Ë®ÓòÆ½Ãæ == null)
+        if (æ°´åŸŸå¹³é¢ == null)
         {
-            Ë®Óò´óĞ¡»º´æ = Vector2.zero;
-            Debug.LogError("GridManager£º¼ÆËãË®Óò´óĞ¡Ê§°Ü£¬Î´¸³ÖµË®ÓòÆ½Ãæ£¡");
+            æ°´åŸŸå¤§å°ç¼“å­˜ = Vector2.zero;
+            Debug.LogError("GridManagerï¼šè®¡ç®—æ°´åŸŸå¤§å°å¤±è´¥ï¼Œæœªèµ‹å€¼æ°´åŸŸå¹³é¢ï¼");
             return;
         }
 
-        // ¼ÆËãĞÂµÄË®Óò³ß´ç
-        Vector2 ĞÂË®Óò³ß´ç = new Vector2(
-            Ë®ÓòÆ½Ãæ.lossyScale.x * 10,
-            Ë®ÓòÆ½Ãæ.lossyScale.z * 10
+        Vector2 æ–°æ°´åŸŸå°ºå¯¸ = new Vector2(
+            æ°´åŸŸå¹³é¢.lossyScale.x * 10,
+            æ°´åŸŸå¹³é¢.lossyScale.z * 10
         );
 
-        // ½öµ±³ß´ç±ä»¯Ê±²Å´òÓ¡ÈÕÖ¾
-        if (ĞÂË®Óò³ß´ç != Ë®Óò´óĞ¡»º´æ)
+        if (æ–°æ°´åŸŸå°ºå¯¸ != æ°´åŸŸå¤§å°ç¼“å­˜)
         {
-            Ë®Óò´óĞ¡»º´æ = ĞÂË®Óò³ß´ç;
-            Debug.Log($"GridManager£º¼ÆËãË®Óò´óĞ¡Íê³É£¬³ß´ç£º{Ë®Óò´óĞ¡»º´æ.x}x{Ë®Óò´óĞ¡»º´æ.y}");//É¾³ı Debug.Log ÕâÒ»ĞĞ£¬½ö±£Áô´íÎó¼ì²âÂß¼­
+            æ°´åŸŸå¤§å°ç¼“å­˜ = æ–°æ°´åŸŸå°ºå¯¸;
+            Debug.Log($"GridManagerï¼šè®¡ç®—æ°´åŸŸå¤§å°å®Œæˆï¼Œå°ºå¯¸ï¼š{æ°´åŸŸå¤§å°ç¼“å­˜.x}x{æ°´åŸŸå¤§å°ç¼“å­˜.y}");
         }
     }
 
-    /// <summary>
-    /// ÊÀ½ç×ø±ê×ªÕ¤¸ñ×ø±ê
-    /// </summary>
-    public Vector2Int ÊÀ½ç×ªÕ¤¸ñ(Vector3 ÊÀ½ç×ø±ê)
+    public Vector2Int ä¸–ç•Œè½¬æ …æ ¼(Vector3 ä¸–ç•Œåæ ‡)
     {
         if (!isGridReady)
         {
-            Debug.LogWarning("GridManager£ºÊÀ½ç×ªÕ¤¸ñÊ§°Ü£¬Õ¤¸ñÎ´³õÊ¼»¯Íê³É£¡");
+            Debug.LogWarning("GridManagerï¼šä¸–ç•Œè½¬æ …æ ¼å¤±è´¥ï¼Œæ …æ ¼æœªåˆå§‹åŒ–å®Œæˆï¼");
             return Vector2Int.zero;
         }
 
-        Vector3 Æ«ÒÆ = ÊÀ½ç×ø±ê - Õ¤¸ñÔ­µã;
-        int x = Mathf.FloorToInt(Æ«ÒÆ.x / Õ¤¸ñ³ß´ç);
-        int z = Mathf.FloorToInt(Æ«ÒÆ.z / Õ¤¸ñ³ß´ç);
-        // ÏŞÖÆ×ø±êÔÚÓĞĞ§·¶Î§ÄÚ
-        x = Mathf.Clamp(x, 0, Õ¤¸ñ¿í¶È - 1);
-        z = Mathf.Clamp(z, 0, Õ¤¸ñ¸ß¶È - 1);
+        Vector3 åç§» = ä¸–ç•Œåæ ‡ - æ …æ ¼åŸç‚¹;
+        int x = Mathf.FloorToInt(åç§».x / æ …æ ¼å°ºå¯¸);
+        int z = Mathf.FloorToInt(åç§».z / æ …æ ¼å°ºå¯¸);
+        x = Mathf.Clamp(x, 0, æ …æ ¼å®½åº¦ - 1);
+        z = Mathf.Clamp(z, 0, æ …æ ¼é«˜åº¦ - 1);
         return new Vector2Int(x, z);
     }
 
-    /// <summary>
-    /// Õ¤¸ñ×ø±ê×ªÊÀ½ç×ø±ê
-    /// </summary>
-    public Vector3 Õ¤¸ñ×ªÊÀ½ç(Vector2Int Õ¤¸ñ×ø±ê)
+    public Vector3 æ …æ ¼è½¬ä¸–ç•Œ(Vector2Int æ …æ ¼åæ ‡)
     {
         if (!isGridReady)
         {
-            Debug.LogWarning("GridManager£ºÕ¤¸ñ×ªÊÀ½çÊ§°Ü£¬Õ¤¸ñÎ´³õÊ¼»¯Íê³É£¡");
+            Debug.LogWarning("GridManagerï¼šæ …æ ¼è½¬ä¸–ç•Œå¤±è´¥ï¼Œæ …æ ¼æœªåˆå§‹åŒ–å®Œæˆï¼");
             return Vector3.zero;
         }
 
-        int x = Mathf.Clamp(Õ¤¸ñ×ø±ê.x, 0, Õ¤¸ñ¿í¶È - 1);
-        int z = Mathf.Clamp(Õ¤¸ñ×ø±ê.y, 0, Õ¤¸ñ¸ß¶È - 1);
-        return Õ¤¸ñÔ­µã + new Vector3(
-            x * Õ¤¸ñ³ß´ç + Õ¤¸ñ°ë³ß´ç,
-            Ë®ÓòÆ½Ãæ.position.y,
-            z * Õ¤¸ñ³ß´ç + Õ¤¸ñ°ë³ß´ç
+        int x = Mathf.Clamp(æ …æ ¼åæ ‡.x, 0, æ …æ ¼å®½åº¦ - 1);
+        int z = Mathf.Clamp(æ …æ ¼åæ ‡.y, 0, æ …æ ¼é«˜åº¦ - 1);
+        return æ …æ ¼åŸç‚¹ + new Vector3(
+            x * æ …æ ¼å°ºå¯¸ + æ …æ ¼åŠå°ºå¯¸,
+            æ°´åŸŸå¹³é¢.position.y,
+            z * æ …æ ¼å°ºå¯¸ + æ …æ ¼åŠå°ºå¯¸
         );
     }
 
-    /// <summary>
-    /// ¼ì²éÕ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ
-    /// </summary>
-    public bool Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ(Vector2Int Õ¤¸ñ×ø±ê)
+    public bool æ …æ ¼æ˜¯å¦å¯é€šè¡Œ(Vector2Int æ …æ ¼åæ ‡)
     {
-        if (!isGridReady || Õ¤¸ñµØÍ¼ == null)
+        if (!isGridReady || æ …æ ¼åœ°å›¾ == null)
         {
-            Debug.LogWarning("GridManager£º¼ì²éÕ¤¸ñ¿ÉÍ¨ĞĞĞÔÊ§°Ü£¬Õ¤¸ñÎ´³õÊ¼»¯Íê³É£¡");
+            Debug.LogWarning("GridManagerï¼šæ£€æŸ¥æ …æ ¼å¯é€šè¡Œæ€§å¤±è´¥ï¼Œæ …æ ¼æœªåˆå§‹åŒ–å®Œæˆï¼");
             return false;
         }
-        if (!IsValidGridPosition(Õ¤¸ñ×ø±ê))
+        if (!IsValidGridPosition(æ …æ ¼åæ ‡))
         {
-            Debug.LogWarning($"GridManager£ºÕ¤¸ñ×ø±ê{Õ¤¸ñ×ø±ê}ÎŞĞ§£¬²»¿ÉÍ¨ĞĞ£¡");
+            Debug.LogWarning($"GridManagerï¼šæ …æ ¼åæ ‡{æ …æ ¼åæ ‡}æ— æ•ˆï¼Œä¸å¯é€šè¡Œï¼");
             return false;
         }
-        return Õ¤¸ñµØÍ¼[Õ¤¸ñ×ø±ê.x, Õ¤¸ñ×ø±ê.y].walkable;
+        return æ …æ ¼åœ°å›¾[æ …æ ¼åæ ‡.x, æ …æ ¼åæ ‡.y].walkable;
     }
 
-    /// <summary>
-    /// ±à¼­Æ÷²Ëµ¥£ºÇ¿ÖÆË¢ĞÂÕ¤¸ñºÍÕÏ°­Îï£¨ÓÒ¼üµ÷ÓÃ£©
-    /// </summary>
-    [ContextMenu("Ç¿ÖÆË¢ĞÂÕ¤¸ñºÍÕÏ°­Îï")]
-    public void Ç¿ÖÆË¢ĞÂÕ¤¸ñ()
+    [ContextMenu("å¼ºåˆ¶åˆ·æ–°æ …æ ¼å’Œéšœç¢ç‰©")]
+    public void å¼ºåˆ¶åˆ·æ–°æ …æ ¼()
     {
-        ÖØĞÂ³õÊ¼»¯Õ¤¸ñÊı¾İ();
-        ±ê¼ÇÕÏ°­Îï();
-        Debug.Log("GridManager£ºÒÑÇ¿ÖÆË¢ĞÂÕ¤¸ñºÍÕÏ°­Îï±ê¼Ç");
+        é‡æ–°åˆå§‹åŒ–æ …æ ¼æ•°æ®();
+        æ ‡è®°éšœç¢ç‰©();
+        Debug.Log("GridManagerï¼šå·²å¼ºåˆ¶åˆ·æ–°æ …æ ¼å’Œéšœç¢ç‰©æ ‡è®°");
     }
 
-    /// <summary>
-    /// ±à¼­Æ÷²Ëµ¥£º¶¨Î»µ½Õ¤¸ñÖĞĞÄ£¨ÓÒ¼üµ÷ÓÃ£©
-    /// </summary>
-    [ContextMenu("¶¨Î»µ½Õ¤¸ñÔ­µã")]
-    public void ¶¨Î»µ½Õ¤¸ñÔ­µã()
+    [ContextMenu("å®šä½åˆ°æ …æ ¼åŸç‚¹")]
+    public void å®šä½åˆ°æ …æ ¼åŸç‚¹()
     {
         if (SceneView.lastActiveSceneView == null)
         {
-            Debug.LogWarning("GridManager£ºÎ´ÕÒµ½SceneView£¬ÎŞ·¨¶¨Î»");
+            Debug.LogWarning("GridManagerï¼šæœªæ‰¾åˆ°SceneViewï¼Œæ— æ³•å®šä½");
             return;
         }
 
-        Bounds Õ¤¸ñ·¶Î§ = new Bounds(
-            Õ¤¸ñÔ­µã + new Vector3(Õ¤¸ñ¿í¶È * Õ¤¸ñ³ß´ç / 2, 0, Õ¤¸ñ¸ß¶È * Õ¤¸ñ³ß´ç / 2),
-            new Vector3(Õ¤¸ñ¿í¶È * Õ¤¸ñ³ß´ç, 10, Õ¤¸ñ¸ß¶È * Õ¤¸ñ³ß´ç)
+        Bounds æ …æ ¼èŒƒå›´ = new Bounds(
+            æ …æ ¼åŸç‚¹ + new Vector3(æ …æ ¼å®½åº¦ * æ …æ ¼å°ºå¯¸ / 2, 0, æ …æ ¼é«˜åº¦ * æ …æ ¼å°ºå¯¸ / 2),
+            new Vector3(æ …æ ¼å®½åº¦ * æ …æ ¼å°ºå¯¸, 10, æ …æ ¼é«˜åº¦ * æ …æ ¼å°ºå¯¸)
         );
-        SceneView.lastActiveSceneView.Frame(Õ¤¸ñ·¶Î§);
-        Debug.Log($"GridManager£ºÒÑ¶¨Î»µ½Õ¤¸ñÖĞĞÄ£¬×ø±ê£º{Õ¤¸ñ·¶Î§.center}");
+        SceneView.lastActiveSceneView.Frame(æ …æ ¼èŒƒå›´);
+        Debug.Log($"GridManagerï¼šå·²å®šä½åˆ°æ …æ ¼ä¸­å¿ƒï¼Œåæ ‡ï¼š{æ …æ ¼èŒƒå›´.center}");
     }
 
-    /// <summary>
-    /// Gizmos»æÖÆ£¨³¡¾°ÊÓÍ¼¿ÉÊÓ»¯£©
-    /// </summary>
     private void OnDrawGizmos()
     {
-        // »æÖÆË®Óò·¶Î§ÌáÊ¾£¨Î´¸³ÖµË®ÓòÆ½ÃæÊ±£©
-        if (Ë®ÓòÆ½Ãæ == null)
+        if (æ°´åŸŸå¹³é¢ == null)
         {
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireCube(Vector3.zero, new Vector3(10, 0.1f, 10));
             return;
         }
 
-        // »æÖÆË®Óò±ß½ç
-        ¼ÆËãË®Óò´óĞ¡();
+        è®¡ç®—æ°´åŸŸå¤§å°();
         Gizmos.color = new Color(0.3f, 0.3f, 0.3f, 0.1f);
-        Gizmos.DrawWireCube(Ë®ÓòÆ½Ãæ.position, new Vector3(Ë®Óò´óĞ¡»º´æ.x, 0.1f, Ë®Óò´óĞ¡»º´æ.y));
+        Gizmos.DrawWireCube(æ°´åŸŸå¹³é¢.position, new Vector3(æ°´åŸŸå¤§å°ç¼“å­˜.x, 0.1f, æ°´åŸŸå¤§å°ç¼“å­˜.y));
 
-        // Õ¤¸ñÎ´³õÊ¼»¯Ê±²»»æÖÆÏ¸½Ú
-        if (!isGridReady || Õ¤¸ñµØÍ¼ == null) return;
+        if (!isGridReady || æ …æ ¼åœ°å›¾ == null) return;
 
-        // »æÖÆÕ¤¸ñÏß
-        Gizmos.color = Õ¤¸ñÏßÑÕÉ«;
-        for (int x = 0; x <= Õ¤¸ñ¿í¶È; x++)
+        Gizmos.color = æ …æ ¼çº¿é¢œè‰²;
+        for (int x = 0; x <= æ …æ ¼å®½åº¦; x++)
         {
-            Vector3 Æğµã = Õ¤¸ñÔ­µã + new Vector3(x * Õ¤¸ñ³ß´ç, Õ¤¸ñÏß¸ß¶È, 0);
-            Vector3 ÖÕµã = Õ¤¸ñÔ­µã + new Vector3(x * Õ¤¸ñ³ß´ç, Õ¤¸ñÏß¸ß¶È, Õ¤¸ñ¸ß¶È * Õ¤¸ñ³ß´ç);
-            Gizmos.DrawLine(Æğµã, ÖÕµã);
+            Vector3 èµ·ç‚¹ = æ …æ ¼åŸç‚¹ + new Vector3(x * æ …æ ¼å°ºå¯¸, æ …æ ¼çº¿é«˜åº¦, 0);
+            Vector3 ç»ˆç‚¹ = æ …æ ¼åŸç‚¹ + new Vector3(x * æ …æ ¼å°ºå¯¸, æ …æ ¼çº¿é«˜åº¦, æ …æ ¼é«˜åº¦ * æ …æ ¼å°ºå¯¸);
+            Gizmos.DrawLine(èµ·ç‚¹, ç»ˆç‚¹);
         }
-        for (int z = 0; z <= Õ¤¸ñ¸ß¶È; z++)
+        for (int z = 0; z <= æ …æ ¼é«˜åº¦; z++)
         {
-            Vector3 Æğµã = Õ¤¸ñÔ­µã + new Vector3(0, Õ¤¸ñÏß¸ß¶È, z * Õ¤¸ñ³ß´ç);
-            Vector3 ÖÕµã = Õ¤¸ñÔ­µã + new Vector3(Õ¤¸ñ¿í¶È * Õ¤¸ñ³ß´ç, Õ¤¸ñÏß¸ß¶È, z * Õ¤¸ñ³ß´ç);
-            Gizmos.DrawLine(Æğµã, ÖÕµã);
+            Vector3 èµ·ç‚¹ = æ …æ ¼åŸç‚¹ + new Vector3(0, æ …æ ¼çº¿é«˜åº¦, z * æ …æ ¼å°ºå¯¸);
+            Vector3 ç»ˆç‚¹ = æ …æ ¼åŸç‚¹ + new Vector3(æ …æ ¼å®½åº¦ * æ …æ ¼å°ºå¯¸, æ …æ ¼çº¿é«˜åº¦, z * æ …æ ¼å°ºå¯¸);
+            Gizmos.DrawLine(èµ·ç‚¹, ç»ˆç‚¹);
         }
 
-        // »æÖÆÕÏ°­Îï
-        Gizmos.color = ÕÏ°­ÎïÑÕÉ«;
-        for (int x = 0; x < Õ¤¸ñ¿í¶È; x++)
+        Gizmos.color = éšœç¢ç‰©é¢œè‰²;
+        for (int x = 0; x < æ …æ ¼å®½åº¦; x++)
         {
-            for (int z = 0; z < Õ¤¸ñ¸ß¶È; z++)
+            for (int z = 0; z < æ …æ ¼é«˜åº¦; z++)
             {
-                if (!Õ¤¸ñµØÍ¼[x, z].walkable)
+                if (!æ …æ ¼åœ°å›¾[x, z].walkable)
                 {
-                    Vector3 ÕÏ°­ÎïÖĞĞÄ = Õ¤¸ñ×ªÊÀ½ç(new Vector2Int(x, z));
-                    ÕÏ°­ÎïÖĞĞÄ.y = ÕÏ°­ÎïÏÔÊ¾¸ß¶È;
-                    Gizmos.DrawCube(ÕÏ°­ÎïÖĞĞÄ, new Vector3(Õ¤¸ñ³ß´ç * 0.8f, 0.2f, Õ¤¸ñ³ß´ç * 0.8f));
+                    Vector3 éšœç¢ç‰©ä¸­å¿ƒ = æ …æ ¼è½¬ä¸–ç•Œ(new Vector2Int(x, z));
+                    éšœç¢ç‰©ä¸­å¿ƒ.y = éšœç¢ç‰©æ˜¾ç¤ºé«˜åº¦;
+                    Gizmos.DrawCube(éšœç¢ç‰©ä¸­å¿ƒ, new Vector3(æ …æ ¼å°ºå¯¸ * 0.8f, 0.2f, æ …æ ¼å°ºå¯¸ * 0.8f));
                 }
             }
         }
 
-        // »æÖÆÕ¤¸ñÕûÌå±ß½ç
         Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.05f);
         Gizmos.DrawWireCube(
-            Õ¤¸ñÔ­µã + new Vector3(Õ¤¸ñ¿í¶È * Õ¤¸ñ³ß´ç / 2, Õ¤¸ñÏß¸ß¶È, Õ¤¸ñ¸ß¶È * Õ¤¸ñ³ß´ç / 2),
-            new Vector3(Õ¤¸ñ¿í¶È * Õ¤¸ñ³ß´ç, 0.1f, Õ¤¸ñ¸ß¶È * Õ¤¸ñ³ß´ç)
+            æ …æ ¼åŸç‚¹ + new Vector3(æ …æ ¼å®½åº¦ * æ …æ ¼å°ºå¯¸ / 2, æ …æ ¼çº¿é«˜åº¦, æ …æ ¼é«˜åº¦ * æ …æ ¼å°ºå¯¸ / 2),
+            new Vector3(æ …æ ¼å®½åº¦ * æ …æ ¼å°ºå¯¸, 0.1f, æ …æ ¼é«˜åº¦ * æ …æ ¼å°ºå¯¸)
         );
 
-        // »æÖÆA*¹æ»®µÄÂ·¾¶
         ImprovedAStar pathfinder = FindFirstObjectByType<ImprovedAStar>();
         if (pathfinder != null && pathfinder.path != null && pathfinder.path.Count > 1)
         {
-            Gizmos.color = Color.cyan; // Â·¾¶ÑÕÉ«
+            Gizmos.color = Color.cyan;
             for (int i = 0; i < pathfinder.path.Count - 1; i++)
             {
-                Vector3 start = Õ¤¸ñ×ªÊÀ½ç(pathfinder.path[i]);
-                Vector3 end = Õ¤¸ñ×ªÊÀ½ç(pathfinder.path[i + 1]);
-                start.y = 0.1f; // ÉÔÎ¢Ì§¸ßÏÔÊ¾
+                Vector3 start = æ …æ ¼è½¬ä¸–ç•Œ(pathfinder.path[i]);
+                Vector3 end = æ …æ ¼è½¬ä¸–ç•Œ(pathfinder.path[i + 1]);
+                start.y = 0.1f;
                 end.y = 0.1f;
                 Gizmos.DrawLine(start, end);
-
-                // »æÖÆÂ·¾¶µã
-                Gizmos.DrawSphere(start, Õ¤¸ñ³ß´ç * 0.3f);
+                Gizmos.DrawSphere(start, æ …æ ¼å°ºå¯¸ * 0.3f);
             }
-            // »æÖÆÖÕµã
-            Gizmos.DrawSphere(Õ¤¸ñ×ªÊÀ½ç(pathfinder.path[pathfinder.path.Count - 1]), Õ¤¸ñ³ß´ç * 0.4f);
+            Gizmos.DrawSphere(æ …æ ¼è½¬ä¸–ç•Œ(pathfinder.path[pathfinder.path.Count - 1]), æ …æ ¼å°ºå¯¸ * 0.4f);
         }
     }
 }

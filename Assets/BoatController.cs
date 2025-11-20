@@ -24,7 +24,8 @@ public class BoatController : MonoBehaviour
     private float currentSpeed = 0f;          // 当前速度（用于平滑过渡）
     private int 路径重试次数 = 0;            // 路径加载重试计数器
     private const int 最大重试次数 = 5;      // 最大重试次数
-
+                                      
+    private bool wasPathInvalid = false;     // 新增字段用于跟踪路径失效状态
 
 
     // 初始化
@@ -201,19 +202,28 @@ public class BoatController : MonoBehaviour
         // 固定Y轴高度（防止上下浮动）
         transform.position = new Vector3(transform.position.x, 0.4f, transform.position.z);
 
-        // 路径无效时尝试重新加载（先判断worldPath是否为null，再判断Count）
-        if (isReachedEnd || worldPath == null || worldPath.Count == 0)
-        {
-            if (worldPath == null || worldPath.Count == 0)
-            {
-                Debug.LogWarning("路径无效，尝试重新加载...");
-                TryLoadPath();
-            }
-            return;
-        }
 
-        // 到达最后一个路径点
-        if (currentWaypointIndex >= worldPath.Count)
+// 路径无效时尝试重新加载（只在路径状态从有效变为无效时打印一次日志）
+if (isReachedEnd || worldPath == null || worldPath.Count == 0)
+{
+    bool isPathInvalid = worldPath == null || worldPath.Count == 0;
+    // 当路径从有效变为无效时，打印一次日志
+    if (isPathInvalid && !wasPathInvalid)
+    {
+        Debug.LogWarning("路径无效，开始尝试重新加载...");
+        TryLoadPath();
+}
+// 更新路径失效状态标记
+wasPathInvalid = isPathInvalid;
+return;
+}
+// 路径恢复有效时重置标记
+else if (wasPathInvalid)
+{
+    wasPathInvalid = false;
+}
+// 到达最后一个路径点
+if (currentWaypointIndex >= worldPath.Count)
         {
             StopMovement();
             isReachedEnd = true;
