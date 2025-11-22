@@ -1169,7 +1169,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 398022122}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fc777756485cd1d48a416b05f1043f9e, type: 3}
   m_Name: 
@@ -1182,6 +1182,15 @@ MonoBehaviour:
   minStartTargetDistance: 8
   maxSinglePosRetries: 5
   retryOffsetRange: 2
+  rockPrefab: {fileID: 2064088795}
+  minRockCount: 30
+  maxRockCount: 70
+  rockScaleMin: 0.5
+  rockScaleMax: 1
+  obstacleLayer:
+    serializedVersion: 2
+    m_Bits: 8
+  rockAvoidDistance: 1
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
@@ -2606,11 +2615,11 @@ Transform:
   m_GameObject: {fileID: 795777207}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -1.8784362, y: 0, z: 0.011142254}
-  m_LocalScale: {x: 0.5, y: 0.5, z: 1}
+  m_LocalPosition: {x: -4.1400003, y: 0, z: -5.14}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 976173188}
+  m_Father: {fileID: 867258681}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &826677456
 GameObject:
@@ -2825,7 +2834,8 @@ Transform:
   m_LocalPosition: {x: 0.19156384, y: 0, z: 5.151142}
   m_LocalScale: {x: 0.5, y: 0.5, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 795777211}
   m_Father: {fileID: 976173188}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &918190879
@@ -3230,11 +3240,11 @@ Transform:
   - {fileID: 445062427}
   - {fileID: 596039855}
   - {fileID: 1160700554}
-  - {fileID: 795777211}
   - {fileID: 867258681}
   - {fileID: 740904168}
   - {fileID: 109892916}
   - {fileID: 1198013969}
+  - {fileID: 2064088799}
   m_Father: {fileID: 959740698}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1052049562
@@ -4754,12 +4764,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2064088795}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2, y: 0, z: -2.75}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.19156384, y: 0, z: 0.011142254}
   m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 976173188}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2123338928
 PrefabInstance:
@@ -5020,7 +5030,6 @@ SceneRoots:
   m_Roots:
   - {fileID: 963194228}
   - {fileID: 705507995}
-  - {fileID: 2064088799}
   - {fileID: 1521328185}
   - {fileID: 2123338928}
   - {fileID: 1325994584}

@@ -106,6 +106,16 @@ public class USV_GlobalRLAgent : Agent
         {
             globalPathfinder.CalculatePathAfterDelay();
         }
+
+        // 重新计算全局路径后添加：
+        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > 1)
+        {
+            // 朝向第一个路径点
+            Vector3 firstWaypoint = gridManager.栅格转世界(globalPathfinder.path[1]);
+            Vector3 dir = (firstWaypoint - transform.position).normalized;
+            transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
+        }
+
     }
 
     public override void CollectObservations(VectorSensor sensor)

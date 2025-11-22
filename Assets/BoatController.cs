@@ -1,5 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+using System.Collections; // 必须导入这个命名空间！
+
 
 public class BoatController : MonoBehaviour
 {
@@ -17,16 +19,15 @@ public class BoatController : MonoBehaviour
 
     // 私有变量
     private List<Vector2Int> gridPath;        // 栅格坐标路径
-    private List<Vector3> worldPath = new List<Vector3>();  // 初始化！避免nullworldPath;          // 世界坐标路径
+    private List<Vector3> worldPath = new List<Vector3>();  // 初始化！避免null
     private int currentWaypointIndex = 0;     // 当前路径点索引
     private Rigidbody rb;                     // 刚体组件
     private bool isReachedEnd = false;        // 是否到达终点
     private float currentSpeed = 0f;          // 当前速度（用于平滑过渡）
     private int 路径重试次数 = 0;            // 路径加载重试计数器
     private const int 最大重试次数 = 5;      // 最大重试次数
-                                      
     private bool wasPathInvalid = false;     // 新增字段用于跟踪路径失效状态
-
+    private bool isPathLoaded = false;        // 新增：标记路径是否加载完成
 
     // 初始化
     void Start()
@@ -49,7 +50,18 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 初始加载路径
+        // 等待栅格初始化后加载路径（新增协程等待）
+        StartCoroutine(WaitForGridInitThenLoadPath());
+    }
+
+    // 新增：等待栅格初始化后加载路径
+    private IEnumerator WaitForGridInitThenLoadPath()
+    {
+        while (gridManager != null && !gridManager.IsGridReady())
+        {
+            Debug.Log("栅格未初始化，延迟重试路径加载...");
+            yield return new WaitForSeconds(0.5f);
+        }
         TryLoadPath();
     }
 
@@ -60,7 +72,7 @@ public class BoatController : MonoBehaviour
         rb.interpolation = RigidbodyInterpolation.Interpolate; // 平滑刚体移动
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic; // 连续碰撞检测
         rb.linearDamping = 0.5f;              // 线性阻尼（阻力）
-        rb.angularDamping = 2f;             // 角阻尼（旋转阻力）
+        rb.angularDamping = 2f;               // 角阻尼（旋转阻力）
     }
 
     // 碰撞处理
@@ -141,6 +153,7 @@ public class BoatController : MonoBehaviour
             }
             return;
         }
+
         // 第二步：检查路径是否有效（原逻辑保留）
         if (pathfinder.path == null || pathfinder.path.Count == 0)
         {
@@ -155,6 +168,7 @@ public class BoatController : MonoBehaviour
                 Debug.LogError("路径重试次数达到上限，A*路径仍为空！请检查障碍物配置或起点终点是否可达。");
             return;
         }
+
         // 第三步：转换路径坐标（栅格→世界）（原代码逻辑保留，无需修改）
         gridPath = pathfinder.path;
         worldPath.Clear(); // 清空旧路径，避免重复
@@ -168,6 +182,7 @@ public class BoatController : MonoBehaviour
                 Invoke(nameof(TryLoadPath), 1f);
                 return;
             }
+
             // 转换为世界坐标
             Vector3 worldPos = gridManager.栅格转世界(gridPos);
             if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.z))
@@ -177,6 +192,7 @@ public class BoatController : MonoBehaviour
                 Invoke(nameof(TryLoadPath), 1f);
                 return;
             }
+
             // 固定Y轴高度（适配水面）
             worldPos.y = 0.05f;
             worldPath.Add(worldPos);
@@ -190,11 +206,26 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 路径加载成功（原逻辑保留）
+        // 路径加载成功（原逻辑保留，新增朝向修正）
         Debug.Log($"成功读取路径，共{worldPath.Count}个路径点");
+        isPathLoaded = true;
         isReachedEnd = false;
         currentWaypointIndex = 0;
-        路径重试次数 = 0;  // 重置重试计数器
+        路径重试次数 = 0;
+        // 关键：强制朝向第一个路径点（新增）
+        FaceFirstWaypoint();
+    }
+
+    // 新增：朝向第一个路径点
+    private void FaceFirstWaypoint()
+    {
+        if (worldPath.Count < 2) return;
+
+        // 计算朝向第一个路径点的方向
+        Vector3 targetDir = (worldPath[1] - transform.position).normalized;
+        // 直接设置朝向（跳过平滑转向，快速修正）
+        transform.rotation = Quaternion.LookRotation(targetDir, Vector3.up);
+        Debug.Log($"无人船朝向已修正：{transform.forward}");
     }
 
     void FixedUpdate()
@@ -202,34 +233,35 @@ public class BoatController : MonoBehaviour
         // 固定Y轴高度（防止上下浮动）
         transform.position = new Vector3(transform.position.x, 0.4f, transform.position.z);
 
+        // 路径无效时尝试重新加载（只在路径状态从有效变为无效时打印一次日志）
+        if (isReachedEnd || worldPath == null || worldPath.Count == 0)
+        {
+            bool isPathInvalid = worldPath == null || worldPath.Count == 0;
+            // 当路径从有效变为无效时，打印一次日志
+            if (isPathInvalid && !wasPathInvalid)
+            {
+                Debug.LogWarning("路径无效，开始尝试重新加载...");
+                TryLoadPath();
+            }
+            // 更新路径失效状态标记
+            wasPathInvalid = isPathInvalid;
+            return;
+        }
+        // 路径恢复有效时重置标记
+        else if (wasPathInvalid)
+        {
+            wasPathInvalid = false;
+        }
 
-// 路径无效时尝试重新加载（只在路径状态从有效变为无效时打印一次日志）
-if (isReachedEnd || worldPath == null || worldPath.Count == 0)
-{
-    bool isPathInvalid = worldPath == null || worldPath.Count == 0;
-    // 当路径从有效变为无效时，打印一次日志
-    if (isPathInvalid && !wasPathInvalid)
-    {
-        Debug.LogWarning("路径无效，开始尝试重新加载...");
-        TryLoadPath();
-}
-// 更新路径失效状态标记
-wasPathInvalid = isPathInvalid;
-return;
-}
-// 路径恢复有效时重置标记
-else if (wasPathInvalid)
-{
-    wasPathInvalid = false;
-}
-// 到达最后一个路径点
-if (currentWaypointIndex >= worldPath.Count)
+        // 到达最后一个路径点
+        if (currentWaypointIndex >= worldPath.Count)
         {
             StopMovement();
             isReachedEnd = true;
             Debug.Log("已到达终点，停止移动");
             return;
         }
+
         // 移动到当前路径点
         Vector3 target = worldPath[currentWaypointIndex];
         Vector3 targetXZ = new Vector3(target.x, 0.4f, target.z);
@@ -258,12 +290,16 @@ if (currentWaypointIndex >= worldPath.Count)
             return;
         }
 
-        // 平滑转向目标方向（限制最大转向角度）
-        Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
-        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
+        // 优化转向逻辑：当朝向与路径方向夹角大于90度时，加快转向速度（核心修改）
+        Vector3 targetDir = (targetXZ - currentXZ).normalized;
+        float angle = Vector3.Angle(transform.forward, targetDir);
+        // 朝向偏差大时，加快转向速度（原旋转速度 * 2）
+        float rotationSpeedMultiplier = angle > 90f ? 2f : 1f;
+        float maxRotationDelta = 30f * Time.fixedDeltaTime * rotationSpeed * rotationSpeedMultiplier;
 
-        // 限制每帧最大转向角度（避免转圈，设为30度/帧）
-        float maxRotationDelta = 30f * Time.fixedDeltaTime * rotationSpeed;
+        // 平滑转向目标方向（限制最大转向角度）
+        Quaternion targetRotation = Quaternion.LookRotation(targetDir);
+        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, maxRotationDelta);
 
         // 计算目标速度（终点前减速）
@@ -288,4 +324,7 @@ if (currentWaypointIndex >= worldPath.Count)
         Vector3 moveDir = transform.forward * currentSpeed;
         rb.linearVelocity = new Vector3(moveDir.x, rb.linearVelocity.y, moveDir.z);  // 保持Y轴速度不变
     }
+
+    // 新增：供外部判断路径是否加载完成
+    public bool IsPathLoaded => isPathLoaded;
 }
