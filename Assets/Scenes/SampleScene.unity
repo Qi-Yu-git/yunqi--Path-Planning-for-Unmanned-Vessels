@@ -163,22 +163,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1fa9dafdf73227469212fea55def618, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  "\u6805\u683C\u5C3A\u5BF8": 0.35
-  "\u6C34\u57DF\u5E73\u9762": {fileID: 318416866}
-  obstacleLayer:
-    serializedVersion: 2
-    m_Bits: 24
-  "\u6805\u683C\u539F\u70B9": {x: -15, y: 0, z: -10}
-  "\u6805\u683C\u5BBD\u5EA6": 86
-  "\u6805\u683C\u9AD8\u5EA6": 58
-  "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 100
-  obstacleCheckRadius: 0.1
-  radiusOffset: 0
-  "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.1
-  "\u969C\u788D\u7269\u663E\u793A\u9AD8\u5EA6": 0.2
-  "\u6805\u683C\u7EBF\u989C\u8272": {r: 0.5, g: 0.5, b: 0.5, a: 0.1}
-  "\u969C\u788D\u7269\u989C\u8272": {r: 1, g: 0, b: 0, a: 0.7}
-  initTimeout: 10
+  gridWidth: 50
+  gridHeight: 100
+  cellSize: 1
+  gridOrigin: {x: 0, y: 0, z: 0}
 --- !u!1 &75989190
 GameObject:
   m_ObjectHideFlags: 0
@@ -771,6 +759,7 @@ MonoBehaviour:
   waypointDistance: 1
   endPointSlowRange: 2
   minEndSpeed: 0.5
+  arriveThreshold: 1
 --- !u!54 &173794666
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -860,6 +849,7 @@ MonoBehaviour:
   targetProximitySmoothing: 0.3
   maxStepReward: 2
   minStepPenalty: -1
+  isTrainingMode: 1
   target: {fileID: 1521328185}
 --- !u!114 &173794673
 MonoBehaviour:
@@ -890,6 +880,7 @@ MonoBehaviour:
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1
+  m_DeterministicInference: 0
   m_ObservableAttributeHandling: 0
 --- !u!114 &173794674
 MonoBehaviour:
@@ -1105,7 +1096,7 @@ MeshRenderer:
     firstSubMesh: 0
     subMeshCount: 0
   m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
+  m_ProbeAnchor: {fileID: 41255707}
   m_LightProbeVolumeOverride: {fileID: 0}
   m_ScaleInLightmap: 1
   m_ReceiveGI: 1
@@ -1174,23 +1165,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fc777756485cd1d48a416b05f1043f9e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gridManager: {fileID: 41255708}
-  startPos: {fileID: 173794670}
-  targetPos: {fileID: 1521328185}
-  spawnRangeX: {x: -10, y: 10}
-  spawnRangeZ: {x: -10, y: 10}
-  minStartTargetDistance: 8
-  maxSinglePosRetries: 5
-  retryOffsetRange: 2
   rockPrefab: {fileID: 2064088795}
-  minRockCount: 30
   maxRockCount: 70
-  rockScaleMin: 0.5
-  rockScaleMax: 1
-  obstacleLayer:
-    serializedVersion: 2
-    m_Bits: 8
-  rockAvoidDistance: 1
+  spawnRange: {x: 50, y: 50}
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
@@ -1444,6 +1421,7 @@ GameObject:
   - component: {fileID: 537956247}
   - component: {fileID: 537956246}
   - component: {fileID: 537956245}
+  - component: {fileID: 537956249}
   m_Layer: 0
   m_Name: DetectionCamera
   m_TagString: Untagged
@@ -1664,6 +1642,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 173794670}
   m_LocalEulerAnglesHint: {x: 0, y: -0.036, z: 0}
+--- !u!114 &537956249
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 537956244}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e389c376ef2ae9647af04c154af02b04, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetToFollow: {fileID: 173794670}
+  followXOffset: 0
+  followYOffset: 0.7
+  followZOffset: 0
 --- !u!1 &595230123
 GameObject:
   m_ObjectHideFlags: 0
@@ -1678,6 +1672,7 @@ GameObject:
   - component: {fileID: 595230127}
   - component: {fileID: 595230126}
   - component: {fileID: 595230125}
+  - component: {fileID: 595230130}
   m_Layer: 6
   m_Name: "\u6309\u952E\u63A7\u5236\u65E0\u4EBA\u8239"
   m_TagString: USV
@@ -1810,6 +1805,24 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 595230123}
   m_Mesh: {fileID: 1504583080742779579, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
+--- !u!114 &595230130
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 595230123}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ac5cabe0625c00c4092e47d1c6ad1e8d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  usvMoveSpeed: 5
+  waterHeightOffset: 0.5
+  forwardControlKey: 119
+  backwardControlKey: 115
+  leftControlKey: 97
+  rightControlKey: 100
 --- !u!1 &596039851
 GameObject:
   m_ObjectHideFlags: 0
@@ -3390,6 +3403,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 976173188}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1171535287
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1171535288}
+  - component: {fileID: 1171535289}
+  m_Layer: 0
+  m_Name: Academy
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1171535288
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1171535287}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 3.0830293, y: 0.012498024, z: -3.1546824}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1171535289
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1171535287}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cedc183ff604caf4ba93069fa42e7c33, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1198013968
 GameObject:
   m_ObjectHideFlags: 0
@@ -5036,3 +5093,4 @@ SceneRoots:
   - {fileID: 959740698}
   - {fileID: 2004669450}
   - {fileID: 777516361}
+  - {fileID: 1171535288}

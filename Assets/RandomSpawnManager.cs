@@ -1,226 +1,159 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Collections; // 添加IEnumerator所需的命名空间
 
 public class RandomSpawnManager : MonoBehaviour
 {
-    [SerializeField] private GridManager gridManager;
-    [SerializeField] private Transform startPos;
-    [SerializeField] private Transform targetPos;
-    [SerializeField] private Vector2 spawnRangeX = new Vector2(-10, 10); // 随机X范围
-    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-10, 10); // 随机Z范围
-    [SerializeField] private float minStartTargetDistance = 8f; // 起点终点最小距离
-    [SerializeField] private int maxSinglePosRetries = 5; // 单个位置最大重试次数
-    [SerializeField] private float retryOffsetRange = 2f; // 重试偏移范围
+    public static RandomSpawnManager Instance { get; private set; }
 
-    // 礁石生成配置
-    [Header("礁石生成参数")]
-    [SerializeField] private GameObject rockPrefab; // 礁石预制体
-    [SerializeField] private int minRockCount = 5;   // 最小礁石数量
-    [SerializeField] private int maxRockCount = 15;  // 最大礁石数量
-    [SerializeField] private float rockScaleMin = 0.8f; // 礁石最小缩放
-    [SerializeField] private float rockScaleMax = 1.5f; // 礁石最大缩放
-    [SerializeField] private LayerMask obstacleLayer; // 礁石所在层（需包含在GridManager的obstacleLayer中）
-    [SerializeField] private float rockAvoidDistance = 3f; // 礁石与起点/终点的安全距离
+    [Tooltip("岩石预制体")]
+    public GameObject rockPrefab;
+    [Tooltip("最大岩石数量")]
+    public int maxRockCount = 50;
+    [Tooltip("岩石生成范围")]
+    public Vector2 spawnRange = new Vector2(50, 50);
 
-    private List<GameObject> spawnedRocks = new List<GameObject>(); // 已生成礁石列表
+    public Vector3 TargetPos { get; private set; }
+    private GridManager gridManager;
+    private List<Vector3> safePositions = new List<Vector3>();
 
-    private void Start()
-    {
-        if (gridManager == null)
-        {
-            Debug.LogError("RandomSpawnManager：GridManager未赋值！");
-            return;
-        }
-        // 等待栅格初始化后生成场景元素
-        StartCoroutine(WaitForGridInitThenSetup());
-    }
 
-    private IEnumerator WaitForGridInitThenSetup()
-    {
-        while (!gridManager.IsGridReady())
-        {
-            yield return new WaitForSeconds(0.2f);
-        }
-        ClearExistingRocks(); // 清除旧礁石
-        GenerateRandomRocks(); // 生成新礁石
-        GenerateRandomStartAndTarget(); // 生成起点终点
-    }
-
-    // 生成随机礁石
-    // RandomSpawnManager.cs 礁石生成逻辑修改
-    private void GenerateRandomRocks()
-    {
-        int rockCount = Random.Range(minRockCount, maxRockCount + 1);
-        int spawned = 0;
-        int maxAttempts = rockCount * 2; // 减少最大尝试次数（原 3 倍，改为 2 倍）
-        int attempts = 0;
-
-        while (spawned < rockCount && attempts < maxAttempts)
-        {
-            attempts++;
-            Vector3 rockPos = new Vector3(
-                Random.Range(spawnRangeX.x, spawnRangeX.y),
-                0.1f,
-                Random.Range(spawnRangeZ.x, spawnRangeZ.y)
-            );
-
-            if (IsRockPosValid(rockPos))
-            {
-                // 实例化礁石的逻辑
-                GameObject rock = Instantiate(rockPrefab, rockPos, Quaternion.Euler(-90f, Random.Range(0f, 360f), 0f));
-                // ... 其他设置 ...
-                spawnedRocks.Add(rock);
-                spawned++;
-            }
-        }
-
-        Debug.Log($"生成礁石完成：成功生成 {spawned}/{rockCount} 个，尝试次数 {attempts}");
-        gridManager.强制刷新栅格();
-    }
-
-    // 校验礁石位置是否有效
-    private bool IsRockPosValid(Vector3 rockPos)
-    {
-        // 1. 转换为栅格坐标
-        Vector2Int gridPos = gridManager.世界转栅格(rockPos);
-        // 2. 检查栅格有效性
-        if (!gridManager.IsValidGridPosition(gridPos))
-            return false;
-
-        // 3. 检查是否与起点/终点过近
-        if (Vector3.Distance(rockPos, startPos.position) < rockAvoidDistance ||
-            Vector3.Distance(rockPos, targetPos.position) < rockAvoidDistance)
-            return false;
-
-        // 4. 检查是否与其他礁石过近
-        foreach (var rock in spawnedRocks)
-        {
-            if (Vector3.Distance(rockPos, rock.transform.position) < 2f)
-                return false;
-        }
-
-        // 5. 检查该位置是否可通行（确保不与已有障碍物重叠）
-        return gridManager.栅格是否可通行(gridPos);
-    }
-
-    // 清除已生成的礁石
-    private void ClearExistingRocks()
-    {
-        foreach (var rock in spawnedRocks)
-        {
-            if (rock != null)
-                Destroy(rock);
-        }
-        spawnedRocks.Clear();
-    }
-
-    // 从LayerMask获取层级索引
-    private int GetLayerFromMask(LayerMask mask)
-    {
-        int layer = 0;
-        int maskValue = mask.value;
-        while (maskValue > 1)
-        {
-            maskValue >>= 1;
-            layer++;
-        }
-        return layer;
-    }
-
-    // 生成随机起点和终点（保持原有逻辑）
-    public void GenerateRandomStartAndTarget()
-    {
-        // 生成有效起点
-        Vector3 validStart = GenerateValidRandomPos();
-        if (IsInvalidPos(validStart))
-        {
-            Debug.LogError("无法生成有效起点！");
-            return;
-        }
-
-        // 生成有效终点（确保与起点距离）
-        Vector3 validTarget = Vector3.zero;
-        int targetRetry = 0;
-        do
-        {
-            validTarget = GenerateValidRandomPos();
-            targetRetry++;
-        } while (IsInvalidPos(validTarget) ||
-                 Vector3.Distance(validStart, validTarget) < minStartTargetDistance &&
-                 targetRetry < maxSinglePosRetries * 2);
-
-        if (IsInvalidPos(validTarget))
-        {
-            Debug.LogError("无法生成有效终点！");
-            return;
-        }
-
-        // 赋值位置
-        startPos.position = validStart;
-        targetPos.position = validTarget;
-        Debug.Log($"生成起点：{validStart}，终点：{validTarget}（距离：{Vector3.Distance(validStart, validTarget):F2}m）");
-    }
-
-    // 生成单个有效随机位置（保持原有逻辑）
-    private Vector3 GenerateValidRandomPos()
-    {
-        Vector3 randomPos;
-        int retryCount = 0;
-
-        do
-        {
-            // 基础随机位置（在指定范围内）
-            float x = Random.Range(spawnRangeX.x, spawnRangeX.y);
-            float z = Random.Range(spawnRangeZ.x, spawnRangeZ.y);
-            randomPos = new Vector3(x, 0.4f, z);
-
-            // 若无效，小范围偏移重试
-            if (retryCount > 0)
-            {
-                float offsetX = Random.Range(-retryOffsetRange, retryOffsetRange);
-                float offsetZ = Random.Range(-retryOffsetRange, retryOffsetRange);
-                randomPos.x += offsetX;
-                randomPos.z += offsetZ;
-                // 限制在范围内
-                randomPos.x = Mathf.Clamp(randomPos.x, spawnRangeX.x, spawnRangeX.y);
-                randomPos.z = Mathf.Clamp(randomPos.z, spawnRangeZ.x, spawnRangeZ.y);
-            }
-
-            retryCount++;
-        }
-        while (!IsPosValid(randomPos) && retryCount < maxSinglePosRetries);
-
-        return retryCount < maxSinglePosRetries ? randomPos : Vector3.negativeInfinity;
-    }
-
-    // 校验位置有效性（保持原有逻辑）
-    private bool IsPosValid(Vector3 worldPos)
-    {
-        Vector2Int gridPos = gridManager.世界转栅格(worldPos);
-        if (!gridManager.IsValidGridPosition(gridPos) || !gridManager.栅格是否可通行(gridPos))
-            return false;
-        if (Physics.CheckSphere(worldPos, 0.5f, obstacleLayer))
-            return false;
-        return true;
-    }
-
-    private bool IsInvalidPos(Vector3 pos)
-    {
-        return pos == Vector3.negativeInfinity;
-    }
-
-    // 供外部调用（重新生成场景）
     public void Regenerate()
     {
-        ClearExistingRocks();
+        ClearExistingRocks(); // 现在已实现该方法
         GenerateRandomRocks();
         GenerateRandomStartAndTarget();
     }
 
-    // 清理礁石（避免场景残留）
-    private void OnDestroy()
+    private void Awake()
     {
-        ClearExistingRocks();
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    private void Start()
+    {
+        gridManager = Object.FindFirstObjectByType<GridManager>();
+        StartCoroutine(WaitForGridInitThenSetup()); // 修正方法名
+    }
+
+    // 修复IEnumerator返回类型（移除泛型参数）
+    private IEnumerator WaitForGridInitThenSetup()  // 正确的返回类型是IEnumerator而非IEnumerator<Something>
+    {
+        while (gridManager == null || !gridManager.IsGridReady())
+        {
+            yield return new WaitForSeconds(0.2f);
+        }
+
+        GenerateSafePositions();
+        GenerateRandomRocks();
+        GenerateRandomStartAndTarget();
+    }
+
+    // 添加缺失的ClearExistingRocks方法
+    private void ClearExistingRocks()
+    {
+        GameObject[] existingRocks = GameObject.FindGameObjectsWithTag("Rock");
+        foreach (var rock in existingRocks)
+        {
+            Destroy(rock);
+        }
+    }
+
+    // 以下为原有代码（保持不变）
+    private void GenerateSafePositions()
+    {
+        safePositions.Clear();
+        for (int x = 0; x < gridManager.gridWidth; x++)
+        {
+            for (int y = 0; y < gridManager.gridHeight; y++)
+            {
+                Vector2Int gridPos = new Vector2Int(x, y);
+                if (gridManager.栅格是否可通行(gridPos))
+                {
+                    safePositions.Add(gridManager.栅格转世界(gridPos));
+                }
+            }
+        }
+    }
+
+    public void GenerateRandomRocks()
+    {
+        // 清除现有岩石
+        GameObject[] existingRocks = GameObject.FindGameObjectsWithTag("Rock");
+        foreach (var rock in existingRocks)
+        {
+            Destroy(rock);
+        }
+
+        if (gridManager == null || !gridManager.IsGridReady() || rockPrefab == null)
+            return;
+
+        int spawnCount = 0;
+        int tryCount = 0;
+        while (spawnCount < maxRockCount && tryCount < maxRockCount * 2)
+        {
+            Vector2Int randomGrid = new Vector2Int(
+                Random.Range(5, gridManager.gridWidth - 5),
+                Random.Range(5, gridManager.gridHeight - 5)
+            );
+
+            if (gridManager.栅格是否可通行(randomGrid))
+            {
+                Vector3 worldPos = gridManager.栅格转世界(randomGrid);
+                worldPos.y = 0.1f;
+                Instantiate(rockPrefab, worldPos, Quaternion.identity);
+
+                // 标记栅格为障碍物
+                gridManager.MarkAsObstacle(randomGrid);
+                spawnCount++;
+            }
+            tryCount++;
+        }
+        Debug.Log($"岩石生成完成，成功生成 {spawnCount}/{maxRockCount} 个");
+    }
+
+    public void GenerateRandomStartAndTarget()
+    {
+        if (safePositions.Count == 0)
+        {
+            GenerateSafePositions();
+        }
+
+        Vector3 startPos = GetRandomSafePosition();
+        Vector3 targetPos = GetRandomSafePosition();
+
+        // 确保起点和终点距离足够
+        while (Vector3.Distance(startPos, targetPos) < 5.0f && safePositions.Count > 1)
+        {
+            targetPos = GetRandomSafePosition();
+        }
+
+        TargetPos = targetPos;
+
+        // 设置Agent位置
+        var agent = Object.FindFirstObjectByType<USV_GlobalRLAgent>();
+        if (agent != null)
+        {
+            agent.transform.position = startPos + new Vector3(0, 0.4f, 0);
+        }
+
+        Debug.Log($"起点：{startPos}，终点：{targetPos}，距离：{Vector3.Distance(startPos, targetPos):F2}m");
+    }
+
+
+    private Vector3 GetRandomSafePosition()
+    {
+        if (safePositions.Count == 0)
+        {
+            GenerateSafePositions();
+        }
+        return safePositions[Random.Range(0, safePositions.Count)];
     }
 }
