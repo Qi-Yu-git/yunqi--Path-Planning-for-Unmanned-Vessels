@@ -1,31 +1,226 @@
-using UnityEngine;
-using System.Collections.Generic;
 using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
 public class RandomSpawnManager : MonoBehaviour
 {
-    public static RandomSpawnManager Instance { get; private set; }
+    [SerializeField] private GridManager gridManager;
+    [SerializeField] private Transform startPos;
+    [SerializeField] private Transform targetPos;
+    [SerializeField] private Vector2 spawnRangeX = new Vector2(-10, 10); // 随机X范围
+    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-10, 10); // 随机Z范围
+    [SerializeField] private float minStartTargetDistance = 8f; // 起点终点最小距离
+    [SerializeField] private int maxSinglePosRetries = 5; // 单个位置最大重试次数
+    [SerializeField] private float retryOffsetRange = 2f; // 重试偏移范围
 
-    [Tooltip("岩石预制体")]
-    public GameObject rockPrefab;
-    [Tooltip("最大岩石数量")]
-    public int maxRockCount = 50;
+    // 礁石生成配置
+    [Header("礁石生成参数")]
+    [SerializeField] private GameObject rockPrefab; // 礁石预制体
+    [SerializeField] private int minRockCount = 5;   // 最小礁石数量
+    [SerializeField] private int maxRockCount = 15;  // 最大礁石数量
+    [SerializeField] private float rockScaleMin = 0.8f; // 礁石最小缩放
+    [SerializeField] private float rockScaleMax = 1.5f; // 礁石最大缩放
+    [SerializeField] private LayerMask obstacleLayer; // 礁石所在层（需包含在GridManager的obstacleLayer中）
+    [SerializeField] private float rockAvoidDistance = 3f; // 礁石与起点/终点的安全距离
 
-    [Header("水域设置")]
-    [Tooltip("挂载水域对象（如Plane），用于自动获取水域范围")]
-    public Transform waterTransform; // 拖拽水域对象到这里
+    private List<GameObject> spawnedRocks = new List<GameObject>(); // 已生成礁石列表
 
-    public Vector3 TargetPos { get; private set; }
-    private GridManager gridManager;
-    private List<Vector3> safePositions = new List<Vector3>();
+    private void Start()
+    {
+        if (gridManager == null)
+        {
+            Debug.LogError("RandomSpawnManager：GridManager未赋值！");
+            return;
+        }
+        // 等待栅格初始化后生成场景元素
+        StartCoroutine(WaitForGridInitThenSetup());
+    }
 
-    // 自动计算的水域边界
-    private float minWaterX;
-    private float maxWaterX;
-    private float minWaterZ;
-    private float maxWaterZ;
-    private float waterYHeight; // 水域高度
+    private IEnumerator WaitForGridInitThenSetup()
+    {
+        while (!gridManager.IsGridReady())
+        {
+            yield return new WaitForSeconds(0.2f);
+        }
+        ClearExistingRocks(); // 清除旧礁石
+        GenerateRandomRocks(); // 生成新礁石
+        GenerateRandomStartAndTarget(); // 生成起点终点
+    }
 
+    // 生成随机礁石
+    private void GenerateRandomRocks()
+    {
+        int rockCount = Random.Range(minRockCount, maxRockCount + 1);
+        int spawned = 0;
+        int maxAttempts = rockCount * 2; // 减少最大尝试次数（原 3 倍，改为 2 倍）
+        int attempts = 0;
+
+        while (spawned < rockCount && attempts < maxAttempts)
+        {
+            attempts++;
+            Vector3 rockPos = new Vector3(
+                Random.Range(spawnRangeX.x, spawnRangeX.y),
+                0.1f,
+                Random.Range(spawnRangeZ.x, spawnRangeZ.y)
+            );
+
+            if (IsRockPosValid(rockPos))
+            {
+                // 实例化礁石的逻辑
+                GameObject newRock = Instantiate(rockPrefab, rockPos, Quaternion.Euler(-90f, Random.Range(0f, 360f), 0f));
+                // 应用缩放
+                float scale = Random.Range(rockScaleMin, rockScaleMax);
+                newRock.transform.localScale = new Vector3(scale, scale, scale);
+                // 设置礁石层级
+                if (obstacleLayer.value != 0)
+                {
+                    int layerIndex = GetLayerFromMask(obstacleLayer);
+                    newRock.layer = layerIndex;
+                }
+                spawnedRocks.Add(newRock);
+                spawned++;
+            }
+        }
+
+        Debug.Log($"生成礁石完成：成功生成 {spawned}/{rockCount} 个，尝试次数 {attempts}");
+        gridManager.强制刷新栅格();
+    }
+
+    // 校验礁石位置是否有效
+    private bool IsRockPosValid(Vector3 rockPos)
+    {
+        // 1. 转换为栅格坐标
+        Vector2Int gridPos = gridManager.世界转栅格(rockPos);
+        // 2. 检查栅格有效性
+        if (!gridManager.IsValidGridPosition(gridPos))
+            return false;
+
+        // 3. 检查是否与起点/终点过近
+        if (startPos != null && Vector3.Distance(rockPos, startPos.position) < rockAvoidDistance)
+            return false;
+        if (targetPos != null && Vector3.Distance(rockPos, targetPos.position) < rockAvoidDistance)
+            return false;
+
+        // 4. 检查是否与其他礁石过近
+        foreach (var rock in spawnedRocks)
+        {
+            if (rock != null && Vector3.Distance(rockPos, rock.transform.position) < 2f)
+                return false;
+        }
+
+        // 5. 检查该位置是否可通行（确保不与已有障碍物重叠）
+        return gridManager.栅格是否可通行(gridPos);
+    }
+
+    // 清除已生成的礁石
+    private void ClearExistingRocks()
+    {
+        foreach (var rock in spawnedRocks)
+        {
+            if (rock != null)
+                Destroy(rock);
+        }
+        spawnedRocks.Clear();
+    }
+
+    // 从LayerMask获取层级索引
+    private int GetLayerFromMask(LayerMask mask)
+    {
+        int layer = 0;
+        int maskValue = mask.value;
+        while (maskValue > 1)
+        {
+            maskValue >>= 1;
+            layer++;
+        }
+        return layer;
+    }
+
+    // 生成随机起点和终点（保持原有逻辑）
+    public void GenerateRandomStartAndTarget()
+    {
+        // 生成有效起点
+        Vector3 validStart = GenerateValidRandomPos();
+        if (IsInvalidPos(validStart))
+        {
+            Debug.LogError("无法生成有效起点！");
+            return;
+        }
+
+        // 生成有效终点（确保与起点距离）
+        Vector3 validTarget = Vector3.zero;
+        int targetRetry = 0;
+        do
+        {
+            validTarget = GenerateValidRandomPos();
+            targetRetry++;
+        } while (IsInvalidPos(validTarget) ||
+                 Vector3.Distance(validStart, validTarget) < minStartTargetDistance &&
+                 targetRetry < maxSinglePosRetries * 2);
+
+        if (IsInvalidPos(validTarget))
+        {
+            Debug.LogError("无法生成有效终点！");
+            return;
+        }
+
+        // 赋值位置
+        if (startPos != null)
+            startPos.position = validStart;
+        if (targetPos != null)
+            targetPos.position = validTarget;
+        Debug.Log($"生成起点：{validStart}，终点：{validTarget}（距离：{Vector3.Distance(validStart, validTarget):F2}m）");
+    }
+
+    // 生成单个有效随机位置（保持原有逻辑）
+    private Vector3 GenerateValidRandomPos()
+    {
+        Vector3 randomPos;
+        int retryCount = 0;
+
+        do
+        {
+            // 基础随机位置（在指定范围内）
+            float x = Random.Range(spawnRangeX.x, spawnRangeX.y);
+            float z = Random.Range(spawnRangeZ.x, spawnRangeZ.y);
+            randomPos = new Vector3(x, 0.4f, z);
+
+            // 若无效，小范围偏移重试
+            if (retryCount > 0)
+            {
+                float offsetX = Random.Range(-retryOffsetRange, retryOffsetRange);
+                float offsetZ = Random.Range(-retryOffsetRange, retryOffsetRange);
+                randomPos.x += offsetX;
+                randomPos.z += offsetZ;
+                // 限制在范围内
+                randomPos.x = Mathf.Clamp(randomPos.x, spawnRangeX.x, spawnRangeX.y);
+                randomPos.z = Mathf.Clamp(randomPos.z, spawnRangeZ.x, spawnRangeZ.y);
+            }
+
+            retryCount++;
+        }
+        while (!IsPosValid(randomPos) && retryCount < maxSinglePosRetries);
+
+        return retryCount < maxSinglePosRetries ? randomPos : Vector3.negativeInfinity;
+    }
+
+    // 校验位置有效性（保持原有逻辑）
+    private bool IsPosValid(Vector3 worldPos)
+    {
+        Vector2Int gridPos = gridManager.世界转栅格(worldPos);
+        if (!gridManager.IsValidGridPosition(gridPos) || !gridManager.栅格是否可通行(gridPos))
+            return false;
+        if (Physics.CheckSphere(worldPos, 0.5f, obstacleLayer))
+            return false;
+        return true;
+    }
+
+    private bool IsInvalidPos(Vector3 pos)
+    {
+        return pos == Vector3.negativeInfinity;
+    }
+
+    // 供外部调用（重新生成场景）
     public void Regenerate()
     {
         ClearExistingRocks();
@@ -33,243 +228,9 @@ public class RandomSpawnManager : MonoBehaviour
         GenerateRandomStartAndTarget();
     }
 
-    private void Awake()
-    {
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
-    }
-
-    private void Start()
-    {
-        gridManager = Object.FindFirstObjectByType<GridManager>();
-
-        // 初始化水域边界
-        if (waterTransform != null)
-        {
-            CalculateWaterBounds();
-        }
-        else
-        {
-            Debug.LogError("请挂载水域对象到 waterTransform！");
-            // 默认值防止崩溃
-            SetDefaultWaterBounds();
-        }
-
-        StartCoroutine(WaitForGridInitThenSetup());
-    }
-
-    // 计算水域边界（基于水域对象的尺寸和位置）
-    private void CalculateWaterBounds()
-    {
-        // 获取水域对象的尺寸（假设是Plane，默认在XZ平面）
-        Vector3 waterScale = waterTransform.localScale;
-        Vector3 waterPos = waterTransform.position;
-
-        // 计算边界（以水域中心为原点，向四周扩展）
-        minWaterX = waterPos.x - waterScale.x * 5f; // Plane默认尺寸是10x10，所以乘以5
-        maxWaterX = waterPos.x + waterScale.x * 5f;
-        minWaterZ = waterPos.z - waterScale.z * 5f;
-        maxWaterZ = waterPos.z + waterScale.z * 5f;
-        waterYHeight = waterPos.y; // 水域自身的高度
-
-        Debug.Log($"自动计算水域边界：X[{minWaterX:F2},{maxWaterX:F2}], Z[{minWaterZ:F2},{maxWaterZ:F2}], Y[{waterYHeight:F2}]");
-    }
-
-    // 设置默认水域边界（防止未挂载水域对象时崩溃）
-    private void SetDefaultWaterBounds()
-    {
-        minWaterX = 0.5f;
-        maxWaterX = 49.5f;
-        minWaterZ = 0.5f;
-        maxWaterZ = 99.5f;
-        waterYHeight = 0f;
-    }
-
-    private IEnumerator WaitForGridInitThenSetup()
-    {
-        while (gridManager == null || !gridManager.IsGridReady())
-        {
-            yield return new WaitForSeconds(0.2f);
-        }
-
-        GenerateSafePositions();
-        GenerateRandomRocks();
-        GenerateRandomStartAndTarget();
-    }
-
-    private void ClearExistingRocks()
-    {
-        GameObject[] existingRocks = GameObject.FindGameObjectsWithTag("Rock");
-        foreach (var rock in existingRocks)
-        {
-            Destroy(rock);
-        }
-    }
-
-    // 在RandomSpawnManager.cs的GenerateSafePositions方法中修改
-    private void GenerateSafePositions()
-    {
-        safePositions.Clear();
-        if (gridManager == null)
-        {
-            Debug.LogError("GenerateSafePositions失败：GridManager未赋值");
-            return;
-        }
-        if (!gridManager.IsGridReady())
-        {
-            Debug.LogError("GenerateSafePositions失败：栅格未就绪，等待初始化...");
-            // 新增：等待栅格就绪后重试
-            StartCoroutine(WaitForGridThenGenerateSafePositions());
-            return;
-        }
-
-        // 正常生成安全位置的逻辑
-        for (int x = 0; x < gridManager.gridWidth; x++)
-        {
-            for (int y = 0; y < gridManager.gridHeight; y++)
-            {
-                Vector2Int gridPos = new Vector2Int(x, y);
-                if (gridManager.IsValidGridPosition(gridPos) && gridManager.栅格是否可通行(gridPos))
-                {
-                    Vector3 worldPos = gridManager.栅格转世界(gridPos);
-                    if (worldPos.x >= minWaterX && worldPos.x <= maxWaterX &&
-                        worldPos.z >= minWaterZ && worldPos.z <= maxWaterZ)
-                    {
-                        worldPos.y = waterYHeight + 0.05f;
-                        safePositions.Add(worldPos);
-                    }
-                }
-            }
-        }
-        Debug.Log($"生成安全位置完成：共{safePositions.Count}个");
-    }
-
-    // 新增：等待栅格就绪后重试生成安全位置
-    private IEnumerator WaitForGridThenGenerateSafePositions()
-    {
-        while (gridManager == null || !gridManager.IsGridReady())
-        {
-            yield return new WaitForSeconds(0.5f);
-        }
-        GenerateSafePositions();
-    }
-    public void GenerateRandomRocks()
+    // 清理礁石（避免场景残留）
+    private void OnDestroy()
     {
         ClearExistingRocks();
-        if (gridManager == null || !gridManager.IsGridReady() || rockPrefab == null)
-            return;
-
-        int spawnCount = 0;
-        int tryCount = 0;
-        while (spawnCount < maxRockCount && tryCount < maxRockCount * 2)
-        {
-            Vector2Int randomGrid = new Vector2Int(
-                Random.Range(5, gridManager.gridWidth - 5),
-                Random.Range(5, gridManager.gridHeight - 5)
-            );
-
-            if (gridManager.栅格是否可通行(randomGrid))
-            {
-                Vector3 worldPos = gridManager.栅格转世界(randomGrid);
-                // 校验是否在水域内
-                if (worldPos.x < minWaterX || worldPos.x > maxWaterX ||
-                    worldPos.z < minWaterZ || worldPos.z > maxWaterZ)
-                {
-                    tryCount++;
-                    continue;
-                }
-
-                worldPos.y = waterYHeight + 0.1f; // 岩石略高于水域
-                Instantiate(rockPrefab, worldPos, Quaternion.identity);
-                gridManager.MarkAsObstacle(randomGrid);
-                spawnCount++;
-            }
-            tryCount++;
-        }
-        Debug.Log($"岩石生成完成，成功生成 {spawnCount}/{maxRockCount} 个");
-    }
-
-    public void GenerateRandomStartAndTarget()
-    {
-        if (safePositions.Count == 0)
-        {
-            GenerateSafePositions();
-        }
-
-        Vector3 startPos = GetRandomSafePosition();
-        Vector3 targetPos = GetRandomSafePosition();
-
-        // 确保起点和终点距离足够
-        while (Vector3.Distance(startPos, targetPos) < 5.0f && safePositions.Count > 1)
-        {
-            targetPos = GetRandomSafePosition();
-        }
-
-        TargetPos = targetPos;
-
-        // 设置Agent位置（略高于水域）
-        var agent = Object.FindFirstObjectByType<USV_GlobalRLAgent>();
-        if (agent != null)
-        {
-            agent.transform.position = new Vector3(startPos.x, waterYHeight + 0.4f, startPos.z);
-        }
-
-        Debug.Log($"起点：{startPos}，终点：{targetPos}，距离：{Vector3.Distance(startPos, targetPos):F2}m");
-    }
-
-    public void ClearAllRocks()
-    {
-        GameObject[] rocks = GameObject.FindGameObjectsWithTag("Rock");
-        foreach (var rock in rocks)
-        {
-            Destroy(rock);
-        }
-    }
-
-    private Vector3 GetRandomSafePosition()
-    {
-        if (safePositions.Count == 0)
-        {
-            GenerateSafePositions();
-            // 若仍为空，返回水域中心
-            if (safePositions.Count == 0)
-            {
-                Vector3 centerPos = new Vector3(
-                    (minWaterX + maxWaterX) / 2f,
-                    waterYHeight + 0.05f,
-                    (minWaterZ + maxWaterZ) / 2f
-                );
-                Debug.LogWarning("安全位置为空，返回水域中心：" + centerPos);
-                return centerPos;
-            }
-        }
-
-        return safePositions[Random.Range(0, safePositions.Count)];
-    }
-
-    // Gizmo绘制水域边界（方便调试）
-    private void OnDrawGizmosSelected()
-    {
-        if (waterTransform != null)
-        {
-            Gizmos.color = Color.blue;
-            Vector3 center = new Vector3(
-                (minWaterX + maxWaterX) / 2f,
-                waterYHeight,
-                (minWaterZ + maxWaterZ) / 2f
-            );
-            Vector3 size = new Vector3(
-                maxWaterX - minWaterX,
-                0.1f,
-                maxWaterZ - minWaterZ
-            );
-            Gizmos.DrawWireCube(center, size);
-        }
     }
 }

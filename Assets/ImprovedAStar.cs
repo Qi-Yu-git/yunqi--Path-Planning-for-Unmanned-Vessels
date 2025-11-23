@@ -6,7 +6,7 @@ using UnityEngine;
 public class ImprovedAStar : MonoBehaviour
 {
     // 常量定义
-    public float WATER_Y_HEIGHT = 0.05f;
+    private const float WATER_Y_HEIGHT = 0.05f;
     private const int NEIGHBOR_SEARCH_RANGE = 2;
     private const float DIAGONAL_COST = 1.41421356f; // 精确√2值
     private const float STRAIGHT_COST = 1f;
@@ -105,9 +105,6 @@ public class ImprovedAStar : MonoBehaviour
         int retryCount = 0;
         while (retryCount < 3)
         {
-
-
-
             if (gridManager == null)
             {
                 Debug.LogError("A*路径计算失败：gridManager 未赋值！");
@@ -139,22 +136,6 @@ public class ImprovedAStar : MonoBehaviour
             Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
             Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
             Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
-
-            // 新增：检查起点和终点是否相同
-            if (startGrid == targetGrid)
-            {
-                Debug.LogWarning("起点和终点栅格相同，尝试重新生成终点...");
-                // 通知SpawnManager重新生成终点
-                var respawnManager = FindFirstObjectByType<RandomSpawnManager>();
-                if (respawnManager != null)
-                {
-                    respawnManager.GenerateRandomStartAndTarget();
-                }
-                retryCount++;
-                yield return new WaitForSeconds(1f);
-                continue;
-            }
-
 
             // 调用带搜索半径的FindValidGrid
             startGrid = FindValidGrid(startGrid, 5);
@@ -194,18 +175,15 @@ public class ImprovedAStar : MonoBehaviour
             }
         }
 
-        // 将 CalculatePathCoroutine 中的相关代码修改为
-        Debug.LogError("未找到RandomSpawnManager，无法重置位置，请手动设置起点和终点");
-    /*     Debug.LogError("A*路径计算失败，3次尝试后仍为空，请求SpawnManager重置...");
-          RandomSpawnManager spawnManager = FindFirstObjectByType<RandomSpawnManager>();
-          if (spawnManager != null)
-         {
-             // 只请求重置，不直接修改位置
-             spawnManager.Regenerate();
-             yield return new WaitForSeconds(0.3f);
-             StartCoroutine(CalculatePathCoroutine());
-         }
-    */
+        // 修复：使用Unity 6推荐的API替换过时的FindObjectOfType
+        Debug.LogError("A*路径计算失败：3次重试后仍为空！尝试重新生成起点终点...");
+        RandomSpawnManager spawnManager = FindFirstObjectByType<RandomSpawnManager>();
+        if (spawnManager != null)
+        {
+            spawnManager.Regenerate();
+            yield return new WaitForSeconds(0.3f);
+            StartCoroutine(CalculatePathCoroutine()); // 重新计算路径
+        }
         path = null;
     }
 
@@ -221,7 +199,6 @@ public class ImprovedAStar : MonoBehaviour
         worldPos.z = Mathf.Clamp(worldPos.z, minZ, maxZ);
         Debug.Log($"Clamp前坐标：{worldPos}，Clamp后坐标：{worldPos}，边界[X: {minX}-{maxX}, Z: {minZ}-{maxZ}]");
         return worldPos;
-
     }
 
     // ImprovedAStar.cs - FindValidGrid() 方法增强

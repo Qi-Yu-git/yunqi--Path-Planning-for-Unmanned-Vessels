@@ -163,10 +163,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1fa9dafdf73227469212fea55def618, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gridWidth: 50
-  gridHeight: 100
-  cellSize: 1
-  gridOrigin: {x: 0, y: 0, z: 0}
+  "\u6805\u683C\u5C3A\u5BF8": 1
+  "\u6C34\u57DF\u5E73\u9762": {fileID: 318416866}
+  obstacleLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  "\u6805\u683C\u539F\u70B9": {x: 0, y: 0, z: 0}
+  "\u6805\u683C\u5BBD\u5EA6": 0
+  "\u6805\u683C\u9AD8\u5EA6": 0
+  "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 100
+  obstacleCheckRadius: 0.5
+  radiusOffset: 0
+  "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.1
+  "\u969C\u788D\u7269\u663E\u793A\u9AD8\u5EA6": 0.2
+  "\u6805\u683C\u7EBF\u989C\u8272": {r: 0.5, g: 0.5, b: 0.5, a: 0.1}
+  "\u969C\u788D\u7269\u989C\u8272": {r: 1, g: 0, b: 0, a: 0.7}
+  initTimeout: 10
 --- !u!1 &75989190
 GameObject:
   m_ObjectHideFlags: 0
@@ -759,7 +771,6 @@ MonoBehaviour:
   waypointDistance: 1
   endPointSlowRange: 2
   minEndSpeed: 0.5
-  arriveThreshold: 1
 --- !u!54 &173794666
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -799,7 +810,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9a22e1d6b3a17d844877f1dc4d76ea75, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  WATER_Y_HEIGHT: 0.05
   gridManager: {fileID: 41255708}
   startPos: {fileID: 173794670}
   targetPos: {fileID: 1521328185}
@@ -850,7 +860,6 @@ MonoBehaviour:
   targetProximitySmoothing: 0.3
   maxStepReward: 2
   minStepPenalty: -1
-  isTrainingMode: 1
   target: {fileID: 1521328185}
 --- !u!114 &173794673
 MonoBehaviour:
@@ -1166,13 +1175,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fc777756485cd1d48a416b05f1043f9e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  gridManager: {fileID: 0}
+  startPos: {fileID: 0}
+  targetPos: {fileID: 0}
+  spawnRangeX: {x: -10, y: 10}
+  spawnRangeZ: {x: -10, y: 10}
+  minStartTargetDistance: 8
+  maxSinglePosRetries: 5
+  retryOffsetRange: 2
   rockPrefab: {fileID: 2064088795}
+  minRockCount: 5
   maxRockCount: 70
-  spawnRange: {x: 16, y: 11.5}
-  minWaterX: 0.5
-  maxWaterX: 49.5
-  minWaterZ: 0.5
-  maxWaterZ: 99.5
+  rockScaleMin: 0.8
+  rockScaleMax: 1.5
+  obstacleLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  rockAvoidDistance: 3
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
