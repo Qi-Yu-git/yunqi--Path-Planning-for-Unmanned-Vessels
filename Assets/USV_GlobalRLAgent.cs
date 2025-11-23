@@ -32,6 +32,12 @@ public class USV_GlobalRLAgent : Agent
     private ImprovedAStar globalPathfinder;
     private int currentWaypointIndex = 0;
 
+    // 在 USV_GlobalRLAgent.cs 类中添加以下代码
+    private float currentMaxSpeed;
+    private float currentMaxEpisodeTime;
+    // 在类中添加成员定义
+    private float episodeStartTime;
+
     // USV_GlobalRLAgent.cs - Awake() 方法修改
     // 将 USV_GlobalRLAgent.cs 中的 Awake 方法修改为：
     protected override void Awake()
@@ -49,6 +55,15 @@ public class USV_GlobalRLAgent : Agent
         {
             Debug.LogError("未找到GridManager组件！");
         }
+    }
+
+    // 在ResetAgentState方法中初始化
+    public void ResetAgentState(float maxSpeed, float maxEpisodeTime)
+    {
+        currentMaxSpeed = maxSpeed;
+        currentMaxEpisodeTime = maxEpisodeTime;
+        episodeStartTime = Time.time; // 已存在，确保变量已定义
+        lastDistToTarget = Vector3.Distance(transform.position, target.position);
     }
 
 
@@ -241,11 +256,12 @@ public class USV_GlobalRLAgent : Agent
             EndEpisode();
         }
 
-        // 5. 超时惩罚（保持不变）
-        if (StepCount > 5000)
+        // 5.     // 超时惩罚（使用 Academy 传递的最大时长）
+        if (Time.time - episodeStartTime > currentMaxEpisodeTime)
         {
             AddReward(-20f);
             EndEpisode();
+            return;
         }
 
         // 更新路径点索引和距离记录
@@ -257,21 +273,19 @@ public class USV_GlobalRLAgent : Agent
     {
         // 当前速度
         float currentSpeed = rb.linearVelocity.magnitude;
-
         switch (action)
         {
-            case 0: // 前进（根据当前速度动态调整加速度）
-                if (currentSpeed < MaxSpeed * 0.8f)
+            case 0: // 前进（基于 Academy 传递的最大速度动态调整）
+                if (currentSpeed < currentMaxSpeed * 0.8f)
                 {
-                    rb.AddForce(transform.forward * MaxSpeed * 0.6f, ForceMode.VelocityChange);
+                    rb.AddForce(transform.forward * currentMaxSpeed * 0.6f, ForceMode.VelocityChange);
                 }
                 else
                 {
-                    // 接近最大速度时减小加速度，防止超速突进
-                    rb.AddForce(transform.forward * MaxSpeed * 0.2f, ForceMode.VelocityChange);
+                    rb.AddForce(transform.forward * currentMaxSpeed * 0.2f, ForceMode.VelocityChange);
                 }
                 break;
-   
+
             case 1: // 左转（进一步降低角速度，从20°→15°）
                 transform.Rotate(Vector3.up, -15f * Time.fixedDeltaTime);
                 break;
