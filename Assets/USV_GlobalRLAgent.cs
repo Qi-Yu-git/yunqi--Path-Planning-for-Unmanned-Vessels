@@ -16,7 +16,8 @@ public class USV_GlobalRLAgent : Agent
     [Tooltip("训练模式：true=循环训练，false=单次任务")]
     public bool isTrainingMode = true;// 训练时设为true，部署时设为false
 
-    public Transform target;
+    public Transform target; // 编辑模式设置的目标点
+    public Transform startPoint; // 新增：编辑模式设置的起点
     private GridManager gridManager;
     private Rigidbody rb;
     private int gridWidth;
@@ -32,20 +33,23 @@ public class USV_GlobalRLAgent : Agent
     private float episodeStartTime;
     private bool isTaskCompleted = false;
 
-    // 在USV_GlobalRLAgent.cs中修改Awake()方法
     protected override void Awake()
     {
-        base.Awake();  // 调用父类的Awake方法
-
-        // 获取Rigidbody组件
+        base.Awake();
         rb = GetComponent<Rigidbody>();
+        globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
+        if (globalPathfinder == null)
+        {
+            Debug.LogWarning("未找到ImprovedAStar组件，全局路径功能可能失效");
+        }
+
         if (rb == null)
         {
             Debug.LogError("USV_GlobalRLAgent缺少Rigidbody组件！");
             return;
         }
 
-        // 修复GridManager获取逻辑（包含API更新）
+        // GridManager获取逻辑
         if (GridManager.Instance != null)
         {
             gridManager = GridManager.Instance;
@@ -53,7 +57,6 @@ public class USV_GlobalRLAgent : Agent
         }
         else
         {
-            // 核心修改：使用新API FindFirstObjectByType替代旧API
             gridManager = FindFirstObjectByType<GridManager>();
             if (gridManager != null)
             {
@@ -68,6 +71,7 @@ public class USV_GlobalRLAgent : Agent
 
         StartCoroutine(WaitForGridInit());
     }
+
     private IEnumerator WaitForGridInit()
     {
         while (!gridManager.IsGridReady())
@@ -95,70 +99,47 @@ public class USV_GlobalRLAgent : Agent
     public override void OnEpisodeBegin()
     {
         if (!isTrainingMode && isTaskCompleted) return;
-
-        StartCoroutine(WaitForGridInitThenReset());
-    }
-
-    private IEnumerator WaitForGridInitThenReset()
-    {
-        while (gridManager == null || !gridManager.IsGridReady())
+        if (startPoint != null)
         {
-            Debug.Log("等待GridManager初始化...");
-            yield return new WaitForSeconds(0.1f);
+            transform.position = new Vector3(
+                startPoint.position.x, 0.05f, startPoint.position.z
+            );
         }
-
-        while (safePositions == null || safePositions.Count == 0)
-        {
-            Debug.Log("等待安全位置生成...");
-            GenerateSafePositions();
-            yield return new WaitForSeconds(0.1f);
-        }
-
-        // 重置无人船状态
-        transform.position = GetRandomSafePosition();
-        transform.rotation = Quaternion.Euler(0, Random.Range(0, 360), 0);
+        // 重置物理状态
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
 
-        // 生成新场景元素
-        var spawnManager = Object.FindFirstObjectByType<RandomSpawnManager>();
-        if (spawnManager != null)
+        // 仅使用编辑模式设置的起点和终点（不修改RandomSpawnManager）
+        if (startPoint != null)
         {
-            spawnManager.GenerateRandomRocks();
-            spawnManager.GenerateRandomStartAndTarget();
-            if (target != null)
-            {
-                target.position = spawnManager.TargetPos;
-            }
+            transform.position = new Vector3(
+                startPoint.position.x,
+                0.05f,  // 保持在水面高度
+                startPoint.position.z
+            );
         }
-
-        // 刷新栅格和路径
-        gridManager.强制刷新栅格();
-        var boatController = GetComponent<BoatController>();
-        if (boatController != null)
+        else
         {
-            boatController.TryLoadPath();
+            Debug.LogWarning("未设置起点，请在编辑模式中指定startPoint");
         }
 
         // 初始化episode参数
-        lastDistToTarget = Vector3.Distance(transform.position, target.position);
+        if (target != null)
+        {
+            lastDistToTarget = Vector3.Distance(transform.position, target.position);
+        }
         currentWaypointIndex = 0;
         episodeStartTime = Time.time;
         isTaskCompleted = false;
 
-        Debug.Log($"Episode重置完成：新起点={transform.position}，新终点={target.position}");
-    }
-
-    private Vector3 GetRandomSafePosition()
-    {
-        if (safePositions == null || safePositions.Count == 0)
+        // 触发路径重新计算（使用当前起点和终点）
+        if (globalPathfinder != null)
         {
-            GenerateSafePositions();
+            globalPathfinder.CalculatePathAfterDelay();
         }
-        return safePositions[Random.Range(0, safePositions.Count)] + new Vector3(0, 0.4f, 0);
     }
 
     public override void CollectObservations(VectorSensor sensor)

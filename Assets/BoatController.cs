@@ -22,7 +22,7 @@ public class BoatController : MonoBehaviour
     private Rigidbody rb;
     private bool isReachedEnd = false;
     private float currentSpeed = 0f;
-    private int 路径重试次数 = 0;
+   
     private const int 最大重试次数 = 5;
  //   private bool wasPathInvalid = false;
     private bool isPathLoaded = false;
@@ -114,6 +114,7 @@ public class BoatController : MonoBehaviour
         }
     }
 
+    // 在 TryLoadPath 中确保目标点由 RandomSpawnManager 提供
     public void TryLoadPath()
     {
         if (gridManager == null || !gridManager.IsGridReady())
@@ -129,6 +130,7 @@ public class BoatController : MonoBehaviour
             Debug.LogError("未找到RandomSpawnManager！");
             return;
         }
+        // 强制使用 RandomSpawnManager 的目标点
         Vector3 targetPos = spawnManager.TargetPos;
 
         if (pathfinder == null)
@@ -137,63 +139,9 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 替换原方法调用
-        pathfinder.CalculatePathAfterDelay();  // 原代码可能为pathfinder.CalculatePath();
+        pathfinder.CalculatePathAfterDelay();
         gridPath = pathfinder.path;
-
-        if (gridPath == null || gridPath.Count == 0)
-        {
-            Debug.LogWarning($"路径数据为空，触发A*重新计算...（第{路径重试次数 + 1}次）");
-            pathfinder.CalculatePathAfterDelay();
-            路径重试次数++;
-            float retryDelay = gridManager != null && !gridManager.IsGridReady() ? 2f : 1f;
-            if (路径重试次数 < 最大重试次数)
-                Invoke(nameof(TryLoadPath), retryDelay);
-            else
-                Debug.LogError("路径重试次数达到上限！");
-            return;
-        }
-
-        worldPath.Clear();
-        foreach (var gridPos in gridPath)
-        {
-            if (!gridManager.IsValidGridPosition(gridPos))
-            {
-                Debug.LogError($"无效栅格坐标：{gridPos}");
-                worldPath.Clear();
-                Invoke(nameof(TryLoadPath), 1f);
-                return;
-            }
-
-            Vector3 worldPos = gridManager.栅格转世界(gridPos);
-            if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.z))
-            {
-                Debug.LogError($"栅格转世界坐标失败：{gridPos}");
-                worldPath.Clear();
-                Invoke(nameof(TryLoadPath), 1f);
-                return;
-            }
-
-            worldPos.y = 0.05f;
-            worldPath.Add(worldPos);
-        }
-
-        if (worldPath.Count == 0)
-        {
-            Debug.LogError("路径转换后为空，重试...");
-            Invoke(nameof(TryLoadPath), 1f);
-            return;
-        }
-
-        Debug.Log($"成功读取路径，共{worldPath.Count}个路径点");
-        isPathLoaded = true;
-        isReachedEnd = false;
-        currentWaypointIndex = 0;
-        路径重试次数 = 0;
-        FaceFirstWaypoint();
-        currentTargetPos = worldPath[0];
     }
-
     private void FaceFirstWaypoint()
     {
         if (worldPath.Count < 2) return;

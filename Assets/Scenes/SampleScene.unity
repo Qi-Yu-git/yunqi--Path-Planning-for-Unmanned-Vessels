@@ -799,6 +799,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9a22e1d6b3a17d844877f1dc4d76ea75, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  WATER_Y_HEIGHT: 0.05
   gridManager: {fileID: 41255708}
   startPos: {fileID: 173794670}
   targetPos: {fileID: 1521328185}
@@ -1039,13 +1040,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 318416865}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -1.8084362, y: 0, z: 2.7611423}
-  m_LocalScale: {x: 3, y: 2, z: 2}
+  m_LocalRotation: {x: -0.00014298373, y: -0.0014410781, z: 0.001166176, w: 0.9999983}
+  m_LocalPosition: {x: -1.8, y: 0, z: 2.8}
+  m_LocalScale: {x: 16, y: 0.4, z: 11.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 959740698}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: -0.016, y: -0.165, z: 0.134}
 --- !u!64 &318416867
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -1091,7 +1092,7 @@ MeshRenderer:
   m_RenderingLayerMask: 257
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: c37ce0d5c64cf194fb0493123d794058, type: 2}
+  - {fileID: -876546973899608171, guid: a76a7c62a91d8e345bcaf2f66bc57eee, type: 3}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1160,14 +1161,18 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 398022122}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fc777756485cd1d48a416b05f1043f9e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   rockPrefab: {fileID: 2064088795}
   maxRockCount: 70
-  spawnRange: {x: 50, y: 50}
+  spawnRange: {x: 16, y: 11.5}
+  minWaterX: 0.5
+  maxWaterX: 49.5
+  minWaterZ: 0.5
+  maxWaterZ: 99.5
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
@@ -2102,7 +2107,7 @@ Light:
   serializedVersion: 11
   m_Type: 1
   m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
-  m_Intensity: 100000
+  m_Intensity: 10
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -2143,7 +2148,7 @@ Light:
   m_RenderingLayerMask: 1
   m_Lightmapping: 1
   m_LightShadowCasterMode: 2
-  m_AreaSize: {x: 1, y: 1}
+  m_AreaSize: {x: 0.5, y: 0.5}
   m_BounceIntensity: 1
   m_ColorTemperature: 6570
   m_UseColorTemperature: 1
@@ -2164,13 +2169,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 705507993}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.46553507, y: -0.070298515, z: -0.21602055, w: 0.8553773}
-  m_LocalPosition: {x: 0, y: 3, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalRotation: {x: 0.53845304, y: -0.21274714, z: -0.28232425, w: 0.7649183}
+  m_LocalPosition: {x: 20, y: 7.9, z: -10.1}
+  m_LocalScale: {x: 1, y: 1, z: -0.24248579}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 50, y: -30, z: -42.591}
+  m_LocalEulerAnglesHint: {x: 44.718, y: -62.363, z: -68.474}
 --- !u!114 &705507996
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3060,7 +3065,7 @@ Camera:
   m_TargetEye: 3
   m_HDR: 0
   m_AllowMSAA: 0
-  m_AllowDynamicResolution: 0
+  m_AllowDynamicResolution: 1
   m_ForceIntoRT: 0
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
@@ -3125,7 +3130,7 @@ MonoBehaviour:
   flipYMode: 0
   xrRendering: 1
   fullscreenPassthrough: 0
-  allowDynamicResolution: 0
+  allowDynamicResolution: 1
   customRenderingSettings: 0
   invertFaceCulling: 0
   probeLayerMask:

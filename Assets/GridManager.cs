@@ -23,23 +23,34 @@ public class GridManager : MonoBehaviour
     public bool IsGridReady() => isGridReady;
     public bool IsInitialized => isGridReady;
 
+    // 在Awake中确保初始化调用
     private void Awake()
     {
         if (Instance == null)
         {
             Instance = this;
-            InitializeGrid();
-            Debug.Log("GridManager单例创建成功"); // 调试日志
+            InitializeGrid(); // 强制初始化
+            Debug.Log("GridManager单例创建成功");
         }
         else
         {
             Destroy(gameObject);
-            Debug.LogWarning("检测到重复的GridManager，已自动销毁"); // 重复实例提示
+            Debug.LogWarning("检测到重复的GridManager，已自动销毁");
         }
     }
 
+    // 在GridManager.cs的InitializeGrid方法中，确保栅格初始化完成后再标记为就绪
     public void InitializeGrid()
     {
+        if (isGridReady) return; // 避免重复初始化
+
+        // 检查必要参数是否合法（防止零值或负值导致后续计算异常）
+        if (gridWidth <= 0 || gridHeight <= 0 || cellSize <= 0)
+        {
+            Debug.LogError("GridManager初始化失败：栅格宽/高/尺寸不能为零或负值！");
+            return;
+        }
+
         isPassable = new bool[gridWidth, gridHeight];
         for (int x = 0; x < gridWidth; x++)
         {
@@ -49,7 +60,7 @@ public class GridManager : MonoBehaviour
             }
         }
         isGridReady = true;
-        Debug.Log("栅格初始化完成");
+        Debug.Log($"GridManager初始化完成：宽={gridWidth}, 高={gridHeight}, 单元格尺寸={cellSize}");
     }
 
     public Vector2Int 世界转栅格(Vector3 worldPos)
