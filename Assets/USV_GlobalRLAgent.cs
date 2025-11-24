@@ -1,10 +1,9 @@
-using System.Collections;  // 关键：导入IEnumerator所在的命名空间
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
-using System.Collections.Generic;
-
 
 public class USV_GlobalRLAgent : Agent
 {
@@ -15,6 +14,10 @@ public class USV_GlobalRLAgent : Agent
     public float maxStepReward = 2f;
     [Tooltip("最小单步惩罚下限")]
     public float minStepPenalty = -1f;
+
+    [Header("任务循环开关设置")]
+    public bool enableTaskLoop = true; // 重复任务开关
+    public RandomSpawnManager spawnManager; // 引用随机生成管理器
 
     public Transform target; // 目标点（公开，供LocalPlanner访问）
     private GridManager gridManager; // 栅格管理器
@@ -38,11 +41,30 @@ public class USV_GlobalRLAgent : Agent
     // 在类中添加成员定义
     private float episodeStartTime;
 
+    private BoatController boatController; // 新增引用
+
+    // 将原来的 IsEpisodeDone 属性修改为：
+    public bool IsEpisodeDone
+    {
+        get
+        {
+            // 使用反射获取私有字段 m_IsDone 的值
+            var fieldInfo = typeof(Agent).GetField("m_IsDone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (fieldInfo != null)
+            {
+                return (bool)fieldInfo.GetValue(this);
+            }
+            return false; // 如果反射失败，默认返回 false
+        }
+    }
+
     // USV_GlobalRLAgent.cs - Awake() 方法修改
     // 将 USV_GlobalRLAgent.cs 中的 Awake 方法修改为：
     protected override void Awake()
     {
         base.Awake(); // 调用基类方法
+                    
+        boatController = GetComponent<BoatController>();  // 新增：获取BoatController组件
         gridManager = Object.FindFirstObjectByType<GridManager>();
         globalPathfinder = Object.FindFirstObjectByType<ImprovedAStar>();
         rb = GetComponent<Rigidbody>();
@@ -65,7 +87,6 @@ public class USV_GlobalRLAgent : Agent
         episodeStartTime = Time.time; // 已存在，确保变量已定义
         lastDistToTarget = Vector3.Distance(transform.position, target.position);
     }
-
 
     // 新增协程：等待GridManager初始化
     private IEnumerator WaitForGridInit()  // 协程应返回非泛型IEnumerator
@@ -94,6 +115,7 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
+    // USV_GlobalRLAgent.cs
     public override void OnEpisodeBegin()
     {
         if (gridManager == null || safePositions == null || safePositions.Count == 0)
@@ -102,39 +124,46 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 随机设置智能体和目标位置
-        transform.position = safePositions[Random.Range(0, safePositions.Count)];
-        target.position = safePositions[Random.Range(0, safePositions.Count)];
-
-        // 确保起点和目标距离足够（至少5米）
-        while (Vector3.Distance(transform.position, target.position) < 5f && safePositions.Count > 1)
+        // 关键：通知RandomSpawnManager重新生成障碍物和目标点
+        if (spawnManager != null)
         {
-            target.position = safePositions[Random.Range(0, safePositions.Count)];
+            spawnManager.Regenerate(); // 重新生成障碍物、起点、目标点
+        }
+        else
+        {
+            Debug.LogWarning("未找到RandomSpawnManager，无法重置环境");
+            // 备选逻辑：如果没有spawnManager，手动随机生成位置
+            if (target != null && safePositions.Count > 0)
+            {
+                transform.position = safePositions[Random.Range(0, safePositions.Count)];
+                target.position = safePositions[Random.Range(0, safePositions.Count)];
+            }
         }
 
-        // 重置速度和路径点索引
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
-        lastDistToTarget = Vector3.Distance(transform.position, target.position);
+        // 重置速度和路径
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
         currentWaypointIndex = 0;
-
-        // 重新计算全局路径
         if (globalPathfinder != null)
         {
-            globalPathfinder.CalculatePathAfterDelay();
+            globalPathfinder.CalculatePathAfterDelay(); // 重新计算路径
+                                                        
+            Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);// 新增：延迟0.5秒后让BoatController重新加载路径（等待A*计算完成）
         }
+    }
 
-        // 重新计算全局路径后添加：
-        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > 1)
+    // 新增：通知BoatController加载新路径
+    private void NotifyBoatLoadNewPath()
+    {
+        if (boatController != null)
         {
-            // 朝向第一个路径点
-            Vector3 firstWaypoint = gridManager.栅格转世界(globalPathfinder.path[1]);
-            Vector3 dir = (firstWaypoint - transform.position).normalized;
-            transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
+            boatController.isPathLoaded = false; // 重置路径加载状态
+            boatController.TryLoadPath(); // 强制重新加载路径
+            Debug.Log("通知BoatController加载新路径");
         }
-        CleanupTensorData();
-
-
     }
 
     private void CleanupTensorData()
@@ -148,7 +177,6 @@ public class USV_GlobalRLAgent : Agent
     {
         CleanupTensorData();
     }
-
 
     public override void CollectObservations(VectorSensor sensor)
     {
@@ -209,7 +237,10 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    // 修改OnActionReceived方法中的奖励计算部分
+    /// <summary>
+    /// 接收并执行动作，计算奖励。
+    /// </summary>
+    /// <param name="actions">动作缓冲区</param>
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (target == null || gridManager == null) return;
@@ -241,22 +272,23 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 4. 到达目标奖励（增加距离检查，防止未减速）
+        // 4. 到达目标奖励（修改部分）
         if (distToTarget < 1f)
         {
-            // 检查是否减速到位
+            // 保留原奖励逻辑，或与 BoatController 奖励合并
             if (currentSpeed < MaxSpeed * 0.3f)
             {
-                AddReward(100f); // 完全减速到达给予全额奖励
+                AddReward(100f);
             }
             else
             {
-                AddReward(50f); // 未减速到达给予部分奖励
+                AddReward(50f);
             }
             EndEpisode();
+            return;
         }
 
-        // 5.     // 超时惩罚（使用 Academy 传递的最大时长）
+        // 5. 超时惩罚（使用 Academy 传递的最大时长）
         if (Time.time - episodeStartTime > currentMaxEpisodeTime)
         {
             AddReward(-20f);
@@ -268,6 +300,7 @@ public class USV_GlobalRLAgent : Agent
         UpdateWaypointIndex();
         lastDistToTarget = distToTarget;
     }
+
     // USV_GlobalRLAgent.cs - MoveAgent() 方法修改
     void MoveAgent(int action)
     {
@@ -297,6 +330,7 @@ public class USV_GlobalRLAgent : Agent
                 break;
         }
     }
+
     // 新增路径点索引更新方法
     private void UpdateWaypointIndex()
     {

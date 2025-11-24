@@ -34,6 +34,9 @@ public class ImprovedAStar : MonoBehaviour
     private NodeData[,] nodeDataArray; // 复用节点数组
     private List<Vector2Int> pathBuffer = new List<Vector2Int>(256);
 
+    // 在ImprovedAStar类中添加状态标记
+    private bool isCalculatingPath = false;
+
     private void Start()
     {
         Debug.Log("A*路径准备计算（等待目标点生成）");
@@ -93,11 +96,17 @@ public class ImprovedAStar : MonoBehaviour
         return true;
     }
 
-    // 外部调用接口
+    // 修改CalculatePathAfterDelay方法
     public void CalculatePathAfterDelay()
     {
+        if (isCalculatingPath)
+        {
+            Debug.Log("路径计算已在进行中，忽略重复请求");
+            return;
+        }
         StartCoroutine(CalculatePathCoroutine());
     }
+
 
     // 协程版路径计算（带重试机制）
     private IEnumerator CalculatePathCoroutine()
@@ -173,7 +182,17 @@ public class ImprovedAStar : MonoBehaviour
                 retryCount++;
                 yield return new WaitForSeconds(1f);
             }
+
+            // 当路径计算成功并返回时
+            if (path != null && path.Count > 1)
+            {
+                Debug.Log($"路径计算成功，包含{path.Count}个点：{string.Join("->", path)}");
+                isCalculatingPath = false; // 重置状态
+                yield break;
+            }
+
         }
+        isCalculatingPath = false; // 循环结束后重置状态
 
         // 修复：使用Unity 6推荐的API替换过时的FindObjectOfType
         Debug.LogError("A*路径计算失败：3次重试后仍为空！尝试重新生成起点终点...");

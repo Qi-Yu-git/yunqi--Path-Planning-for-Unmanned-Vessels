@@ -1,0 +1,68 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1763984179",
+        "python_version": "3.10.12 | packaged by Anaconda, Inc. | (main, Jul  5 2023, 19:01:18) [MSC v.1916 64 bit (AMD64)]",
+        "command_line_arguments": "D:\\conda_envs\\mlagents_4\\Scripts\\mlagents-learn trainer_config.yaml --run-id=PPUV_YOLOv8_Train3 --results-dir=results",
+        "mlagents_version": "1.2.0.dev0",
+        "mlagents_envs_version": "1.2.0.dev0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.8.0+cpu",
+        "numpy_version": "1.23.5",
+        "end_time_seconds": "1763984264"
+    },
+    "total": 84.79787899999974,
+    "count": 1,
+    "self": 0.015803599999344442,
+    "children": {
+        "run_training.setup": {
+            "total": 0.06624310000006517,
+            "count": 1,
+            "self": 0.06624310000006517
+        },
+        "TrainerController.start_learning": {
+            "total": 84.71583230000033,
+            "count": 1,
+            "self": 0.00022599999829253647,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 9.996319900001254,
+                    "count": 1,
+                    "self": 9.996319900001254
+                },
+                "TrainerController.advance": {
+                    "total": 74.590418400001,
+                    "count": 1,
+                    "self": 2.1000001652282663e-05,
+                    "children": {
+                        "env_step": {
+                            "total": 74.59039739999935,
+                            "count": 1,
+                            "self": 74.5903821999982,
+                            "children": {
+                                "SubprocessEnvManager._take_step": {
+                                    "total": 1.5200001143966801e-05,
+                                    "count": 1,
+                                    "self": 1.5200001143966801e-05
+                                }
+                            }
+                        }
+                    }
+                },
+                "TrainerController._save_models": {
+                    "total": 0.12886799999978393,
+                    "count": 1,
+                    "self": 0.02003589999912947,
+                    "children": {
+                        "RLTrainer._checkpoint": {
+                            "total": 0.10883210000065446,
+                            "count": 1,
+                            "self": 0.10883210000065446
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

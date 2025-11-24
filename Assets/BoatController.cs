@@ -27,7 +27,7 @@ public class BoatController : MonoBehaviour
     private int 路径重试次数 = 0;            // 路径加载重试计数器
     private const int 最大重试次数 = 5;      // 最大重试次数
     private bool wasPathInvalid = false;     // 新增字段用于跟踪路径失效状态
-    private bool isPathLoaded = false;        // 新增：标记路径是否加载完成
+    public bool isPathLoaded = false;        // 新增：标记路径是否加载完成
 
     // 初始化
     void Start()
@@ -83,11 +83,12 @@ public class BoatController : MonoBehaviour
             Debug.LogError($"与{collision.collider.tag}发生碰撞！暂停并重新规划路径");
             StopMovement();
             isReachedEnd = true;
-            worldPath.Clear(); // 清空旧路径，避免干扰重新加载
+            worldPath.Clear();
             Invoke(nameof(ResumeMovement), 1f);
             if (pathfinder != null)
             {
-                Invoke(nameof(ReplanPath), 1f);
+                // 延迟更长时间再重规划，避免碰撞瞬间连续触发
+                Invoke(nameof(ReplanPath), 2f);
             }
         }
     }
@@ -122,8 +123,16 @@ public class BoatController : MonoBehaviour
     }
 
     // 尝试加载路径
-    private void TryLoadPath()
+    public void TryLoadPath()
     {
+
+        // 新增：如果路径已加载且有效，则无需重新加载
+        if (isPathLoaded && worldPath != null && worldPath.Count > 0)
+        {
+            Debug.Log("路径已加载且有效，无需重复请求");
+            return;
+        }
+
         // 新增：如果栅格未初始化，等待后重试
         if (gridManager != null && !gridManager.IsGridReady())
         {
@@ -154,18 +163,24 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 第二步：检查路径是否有效（原逻辑保留）
+        // 第二步：检查路径是否有效（修改重试逻辑）
         if (pathfinder.path == null || pathfinder.path.Count == 0)
         {
             Debug.LogWarning($"路径数据为空，触发A*重新计算...（第{路径重试次数 + 1}次重试）");
             pathfinder.CalculatePathAfterDelay();
             路径重试次数++;
-            // 调整重试间隔：栅格未就绪时延长间隔
-            float retryDelay = gridManager != null && !gridManager.IsGridReady() ? 2f : 1f;
+            // 延长重试间隔至1秒，确保A*有足够时间计算
+            float retryDelay = 1f;
             if (路径重试次数 < 最大重试次数)
                 Invoke(nameof(TryLoadPath), retryDelay);
             else
-                Debug.LogError("路径重试次数达到上限，A*路径仍为空！请检查障碍物配置或起点终点是否可达。");
+            {
+                Debug.LogError("路径重试次数达到上限，强制刷新A*后重试");
+                pathfinder = FindFirstObjectByType<ImprovedAStar>(); // 重新获取A*引用
+                pathfinder.CalculatePathAfterDelay();
+                路径重试次数 = 0;
+                Invoke(nameof(TryLoadPath), 1f);
+            }
             return;
         }
 
@@ -254,11 +269,21 @@ public class BoatController : MonoBehaviour
         }
 
         // 到达最后一个路径点
+        // BoatController.cs 第270行附近（终点判定处）
         if (currentWaypointIndex >= worldPath.Count)
         {
             StopMovement();
             isReachedEnd = true;
             Debug.Log("已到达终点，停止移动");
+
+            // 新增：通知 RL Agent 结束当前回合
+            USV_GlobalRLAgent rlAgent = GetComponent<USV_GlobalRLAgent>();
+            if (rlAgent != null)
+            {
+                rlAgent.AddReward(100f); // 可选：补充终点奖励
+                rlAgent.EndEpisode();
+            }
+
             return;
         }
 

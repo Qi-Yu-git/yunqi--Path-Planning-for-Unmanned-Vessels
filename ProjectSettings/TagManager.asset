@@ -6,6 +6,7 @@ TagManager:
   tags:
   - USV
   - Rock
+  - Obstacle
   layers:
   - Default
   - TransparentFX

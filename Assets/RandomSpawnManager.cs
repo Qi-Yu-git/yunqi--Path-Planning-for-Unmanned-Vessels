@@ -63,6 +63,7 @@ public class RandomSpawnManager : MonoBehaviour
     // 生成随机礁石
     private void GenerateRandomRocks()
     {
+
         // 从 Academy 同步的范围中随机礁石数量
         int rockCount = Random.Range(currentMinRockCount, currentMaxRockCount + 1);
         int spawned = 0;
@@ -242,12 +243,13 @@ public class RandomSpawnManager : MonoBehaviour
         return pos == Vector3.negativeInfinity;
     }
 
-    // 供外部调用（重新生成场景）
+    // RandomSpawnManager.cs
     public void Regenerate()
     {
-        ClearExistingRocks();
-        GenerateRandomRocks();
-        GenerateRandomStartAndTarget();
+        ClearExistingRocks(); // 清除旧障碍物
+        GenerateRandomRocks(); // 生成新障碍物
+        GenerateRandomStartAndTarget(); // 生成新起点和目标点
+        gridManager.强制刷新栅格(); // 确保栅格障碍物数据同步
     }
 
     // 清理礁石（避免场景残留）
