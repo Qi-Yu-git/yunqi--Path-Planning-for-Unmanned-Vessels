@@ -163,6 +163,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1fa9dafdf73227469212fea55def618, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  autoReadWaterSize: 0
+  manualWaterSizeX: 30
+  manualWaterSizeZ: 20
   "\u6805\u683C\u5C3A\u5BF8": 0.8
   "\u6C34\u57DF\u5E73\u9762": {fileID: 318416866}
   obstacleLayer:
@@ -171,8 +174,8 @@ MonoBehaviour:
   "\u6805\u683C\u539F\u70B9": {x: 0, y: 0, z: 0}
   "\u6805\u683C\u5BBD\u5EA6": 0
   "\u6805\u683C\u9AD8\u5EA6": 0
-  "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 150
-  obstacleCheckRadius: 0.35
+  "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 100
+  obstacleCheckRadius: 0.5
   radiusOffset: 0
   "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.3
   "\u969C\u788D\u7269\u663E\u793A\u9AD8\u5EA6": 0.2
@@ -771,6 +774,7 @@ MonoBehaviour:
   waypointDistance: 1
   endPointSlowRange: 2
   minEndSpeed: 0.5
+  isPathLoaded: 0
 --- !u!54 &173794666
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -860,6 +864,8 @@ MonoBehaviour:
   targetProximitySmoothing: 0.3
   maxStepReward: 2
   minStepPenalty: -1
+  enableTaskLoop: 1
+  spawnManager: {fileID: 398022124}
   target: {fileID: 1521328185}
 --- !u!114 &173794673
 MonoBehaviour:
@@ -874,7 +880,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 1
+    VectorObservationSize: 128
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -1191,6 +1197,8 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   rockAvoidDistance: 3
+  currentMinRockCount: 0
+  currentMaxRockCount: 0
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
@@ -1631,8 +1639,8 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.3
-  far clip plane: 1000
-  field of view: 60
+  far clip plane: 5
+  field of view: 30
   orthographic: 0
   orthographic size: 5
   m_Depth: 1

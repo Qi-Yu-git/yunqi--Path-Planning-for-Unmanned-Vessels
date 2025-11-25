@@ -67,17 +67,13 @@ public class USV_Academy : MonoBehaviour
     /// </summary>
     private void Update()
     {
-        // 只有当环境完全准备好后，才检查回合是否结束并自动重置
-        if (areDependenciesLoaded && usvAgent != null && usvAgent.IsEpisodeDone)  // 修改 IsDone 为 IsEpisodeDone
+        // 核心修改：只有任务循环开启时，才自动重置环境
+        if (areDependenciesLoaded && usvAgent != null && usvAgent.IsEpisodeDone && usvAgent.enableTaskLoop)
         {
-            if (usvAgent.enableTaskLoop)
-            {
-                Debug.Log("任务完成，准备重置环境...");
-                ResetEnvironment();
-            }
+            Debug.Log("任务完成，准备重置环境...");
+            ResetEnvironment();
         }
     }
-
     // ... (其他代码) ...
     #endregion
 
@@ -132,15 +128,29 @@ public class USV_Academy : MonoBehaviour
     #region 参数管理
     private void RegisterEnvironmentParameters()
     {
-        if (envParams == null) { Debug.LogError("EnvironmentParameters 实例为空，无法注册回调。"); return; }
+        if (envParams == null) { Debug.LogError("EnvironmentParameters 实例为空"); return; }
 
-        envParams.RegisterCallback("rock_count_min", value => { minRockCount = Mathf.Max(1, Mathf.RoundToInt(value)); Debug.Log($"[参数更新] 最小岩石数量: {minRockCount}"); });
-        envParams.RegisterCallback("rock_count_max", value => { maxRockCount = Mathf.Max(minRockCount, Mathf.RoundToInt(value)); Debug.Log($"[参数更新] 最大岩石数量: {maxRockCount}"); });
+        // 通过spawnManager设置岩石数量范围
+        // 在Academy.cs的RegisterEnvironmentParameters方法中
+        envParams.RegisterCallback("rock_count_min", value =>
+        {
+            int newMin = Mathf.Max(1, Mathf.RoundToInt(value));
+            spawnManager?.SetRockCountRange(newMin, spawnManager.currentMaxRockCount); // 修改此处
+            Debug.Log($"[环境参数] 最小岩石数量: {newMin}");
+        });
+
+        envParams.RegisterCallback("rock_count_max", value =>
+        {
+            int newMax = Mathf.Max(spawnManager.currentMinRockCount, Mathf.RoundToInt(value)); // 修改此处
+            spawnManager?.SetRockCountRange(spawnManager.currentMinRockCount, newMax); // 修改此处
+            Debug.Log($"[环境参数] 最大岩石数量: {newMax}");
+        });
+
         envParams.RegisterCallback("max_usv_speed", value =>
         {
             maxUSVSpeed = Mathf.Clamp(value, 1f, 5f);
-            Debug.Log($"[参数更新] USV最大速度: {maxUSVSpeed}");
-            if (usvAgent != null) { usvAgent.ResetAgentState(maxUSVSpeed, maxEpisodeTime); }
+            Debug.Log($"[环境参数] USV最大速度: {maxUSVSpeed}");
+            usvAgent?.ResetAgentState(maxUSVSpeed, maxEpisodeTime);
         });
     }
     #endregion
@@ -149,7 +159,6 @@ public class USV_Academy : MonoBehaviour
     public void ResetEnvironment()
     {
         if (!areDependenciesLoaded) { Debug.LogWarning("环境依赖未加载完成，无法重置环境。"); return; }
-
         if (!gridManager.IsGridReady())
         {
             Debug.LogWarning("栅格未准备就绪，执行强制刷新...");
@@ -158,13 +167,15 @@ public class USV_Academy : MonoBehaviour
             return;
         }
 
-        if (spawnManager != null)
+        // 核心修改：仅当任务循环开启时，才调用spawnManager生成
+        if (usvAgent != null && usvAgent.enableTaskLoop && spawnManager != null)
         {
             spawnManager.SetRockCountRange(minRockCount, maxRockCount);
             spawnManager.Regenerate();
         }
 
-        if (usvAgent != null)
+        // 仅当任务循环开启时，才重置Agent状态
+        if (usvAgent != null && usvAgent.enableTaskLoop)
         {
             usvAgent.ResetAgentState(maxUSVSpeed, maxEpisodeTime);
             usvAgent.OnEpisodeBegin();

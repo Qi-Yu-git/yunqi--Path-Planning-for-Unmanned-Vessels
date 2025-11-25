@@ -24,8 +24,18 @@ public class RandomSpawnManager : MonoBehaviour
     [SerializeField] private float rockAvoidDistance = 3f; // 礁石与起点/终点的安全距离
 
     private List<GameObject> spawnedRocks = new List<GameObject>(); // 已生成礁石列表
-    private int currentMinRockCount;
-    private int currentMaxRockCount;
+    // 修改为public以解决访问权限问题
+    public int currentMinRockCount;
+    public int currentMaxRockCount;
+
+    // 保留访问器方便后续扩展
+    public int CurrentMinRockCount => currentMinRockCount;
+    public int CurrentMaxRockCount => currentMaxRockCount;
+
+    [Header("启动配置")]
+    public bool spawnOnStart = true; // 新增开关：是否在启动时自动生成
+
+
     private void Start()
     {
         currentMinRockCount = minRockCount;
@@ -36,9 +46,18 @@ public class RandomSpawnManager : MonoBehaviour
             Debug.LogError("RandomSpawnManager：GridManager未赋值！");
             return;
         }
-        // 等待栅格初始化后生成场景元素
-        StartCoroutine(WaitForGridInitThenSetup());
+
+        // 核心修改：仅当spawnOnStart为true时，才启动生成
+        if (spawnOnStart)
+        {
+            StartCoroutine(WaitForGridInitThenSetup());
+        }
+        else
+        {
+            Debug.Log("RandomSpawnManager：已禁用启动时自动生成");
+        }
     }
+    /// <summary>
     /// 供 Academy 调用，动态调整礁石生成数量范围
     /// </summary>
     public void SetRockCountRange(int newMin, int newMax)
@@ -63,11 +82,10 @@ public class RandomSpawnManager : MonoBehaviour
     // 生成随机礁石
     private void GenerateRandomRocks()
     {
-
-        // 从 Academy 同步的范围中随机礁石数量
+        // 从当前范围中随机礁石数量
         int rockCount = Random.Range(currentMinRockCount, currentMaxRockCount + 1);
         int spawned = 0;
-        int maxAttempts = rockCount * 2; // 减少最大尝试次数（原 3 倍，改为 2 倍）
+        int maxAttempts = rockCount * 2; // 减少最大尝试次数
         int attempts = 0;
 
         while (spawned < rockCount && attempts < maxAttempts)
@@ -187,8 +205,7 @@ public class RandomSpawnManager : MonoBehaviour
         Debug.Log($"起点：{validStart} 终点：{validTarget} 距离：{Vector3.Distance(validStart, validTarget):F2}m");
     }
 
-    // 生成随机起点和终点（保持原有逻辑）
-    // 在 RandomSpawnManager.cs 中修改 GenerateValidRandomPos 方法
+    // 生成随机有效位置
     private Vector3 GenerateValidRandomPos()
     {
         Vector3 randomPos;
@@ -224,10 +241,7 @@ public class RandomSpawnManager : MonoBehaviour
         return randomPos;
     }
 
-  
-
-
-    // 校验位置有效性（保持原有逻辑）
+    // 校验位置有效性
     private bool IsPosValid(Vector3 worldPos)
     {
         Vector2Int gridPos = gridManager.世界转栅格(worldPos);
@@ -243,7 +257,7 @@ public class RandomSpawnManager : MonoBehaviour
         return pos == Vector3.negativeInfinity;
     }
 
-    // RandomSpawnManager.cs
+    // 重新生成整个场景
     public void Regenerate()
     {
         ClearExistingRocks(); // 清除旧障碍物

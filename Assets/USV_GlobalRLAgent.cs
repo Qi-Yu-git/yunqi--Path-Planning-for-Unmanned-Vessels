@@ -115,7 +115,6 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    // USV_GlobalRLAgent.cs
     public override void OnEpisodeBegin()
     {
         if (gridManager == null || safePositions == null || safePositions.Count == 0)
@@ -124,23 +123,24 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 关键：通知RandomSpawnManager重新生成障碍物和目标点
-        if (spawnManager != null)
+        // 核心修改：仅当任务循环开启时，才执行随机生成
+        if (enableTaskLoop && spawnManager != null)
         {
             spawnManager.Regenerate(); // 重新生成障碍物、起点、目标点
         }
+        else if (!enableTaskLoop)
+        {
+            Debug.Log("任务循环已禁用，跳过随机生成和环境重置");
+            return; // 直接退出，不执行后续重置逻辑
+        }
         else
         {
-            Debug.LogWarning("未找到RandomSpawnManager，无法重置环境");
-            // 备选逻辑：如果没有spawnManager，手动随机生成位置
-            if (target != null && safePositions.Count > 0)
-            {
-                transform.position = safePositions[Random.Range(0, safePositions.Count)];
-                target.position = safePositions[Random.Range(0, safePositions.Count)];
-            }
+            Debug.LogError("未找到RandomSpawnManager，无法重置环境");
+            EndEpisode();
+            return;
         }
 
-        // 重置速度和路径
+        // 重置速度和路径（仅在启用循环时执行）
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
@@ -149,13 +149,10 @@ public class USV_GlobalRLAgent : Agent
         currentWaypointIndex = 0;
         if (globalPathfinder != null)
         {
-            globalPathfinder.CalculatePathAfterDelay(); // 重新计算路径
-                                                        
-            Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);// 新增：延迟0.5秒后让BoatController重新加载路径（等待A*计算完成）
+            globalPathfinder.CalculatePathAfterDelay();
+            Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);
         }
     }
-
-    // 新增：通知BoatController加载新路径
     private void NotifyBoatLoadNewPath()
     {
         if (boatController != null)
@@ -273,7 +270,7 @@ public class USV_GlobalRLAgent : Agent
         }
 
         // 4. 到达目标奖励（修改部分）
-        if (distToTarget < 1f)
+        if (distToTarget < 2f)
         {
             // 保留原奖励逻辑，或与 BoatController 奖励合并
             if (currentSpeed < MaxSpeed * 0.3f)

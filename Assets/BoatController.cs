@@ -293,7 +293,7 @@ public class BoatController : MonoBehaviour
         Vector3 currentXZ = new Vector3(transform.position.x, 0.4f, transform.position.z);
         float distance = Vector3.Distance(currentXZ, targetXZ);
         bool isLastWaypoint = (currentWaypointIndex == worldPath.Count - 1);
-        float stopDistance = isLastWaypoint ? 0.8f : waypointDistance; // 终点阈值稍大，避免过度靠近
+        float stopDistance = isLastWaypoint ? 1.5f : waypointDistance; // 终点阈值稍大，避免过度靠近
 
         // 到达当前路径点，切换到下一个（优化：只有距离小于阈值且方向正确时才切换）
         if (distance <= stopDistance)
