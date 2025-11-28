@@ -114,6 +114,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\TextMesh Pro\Shaders\TMPro.cginc" />
+    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.11.0.20250507\runtimes\win-x86\native\opencv_videoio_ffmpeg4110.dll" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile Overlay.shader" />
     <None Include="Assets\TextMesh Pro\Examples &amp; Extras\Fonts\Roboto-Bold - License.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile-2-Pass.shader" />
@@ -122,6 +123,7 @@
     <None Include="Assets\TextMesh Pro\Examples &amp; Extras\Fonts\Oswald-Bold - OFL.txt" />
     <None Include="Assets\TextMesh Pro\Examples &amp; Extras\Fonts\Roboto-Bold - AFL.txt" />
     <None Include="Assets\TextMesh Pro\Examples &amp; Extras\Fonts\Anton OFL.txt" />
+    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.11.0.20250507\runtimes\win-x86\native\OpenCvSharpExtern.dll" />
     <None Include="Assets\Images\放入.jpg图片.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Mobile.cginc" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF SSD.shader" />
@@ -131,22 +133,20 @@
     <None Include="Assets\Packages\OpenCvSharp4.4.8.0.20230708\lib\netstandard2.1\OpenCvSharp.xml" />
     <None Include="Assets\TextMesh Pro\Shaders\SDFFunctions.hlsl" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Surface.shader" />
-    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.8.0.20230708\runtimes\win-x64\native\opencv_videoio_ffmpeg480_64.dll" />
     <None Include="Assets\TextMesh Pro\Sprites\EmojiOne Attribution.txt" />
+    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.11.0.20250507\runtimes\win-x64\native\OpenCvSharpExtern.dll" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_Bitmap-Custom-Atlas.shader" />
+    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.11.0.20250507\runtimes\win-x64\native\opencv_videoio_ffmpeg4110_64.dll" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile SSD.shader" />
     <None Include="Assets\TextMesh Pro\Resources\LineBreaking Leading Characters.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Properties.cginc" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Surface.cginc" />
-    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.8.0.20230708\runtimes\win-x86\native\opencv_videoio_ffmpeg480.dll" />
     <None Include="Assets\TextMesh Pro\Resources\LineBreaking Following Characters.txt" />
     <None Include="Assets\Packages\OpenCvSharp4.4.8.0.20230708\lib\netstandard2.1\OpenCvSharp.dll" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile Masking.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF Overlay.shader" />
-    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.8.0.20230708\runtimes\win-x86\native\OpenCvSharpExtern.dll" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_Bitmap-Mobile.shader" />
-    <None Include="Assets\Packages\OpenCvSharp4.runtime.win.4.8.0.20230708\runtimes\win-x64\native\OpenCvSharpExtern.dll" />
     <None Include="Assets\TextMesh Pro\Fonts\LiberationSans - OFL.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_Sprite.shader" />

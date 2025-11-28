@@ -211,22 +211,25 @@ public class YoloV8Engine : IDisposable
 
         try
         {
-            Debug.Log($"开始加载模型: {_modelPath}");
+            // 显式指定库加载路径
+            var libPath = Path.Combine(Application.dataPath, "Packages/OpenCvSharp4.runtime.win.4.8.0.20230708/runtimes/win-x64/native/");
+            Environment.SetEnvironmentVariable("PATH", $"{Environment.GetEnvironmentVariable("PATH")};{libPath}");
+
+            // 尝试加载网络
             _net = CvDnn.ReadNetFromOnnx(_modelPath);
-
-            if (_net == null || _net.Empty())
-            {
-                Debug.LogError("模型加载失败，网络为空");
-                return false;
-            }
-
             ConfigureNetBackend();
-            Debug.Log("模型加载成功");
-            return true;
+
+            return _net != null && !_net.Empty();
+        }
+        catch (DllNotFoundException ex)
+        {
+            Debug.LogError($"找不到OpenCvSharp原生库: {ex.Message}");
+            Debug.LogError("请检查OpenCvSharpExtern.dll是否存在且版本正确");
+            return false;
         }
         catch (Exception ex)
         {
-            Debug.LogError($"加载模型时发生异常: {ex.Message}\n{ex.StackTrace}");
+            Debug.LogError($"加载模型失败: {ex.Message}\n{ex.StackTrace}");
             return false;
         }
     }
