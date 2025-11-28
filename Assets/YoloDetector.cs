@@ -59,10 +59,14 @@ public class YoloDetector : MonoBehaviour
 
     void Update()
     {
-        // 未初始化成功则跳过
-        if (_yoloEngine == null || !_yoloEngine.IsInitialized) return;
+        // 增加更严格的空值检查
+        if (_yoloEngine == null || !_yoloEngine.IsInitialized)
+        {
+            Debug.LogWarning("YOLO引擎未初始化，跳过检测");
+            return;
+        }
 
-        // 处理不同数据源的帧
+        // 处理不同的数据源帧
         if (useSceneCamera && sceneCamera != null)
         {
             ProcessSceneCameraFrame();

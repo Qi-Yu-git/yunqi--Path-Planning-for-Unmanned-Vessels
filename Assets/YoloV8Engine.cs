@@ -53,9 +53,22 @@ public class YoloV8Engine : IDisposable
     #region 公共方法
     public List<YoloResult> Detect(Mat frame)
     {
-        if (!_isInitialized || frame == null || frame.Empty())
+        // 增强空值校验，提前拦截可能的空引用
+        if (_net == null || (_net != null && _net.Empty()))
         {
-            Debug.LogWarning("检测条件不满足");
+            Debug.LogError($"❌ 检测前校验失败：YOLO模型未初始化！_net状态：{(_net == null ? "null" : "Empty")}");
+            return new List<YoloResult>();
+        }
+
+        if (!_isInitialized)
+        {
+            Debug.LogError("❌ 检测前校验失败：引擎未初始化完成");
+            return new List<YoloResult>();
+        }
+
+        if (frame == null || frame.Empty())
+        {
+            Debug.LogError("❌ 检测前校验失败：输入帧为空或无效");
             return new List<YoloResult>();
         }
 
@@ -69,20 +82,39 @@ public class YoloV8Engine : IDisposable
                 using (var blob = PreprocessImage(frame))
                 {
                     _net.SetInput(blob);
-                    Mat[] outputs = new Mat[1];
+
+                    // 获取输出层名称
                     string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
-                    _net.Forward(outputs, outputLayerNames);
+                    Debug.Log($"输出层数量: {outputLayerNames?.Length ?? 0}");
 
-                    var results = ParseDetectionOutput(outputs[0], frameWidth, frameHeight);
-                    foreach (var output in outputs)
-                        output.Release();
+                    if (outputLayerNames == null || outputLayerNames.Length == 0)
+                    {
+                        Debug.LogError("未找到输出层，请检查模型文件");
+                        return new List<YoloResult>();
+                    }
 
+                    // 关键修复：使用正确的Forward重载并正确处理输出
+                    Mat output = _net.Forward(outputLayerNames[0]); // 直接获取第一个输出层结果
+
+                    if (output == null || output.Empty())
+                    {
+                        Debug.LogError("模型推理结果为空");
+                        output?.Release();
+                        return new List<YoloResult>();
+                    }
+
+                    var results = ParseDetectionOutput(output, frameWidth, frameHeight);
+                    output.Release();
                     return results;
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"检测出错: {ex.Message}");
+                // 增强异常日志信息
+                Debug.LogError($"🚫 检测出错：{ex.Message}\n堆栈信息：{ex.StackTrace}");
+                Debug.LogError($"🚫 报错时状态：_net是否为空={(_net == null ? "是" : "否")}, " +
+                              $"frame是否为空={(frame == null ? "是" : "否")}, " +
+                              $"frame是否有效={(frame?.Empty() ?? true ? "否" : "是")}");
                 return new List<YoloResult>();
             }
         }
@@ -117,18 +149,35 @@ public class YoloV8Engine : IDisposable
     private List<YoloResult> ParseDetectionOutput(Mat output, int frameWidth, int frameHeight)
     {
         var results = new List<YoloResult>();
+
+        // 校验输出矩阵有效性
+        if (output == null || output.Empty())
+        {
+            Debug.LogError("❌ 解析失败：输入输出矩阵为空");
+            return results;
+        }
+
         int rows = output.Rows;
         int cols = output.Cols;
 
+        Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={5 + _classNames.Count}");
         if (cols != 5 + _classNames.Count)
         {
-            Debug.LogError("输出维度不匹配");
+            Debug.LogError($"❌ 输出维度不匹配：实际{cols}列，预期{5 + _classNames.Count}列");
             return results;
         }
 
         // 修正GetArray方法调用（使用低版本兼容写法）
         float[] outputData = new float[rows * cols];
-        output.GetArray(out outputData);
+        try
+        {
+            output.GetArray(out outputData);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"❌ 提取输出数据失败：{ex.Message}\n{ex.StackTrace}");
+            return results;
+        }
 
         for (int i = 0; i < rows; i++)
         {
@@ -217,9 +266,16 @@ public class YoloV8Engine : IDisposable
 
             // 尝试加载网络
             _net = CvDnn.ReadNetFromOnnx(_modelPath);
-            ConfigureNetBackend();
 
-            return _net != null && !_net.Empty();
+            // 验证模型加载结果
+            if (_net == null || _net.Empty())
+            {
+                Debug.LogError("❌ 模型加载失败，返回的网络为空或无效");
+                return false;
+            }
+
+            ConfigureNetBackend();
+            return true;
         }
         catch (DllNotFoundException ex)
         {

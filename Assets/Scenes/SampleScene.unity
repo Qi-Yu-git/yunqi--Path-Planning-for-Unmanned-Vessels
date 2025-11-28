@@ -175,7 +175,7 @@ MonoBehaviour:
   "\u6805\u683C\u5BBD\u5EA6": 0
   "\u6805\u683C\u9AD8\u5EA6": 0
   "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 100
-  obstacleCheckRadius: 0.5
+  obstacleCheckRadius: 0.1
   radiusOffset: 0
   "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.3
   "\u969C\u788D\u7269\u663E\u793A\u9AD8\u5EA6": 0.2
@@ -860,7 +860,7 @@ MonoBehaviour:
   agentParameters:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
-  MaxStep: 0
+  MaxStep: 1000
   targetProximitySmoothing: 0.3
   maxStepReward: 2
   minStepPenalty: -1
@@ -1137,6 +1137,60 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 318416865}
   m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &374066149
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 374066151}
+  - component: {fileID: 374066150}
+  m_Layer: 0
+  m_Name: YoloDetector
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &374066150
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 374066149}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e745064f94b6d2479213637c162c9d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  modelPath: yolov8n.onnx
+  confidenceThreshold: 0.5
+  iouThreshold: 0.4
+  useSceneCamera: 1
+  sceneCamera: {fileID: 537956247}
+  webCamTexture: {fileID: 0}
+  logDetectionResults: 1
+  drawBoundingBoxes: 1
+  boxColor: {r: 1, g: 0, b: 0, a: 1}
+  labelColor: {r: 0, g: 1, b: 0, a: 1}
+--- !u!4 &374066151
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 374066149}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 5.51316, y: 0.21143723, z: -4.7994947}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &398022122
 GameObject:
   m_ObjectHideFlags: 0
@@ -1199,6 +1253,7 @@ MonoBehaviour:
   rockAvoidDistance: 3
   currentMinRockCount: 0
   currentMaxRockCount: 0
+  spawnOnStart: 1
 --- !u!1 &414555417
 GameObject:
   m_ObjectHideFlags: 0
@@ -1638,8 +1693,8 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.3
-  far clip plane: 5
+  near clip plane: 0.5
+  far clip plane: 20
   field of view: 30
   orthographic: 0
   orthographic size: 5
@@ -1667,7 +1722,7 @@ Transform:
   m_GameObject: {fileID: 537956244}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0.0003168881, z: -0, w: 1}
-  m_LocalPosition: {x: -0.26, y: 0, z: 0.55}
+  m_LocalPosition: {x: -0.26, y: 0, z: 0.74}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1704,7 +1759,7 @@ GameObject:
   - component: {fileID: 595230126}
   - component: {fileID: 595230125}
   - component: {fileID: 595230130}
-  m_Layer: 3
+  m_Layer: 6
   m_Name: "\u6309\u952E\u63A7\u5236\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -1971,7 +2026,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 688525660}
-  m_Layer: 3
+  m_Layer: 6
   m_Name: "\u5E72\u6270\u7528\u65E0\u4EBA\u8239"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3765,7 +3820,7 @@ GameObject:
   - component: {fileID: 1387586900}
   - component: {fileID: 1387586899}
   - component: {fileID: 1387586898}
-  m_Layer: 3
+  m_Layer: 6
   m_Name: "\u5DE6\u8237\u4EA4\u53C9\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -4974,7 +5029,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -0.55
+      value: -0.36
       objectReference: {fileID: 0}
     - target: {fileID: 309678879516391295, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       propertyPath: m_LocalRotation.w
@@ -5066,7 +5121,7 @@ GameObject:
   - component: {fileID: 7631374008013765592}
   - component: {fileID: 8939682786763710997}
   - component: {fileID: 8939682786763710998}
-  m_Layer: 3
+  m_Layer: 6
   m_Name: "\u5BF9\u9047\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -5178,3 +5233,4 @@ SceneRoots:
   - {fileID: 2004669450}
   - {fileID: 777516361}
   - {fileID: 1171535288}
+  - {fileID: 374066151}

@@ -84,8 +84,8 @@
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\OrtAllocator.shared.cs" />
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\NativeOnnxValueHelper.shared.cs" />
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\OrtEnv.shared.cs" />
-    <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\DisposableNamedOnnxValue.shared.cs" />
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\ManagedProjections.shared.cs" />
+    <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\DisposableNamedOnnxValue.shared.cs" />
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\OrtLoggingLevel.shared.cs" />
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\Exceptions.shared.cs" />
     <Compile Include="Assets\Packages\com.github.asus4.onnxruntime\Runtime\Training\TrainingSession.shared.cs" />
