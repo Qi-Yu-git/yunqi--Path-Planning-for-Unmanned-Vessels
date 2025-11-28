@@ -66,6 +66,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\TestAcademy.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_A.cs" />
+    <Compile Include="Assets\YoloResult.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
     <Compile Include="Assets\YoloDetector.cs" />
     <Compile Include="Assets\RandomSpawnManager.cs" />
@@ -86,6 +87,7 @@
     <Compile Include="Assets\YoloV8Engine.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeA.cs" />
+    <Compile Include="Assets\cs.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01_UGUI.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SimpleScript.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark04.cs" />
@@ -123,6 +125,7 @@
     <None Include="Assets\Images\放入.jpg图片.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Mobile.cginc" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF SSD.shader" />
+    <None Include="Assets\Packages\com.github.asus4.onnxruntime\ThirdPartyNotices.txt" />
     <None Include="Assets\3500.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Surface-Mobile.shader" />
     <None Include="Assets\Packages\OpenCvSharp4.4.8.0.20230708\lib\netstandard2.1\OpenCvSharp.xml" />
@@ -1424,6 +1427,14 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="com.github.asus4.onnxruntime.csproj">
+      <Project>{1D70D5F6-39AD-C4D5-2978-3939BB47632C}</Project>
+      <Name>com.github.asus4.onnxruntime</Name>
+    </ProjectReference>
+    <ProjectReference Include="com.github.asus4.onnxruntime.Editor.csproj">
+      <Project>{39209A42-2A10-6794-6FEC-2799C932B74A}</Project>
+      <Name>com.github.asus4.onnxruntime.Editor</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="GenerateTargetFrameworkMonikerAttribute" />

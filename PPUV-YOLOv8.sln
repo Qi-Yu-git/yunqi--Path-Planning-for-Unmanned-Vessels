@@ -3,6 +3,10 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Assembly-CSharp", "Assembly-CSharp.csproj", "{7AC5D760-57FE-C6A1-643B-19535ADF590A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "com.github.asus4.onnxruntime", "com.github.asus4.onnxruntime.csproj", "{1D70D5F6-39AD-C4D5-2978-3939BB47632C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "com.github.asus4.onnxruntime.Editor", "com.github.asus4.onnxruntime.Editor.csproj", "{39209A42-2A10-6794-6FEC-2799C932B74A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -13,6 +17,14 @@ Global
 		{7AC5D760-57FE-C6A1-643B-19535ADF590A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7AC5D760-57FE-C6A1-643B-19535ADF590A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7AC5D760-57FE-C6A1-643B-19535ADF590A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1D70D5F6-39AD-C4D5-2978-3939BB47632C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D70D5F6-39AD-C4D5-2978-3939BB47632C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D70D5F6-39AD-C4D5-2978-3939BB47632C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D70D5F6-39AD-C4D5-2978-3939BB47632C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{39209A42-2A10-6794-6FEC-2799C932B74A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39209A42-2A10-6794-6FEC-2799C932B74A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39209A42-2A10-6794-6FEC-2799C932B74A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39209A42-2A10-6794-6FEC-2799C932B74A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

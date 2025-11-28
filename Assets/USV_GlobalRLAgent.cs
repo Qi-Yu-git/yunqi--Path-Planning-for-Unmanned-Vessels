@@ -1,13 +1,19 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
+using System.Reflection;
 
+/// <summary>
+/// 无人船全局强化学习智能体
+/// 负责全局路径规划、目标导航和奖励计算
+/// </summary>
 public class USV_GlobalRLAgent : Agent
 {
-    // 新增参数：控制接近目标的平滑性
+    [Header("目标接近参数")]
     [Tooltip("接近目标的平滑系数，值越小减速越早")]
     public float targetProximitySmoothing = 0.3f;
     [Tooltip("最大单步奖励上限")]
@@ -15,94 +21,115 @@ public class USV_GlobalRLAgent : Agent
     [Tooltip("最小单步惩罚下限")]
     public float minStepPenalty = -1f;
 
-    [Header("任务循环开关设置")]
-    public bool enableTaskLoop = true; // 重复任务开关
-    public RandomSpawnManager spawnManager; // 引用随机生成管理器
+    [Header("任务循环设置")]
+    [Tooltip("是否启用任务自动循环")]
+    public bool enableTaskLoop = true;
+    [Tooltip("随机生成管理器引用")]
+    public RandomSpawnManager spawnManager;
 
-    public Transform target; // 目标点（公开，供LocalPlanner访问）
-    private GridManager gridManager; // 栅格管理器
-    private Rigidbody rb; // 刚体组件
-    private int gridWidth; // 缓存栅格宽度（仅定义一次）
-    private int gridHeight; // 缓存栅格高度（仅定义一次）
-    private bool[,] passableGrid; // 缓存栅格通行性数据
-    private List<Vector3> safePositions; // 预生成安全位置列表
-    private float lastDistToTarget; // 记录上一帧到目标的距离
-    private const int ViewRange = 5; // 局部视野范围
-    private const float MaxSpeed = 2f; // 最大速度
-    private const float MaxAngularSpeed = 60f; // 限制最大角速度
+    [Tooltip("目标点Transform")]
+    public Transform target;
 
-    // 新增：全局路径方向观测
+    private GridManager gridManager;
+    private Rigidbody rb;
+    private int gridWidth;
+    private int gridHeight;
+    private bool[,] passableGrid;
+    private List<Vector3> safePositions;
+    private float lastDistToTarget;
+    private const int ViewRange = 5;
+    private const float MaxSpeed = 2f;
+    private const float MaxAngularSpeed = 60f;
+
+    // 全局路径相关
     private ImprovedAStar globalPathfinder;
     private int currentWaypointIndex = 0;
 
-    // 在 USV_GlobalRLAgent.cs 类中添加以下代码
+    // 动态参数
     private float currentMaxSpeed;
     private float currentMaxEpisodeTime;
-    // 在类中添加成员定义
     private float episodeStartTime;
+    private BoatController boatController;
 
-    private BoatController boatController; // 新增引用
-
-    // 将原来的 IsEpisodeDone 属性修改为：
+    /// <summary>
+    /// 检查当前回合是否结束
+    /// </summary>
     public bool IsEpisodeDone
     {
         get
         {
-            // 使用反射获取私有字段 m_IsDone 的值
-            var fieldInfo = typeof(Agent).GetField("m_IsDone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            if (fieldInfo != null)
+            try
             {
-                return (bool)fieldInfo.GetValue(this);
+                FieldInfo fieldInfo = typeof(Agent).GetField("m_IsDone",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                return fieldInfo != null && (bool)fieldInfo.GetValue(this);
             }
-            return false; // 如果反射失败，默认返回 false
+            catch (Exception e)
+            {
+                Debug.LogError($"获取回合状态失败: {e.Message}");
+                return false;
+            }
         }
     }
 
-    // USV_GlobalRLAgent.cs - Awake() 方法修改
-    // 将 USV_GlobalRLAgent.cs 中的 Awake 方法修改为：
     protected override void Awake()
     {
-        base.Awake(); // 调用基类方法
-                    
-        boatController = GetComponent<BoatController>();  // 新增：获取BoatController组件
-        gridManager = Object.FindFirstObjectByType<GridManager>();
-        globalPathfinder = Object.FindFirstObjectByType<ImprovedAStar>();
+        base.Awake();
+        boatController = GetComponent<BoatController>();
+        gridManager = FindFirstObjectByType<GridManager>();
+        globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
         rb = GetComponent<Rigidbody>();
 
-        if (gridManager != null)
+        if (gridManager == null)
         {
-            StartCoroutine(WaitForGridInit());
+            Debug.LogError("未找到GridManager组件！请确保场景中存在GridManager");
         }
         else
         {
-            Debug.LogError("未找到GridManager组件！");
+            StartCoroutine(WaitForGridInit());
         }
     }
 
-    // 在ResetAgentState方法中初始化
+    /// <summary>
+    /// 重置智能体状态
+    /// </summary>
+    /// <param name="maxSpeed">最大速度</param>
+    /// <param name="maxEpisodeTime">最大回合时间</param>
     public void ResetAgentState(float maxSpeed, float maxEpisodeTime)
     {
         currentMaxSpeed = maxSpeed;
         currentMaxEpisodeTime = maxEpisodeTime;
-        episodeStartTime = Time.time; // 已存在，确保变量已定义
-        lastDistToTarget = Vector3.Distance(transform.position, target.position);
+        episodeStartTime = Time.time;
+
+        if (target != null)
+        {
+            lastDistToTarget = Vector3.Distance(transform.position, target.position);
+        }
+        else
+        {
+            Debug.LogWarning("目标点未设置，无法计算初始距离");
+            lastDistToTarget = 0;
+        }
     }
 
-    // 新增协程：等待GridManager初始化
-    private IEnumerator WaitForGridInit()  // 协程应返回非泛型IEnumerator
+    /// <summary>
+    /// 等待栅格初始化完成
+    /// </summary>
+    private IEnumerator WaitForGridInit()
     {
-        // 循环等待直到栅格就绪
+        if (gridManager == null) yield break;
+
         while (!gridManager.IsGridReady())
         {
             Debug.Log("等待GridManager初始化...");
             yield return new WaitForSeconds(0.5f);
         }
 
-        // 栅格就绪后再缓存数据
         gridWidth = gridManager.gridWidth;
         gridHeight = gridManager.gridHeight;
         CachePassableGrid();
         GenerateSafePositions();
+        Debug.Log("GridManager初始化完成，已缓存通行性数据");
     }
 
     public override void Initialize()
@@ -113,39 +140,54 @@ public class USV_GlobalRLAgent : Agent
             rb.useGravity = false;
             rb.interpolation = RigidbodyInterpolation.None;
         }
+        else
+        {
+            Debug.LogError("未找到Rigidbody组件！请给智能体添加刚体组件");
+        }
     }
 
     public override void OnEpisodeBegin()
     {
-        if (gridManager == null || safePositions == null || safePositions.Count == 0)
+        if (gridManager == null)
         {
-            Debug.LogWarning("无法重置 episode：GridManager 未初始化或安全位置列表为空");
+            Debug.LogWarning("无法重置回合：GridManager未初始化");
             return;
         }
 
-        // 核心修改：仅当任务循环开启时，才执行随机生成
-        if (enableTaskLoop && spawnManager != null)
+        if (safePositions == null || safePositions.Count == 0)
         {
-            spawnManager.Regenerate(); // 重新生成障碍物、起点、目标点
+            Debug.LogWarning("无法重置回合：安全位置列表为空");
+            return;
         }
-        else if (!enableTaskLoop)
+
+        // 任务循环逻辑
+        if (enableTaskLoop)
         {
-            Debug.Log("任务循环已禁用，跳过随机生成和环境重置");
-            return; // 直接退出，不执行后续重置逻辑
+            if (spawnManager != null)
+            {
+                spawnManager.Regenerate();
+            }
+            else
+            {
+                Debug.LogError("未找到RandomSpawnManager，无法重置环境");
+                EndEpisode();
+                return;
+            }
         }
         else
         {
-            Debug.LogError("未找到RandomSpawnManager，无法重置环境");
-            EndEpisode();
+            Debug.Log("任务循环已禁用，跳过随机生成和环境重置");
             return;
         }
 
-        // 重置速度和路径（仅在启用循环时执行）
+        // 重置物理状态
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
+
+        // 重置路径相关
         currentWaypointIndex = 0;
         if (globalPathfinder != null)
         {
@@ -153,21 +195,35 @@ public class USV_GlobalRLAgent : Agent
             Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);
         }
     }
+
+    /// <summary>
+    /// 通知船控制器加载新路径
+    /// </summary>
     private void NotifyBoatLoadNewPath()
     {
         if (boatController != null)
         {
-            boatController.isPathLoaded = false; // 重置路径加载状态
-            boatController.TryLoadPath(); // 强制重新加载路径
+            boatController.isPathLoaded = false;
+            boatController.TryLoadPath();
             Debug.Log("通知BoatController加载新路径");
+        }
+        else
+        {
+            Debug.LogWarning("未找到BoatController，无法通知加载新路径");
         }
     }
 
     private void CleanupTensorData()
     {
-        // 手动释放可能的张量资源
-        System.GC.Collect();
-        System.GC.WaitForPendingFinalizers();
+        try
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"清理张量数据失败: {e.Message}");
+        }
     }
 
     private void OnDestroy()
@@ -177,7 +233,14 @@ public class USV_GlobalRLAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (rb == null || target == null || gridManager == null) return;
+        // 保底观测值，确保观测向量不为空
+        sensor.AddObservation(0f);
+
+        if (rb == null || target == null || gridManager == null)
+        {
+            Debug.LogWarning("缺少必要组件，无法收集完整观测值");
+            return;
+        }
 
         // 1. 前进速度（归一化）
         float forwardSpeed = Vector3.Dot(transform.forward, rb.linearVelocity);
@@ -190,19 +253,22 @@ public class USV_GlobalRLAgent : Agent
         float distToTarget = Vector3.Distance(transform.position, target.position);
         sensor.AddObservation(Mathf.Clamp01(distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f)));
 
-        float angleToTarget = Vector3.SignedAngle(transform.forward, target.position - transform.position, Vector3.up);
+        float angleToTarget = Vector3.SignedAngle(transform.forward,
+            target.position - transform.position, Vector3.up);
         sensor.AddObservation(angleToTarget / 180f);
 
-        // 4. 全局路径方向（新增，修复Path访问）
-        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > currentWaypointIndex + 1)
+        // 4. 全局路径方向
+        if (globalPathfinder != null && globalPathfinder.path != null &&
+            globalPathfinder.path.Count > currentWaypointIndex + 1)
         {
             Vector3 nextWaypoint = gridManager.栅格转世界(globalPathfinder.path[currentWaypointIndex + 1]);
-            float angleToWaypoint = Vector3.SignedAngle(transform.forward, nextWaypoint - transform.position, Vector3.up);
+            float angleToWaypoint = Vector3.SignedAngle(transform.forward,
+                nextWaypoint - transform.position, Vector3.up);
             sensor.AddObservation(angleToWaypoint / 180f);
         }
         else
         {
-            sensor.AddObservation(0f); // 无路径时补0
+            sensor.AddObservation(0f);
         }
 
         // 5. 局部障碍物（5x5网格）
@@ -219,12 +285,12 @@ public class USV_GlobalRLAgent : Agent
             }
         }
 
-        // 6. 动态障碍物速度（新增，从LocalPlanner获取）
+        // 6. 动态障碍物速度
         USV_LocalPlanner localPlanner = GetComponent<USV_LocalPlanner>();
         if (localPlanner != null && localPlanner.dynamicObstacleVelocities.Count > 0)
         {
             Vector3 closestObsVel = localPlanner.dynamicObstacleVelocities[0];
-            sensor.AddObservation(closestObsVel.x / 5f); // 归一化到[-1,1]
+            sensor.AddObservation(closestObsVel.x / 5f);
             sensor.AddObservation(closestObsVel.z / 5f);
         }
         else
@@ -234,33 +300,29 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    /// <summary>
-    /// 接收并执行动作，计算奖励。
-    /// </summary>
-    /// <param name="actions">动作缓冲区</param>
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (target == null || gridManager == null) return;
 
-        // 执行移动动作（保持不变）
+        // 执行移动动作
         MoveAgent(actions.DiscreteActions[0]);
 
-        // 优化奖励函数：限制单次奖励幅度，防止突进
+        // 计算奖励
         float distToTarget = Vector3.Distance(transform.position, target.position);
         float distanceDelta = lastDistToTarget - distToTarget;
 
-        // 1. 基于距离变化的奖励（限制幅度）
+        // 1. 基于距离变化的奖励
         float proximityFactor = Mathf.Clamp01(1 - (distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f)));
         float stepReward = distanceDelta * (1 + proximityFactor * targetProximitySmoothing);
         stepReward = Mathf.Clamp(stepReward, minStepPenalty, maxStepReward);
         AddReward(stepReward);
 
-        // 2. 增加平滑移动奖励（鼓励稳定速度）
+        // 2. 平滑移动奖励
         float currentSpeed = rb.linearVelocity.magnitude;
         float speedStabilityReward = 0.1f * (1 - Mathf.Abs(currentSpeed - MaxSpeed * 0.5f) / (MaxSpeed * 0.5f));
         AddReward(speedStabilityReward);
 
-        // 3. 碰撞惩罚（保持不变）
+        // 3. 碰撞惩罚
         Vector2Int currentGrid = gridManager.世界转栅格(transform.position);
         if (!IsPassable(currentGrid))
         {
@@ -269,23 +331,15 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 4. 到达目标奖励（修改部分）
+        // 4. 到达目标奖励
         if (distToTarget < 2f)
         {
-            // 保留原奖励逻辑，或与 BoatController 奖励合并
-            if (currentSpeed < MaxSpeed * 0.3f)
-            {
-                AddReward(100f);
-            }
-            else
-            {
-                AddReward(50f);
-            }
+            AddReward(currentSpeed < MaxSpeed * 0.3f ? 100f : 50f);
             EndEpisode();
             return;
         }
 
-        // 5. 超时惩罚（使用 Academy 传递的最大时长）
+        // 5. 超时惩罚
         if (Time.time - episodeStartTime > currentMaxEpisodeTime)
         {
             AddReward(-20f);
@@ -293,19 +347,23 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 更新路径点索引和距离记录
+        // 更新状态
         UpdateWaypointIndex();
         lastDistToTarget = distToTarget;
     }
 
-    // USV_GlobalRLAgent.cs - MoveAgent() 方法修改
+    /// <summary>
+    /// 执行移动动作
+    /// </summary>
+    /// <param name="action">动作索引</param>
     void MoveAgent(int action)
     {
-        // 当前速度
+        if (rb == null) return;
+
         float currentSpeed = rb.linearVelocity.magnitude;
         switch (action)
         {
-            case 0: // 前进（基于 Academy 传递的最大速度动态调整）
+            case 0: // 前进
                 if (currentSpeed < currentMaxSpeed * 0.8f)
                 {
                     rb.AddForce(transform.forward * currentMaxSpeed * 0.6f, ForceMode.VelocityChange);
@@ -315,11 +373,10 @@ public class USV_GlobalRLAgent : Agent
                     rb.AddForce(transform.forward * currentMaxSpeed * 0.2f, ForceMode.VelocityChange);
                 }
                 break;
-
-            case 1: // 左转（进一步降低角速度，从20°→15°）
+            case 1: // 左转
                 transform.Rotate(Vector3.up, -15f * Time.fixedDeltaTime);
                 break;
-            case 2: // 右转（同上）
+            case 2: // 右转
                 transform.Rotate(Vector3.up, 15f * Time.fixedDeltaTime);
                 break;
             case 3: // 减速
@@ -328,30 +385,44 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    // 新增路径点索引更新方法
+    /// <summary>
+    /// 更新当前路径点索引
+    /// </summary>
     private void UpdateWaypointIndex()
     {
-        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > currentWaypointIndex)
+        if (globalPathfinder == null || globalPathfinder.path == null ||
+            globalPathfinder.path.Count <= currentWaypointIndex) return;
+
+        float distToWaypoint = Vector3.Distance(transform.position,
+            gridManager.栅格转世界(globalPathfinder.path[currentWaypointIndex]));
+
+        if (distToWaypoint < 1.5f)
         {
-            float distToWaypoint = Vector3.Distance(transform.position, gridManager.栅格转世界(globalPathfinder.path[currentWaypointIndex]));
-            if (distToWaypoint < 1.5f)
-            {
-                currentWaypointIndex = Mathf.Min(currentWaypointIndex + 1, globalPathfinder.path.Count - 1);
-            }
+            currentWaypointIndex = Mathf.Min(currentWaypointIndex + 1, globalPathfinder.path.Count - 1);
         }
     }
 
-    // 检查栅格是否可通行
+    /// <summary>
+    /// 检查栅格是否可通行
+    /// </summary>
+    /// <param name="gridPos">栅格坐标</param>
+    /// <returns>是否可通行</returns>
     private bool IsPassable(Vector2Int gridPos)
     {
-        if (gridPos.x < 0 || gridPos.x >= gridWidth || gridPos.y < 0 || gridPos.y >= gridHeight)
+        if (gridPos.x < 0 || gridPos.x >= gridWidth ||
+            gridPos.y < 0 || gridPos.y >= gridHeight)
             return false;
-        return passableGrid[gridPos.x, gridPos.y];
+
+        return passableGrid != null && passableGrid[gridPos.x, gridPos.y];
     }
 
-    // 缓存栅格通行性数据
+    /// <summary>
+    /// 缓存栅格通行性数据
+    /// </summary>
     private void CachePassableGrid()
     {
+        if (gridManager == null) return;
+
         passableGrid = new bool[gridWidth, gridHeight];
         for (int x = 0; x < gridWidth; x++)
         {
@@ -362,10 +433,15 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    // 生成安全位置列表
+    /// <summary>
+    /// 生成安全位置列表
+    /// </summary>
     private void GenerateSafePositions()
     {
         safePositions = new List<Vector3>();
+
+        if (gridManager == null || passableGrid == null) return;
+
         for (int x = 0; x < gridWidth; x++)
         {
             for (int z = 0; z < gridHeight; z++)
@@ -376,6 +452,7 @@ public class USV_GlobalRLAgent : Agent
                 }
             }
         }
+
         Debug.Log($"生成 {safePositions.Count} 个安全位置");
     }
 }

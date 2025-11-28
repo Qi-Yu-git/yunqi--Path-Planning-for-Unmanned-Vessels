@@ -1,191 +1,288 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
+using System.IO;
 using OpenCvSharp;
 using OpenCvSharp.Dnn;
-using UnityEngine; // Ìí¼ÓUnityÃüÃû¿Õ¼ä£¨½â¾öDebugÎ´¶¨Òå£©
+using UnityEngine;
 
+/// <summary>
+/// YOLOv8ç›®æ ‡æ£€æµ‹å¼•æ“ï¼Œå°è£…OpenCV DNNæ¨ç†åŠŸèƒ½
+/// </summary>
 public class YoloV8Engine : IDisposable
 {
-    private Net net; // OpenCV DNNÍøÂçÊµÀı
-    private float confidenceThreshold; // ÖÃĞÅ¶ÈãĞÖµ
-    private float iouThreshold; // IOUãĞÖµ
-    // COCOÊı¾İ¼¯Àà±ğÃû³Æ£¨YOLOv8Ô¤ÑµÁ·Ä£ĞÍÄ¬ÈÏÀà±ğ£¬Ë³Ğò²»¿ÉĞŞ¸Ä£©
-    private readonly List<string> classNames = new List<string>
+    #region ç§æœ‰å­—æ®µ
+    private Net _net;                  // OpenCV DNNç½‘ç»œå®ä¾‹
+    private string _modelPath;         // æ¨¡å‹è·¯å¾„
+    private float _confidenceThreshold;// ç½®ä¿¡åº¦é˜ˆå€¼ï¼ˆ0-1ï¼‰
+    private float _iouThreshold;       // IOUé˜ˆå€¼ï¼ˆ0-1ï¼‰
+    private List<string> _classNames;  // ç±»åˆ«åç§°åˆ—è¡¨
+    private bool _isInitialized;       // åˆå§‹åŒ–çŠ¶æ€æ ‡è®°
+    private readonly object _lockObj = new object(); // çº¿ç¨‹åŒæ­¥é”
+    private Size _inputSize = new Size(640, 640); // æ¨¡å‹è¾“å…¥å°ºå¯¸
+    #endregion
+
+    #region å…¬å…±å±æ€§
+    public bool IsInitialized => _isInitialized;
+    public Size InputSize => _inputSize;
+    public IReadOnlyList<string> ClassNames => _classNames.AsReadOnly();
+    #endregion
+
+    #region æ„é€ å‡½æ•°
+    public YoloV8Engine(string modelPath, List<string> classNames = null,
+                       float confidenceThreshold = 0.5f, float iouThreshold = 0.4f,
+                       Size? inputSize = null)
     {
-        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-        "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-        "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-        "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-        "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-        "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-        "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-        "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-        "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-        "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-        "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
-        "toothbrush"
-    };
+        _modelPath = modelPath;
+        _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
+        _iouThreshold = Mathf.Clamp01(iouThreshold);
+        _classNames = classNames ?? GetDefaultCocoClassNames();
+        if (inputSize.HasValue) _inputSize = inputSize.Value;
 
-    /// <summary>
-    /// ³õÊ¼»¯YOLOv8ÒıÇæ
-    /// </summary>
-    /// <param name="modelPath">ONNXÄ£ĞÍÂ·¾¶</param>
-    /// <param name="confidenceThreshold">ÖÃĞÅ¶ÈãĞÖµ</param>
-    /// <param name="iouThreshold">IOUãĞÖµ</param>
-    public YoloV8Engine(string modelPath, float confidenceThreshold = 0.5f, float iouThreshold = 0.4f)
-    {
-        this.confidenceThreshold = confidenceThreshold;
-        this.iouThreshold = iouThreshold;
-
-        // ¼ÓÔØONNXÄ£ĞÍ£¨OpenCV DNN×Ô¶¯½âÎö£©
-        net = CvDnn.ReadNetFromOnnx(modelPath);
-        if (net.Empty())
-            throw new Exception($"ÎŞ·¨¼ÓÔØYOLOv8Ä£ĞÍ£¬Çë¼ì²éÂ·¾¶£º{modelPath}");
-
-        // ĞŞ¸´£ºÒÆ³ıCUDAÏà¹Ø´úÂë£¨OpenCvSharp4.runtime.windowsÄ¬ÈÏ²»°üº¬CUDAÄ£¿é£¬±ÜÃâ±àÒë´íÎó£©
-        // ÈôĞèGPU¼ÓËÙ£¬ĞèÊÖ¶¯°²×°´øCUDAµÄOpenCV£¬²¢Ìæ»»OpenCvSharp4µÄDLL
-        net.SetPreferableBackend(Backend.OPENCV);
-        net.SetPreferableTarget(Target.CPU);
-        Debug.Log("YOLOv8Ê¹ÓÃCPUÍÆÀí£¨ÈçĞèGPU¼ÓËÙ£¬ĞèÅäÖÃ´øCUDAµÄOpenCV»·¾³£©");
+        try
+        {
+            _isInitialized = InitializeEngine();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"å¼•æ“åˆå§‹åŒ–å¤±è´¥: {ex.Message}\n{ex.StackTrace}");
+            _isInitialized = false;
+        }
     }
+    #endregion
 
-    /// <summary>
-    /// Ö´ĞĞÄ¿±ê¼ì²â
-    /// </summary>
-    /// <param name="frame">ÊäÈëÍ¼Ïñ£¨OpenCV Mat¸ñÊ½£©</param>
-    /// <returns>¼ì²â½á¹ûÁĞ±í</returns>
+    #region å…¬å…±æ–¹æ³•
     public List<YoloResult> Detect(Mat frame)
     {
-        int frameWidth = frame.Cols;
-        int frameHeight = frame.Rows;
+        if (!_isInitialized || frame == null || frame.Empty())
+        {
+            Debug.LogWarning("æ£€æµ‹æ¡ä»¶ä¸æ»¡è¶³");
+            return new List<YoloResult>();
+        }
 
-        // Í¼ÏñÔ¤´¦Àí£ºËõ·ÅÖÁYOLOv8ÊäÈë³ß´ç£¨640x640£©¡¢¹éÒ»»¯
-        Mat blob = CvDnn.BlobFromImage(
-            frame, 1 / 255.0, new Size(640, 640),
-            new Scalar(0, 0, 0), true, false
-        );
-        net.SetInput(blob);
+        lock (_lockObj)
+        {
+            try
+            {
+                int frameWidth = frame.Cols;
+                int frameHeight = frame.Rows;
 
-        // Ä£ĞÍÍÆÀí£¨Ç°Ïò´«²¥£©
-        // ĞŞ¸´£ºÓÃMat[]Ìæ´úMatVector£¨OpenCvSharp4²¿·Ö°æ±¾²»¼æÈİMatVector£©
-        Mat[] outputs = new Mat[1];
-        string[] outputLayerNames = net.GetUnconnectedOutLayersNames();
-        net.Forward(outputs, outputLayerNames); // ÏÔÊ½Ö¸¶¨Êä³ö²ãÃû³Æ
+                using (var blob = PreprocessImage(frame))
+                {
+                    _net.SetInput(blob);
+                    Mat[] outputs = new Mat[1];
+                    string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
+                    _net.Forward(outputs, outputLayerNames);
 
-        // ½âÎöÍÆÀí½á¹û
-        List<YoloResult> results = ParseDetectionOutput(outputs[0], frameWidth, frameHeight);
+                    var results = ParseDetectionOutput(outputs[0], frameWidth, frameHeight);
+                    foreach (var output in outputs)
+                        output.Release();
 
-        // ÊÍ·ÅÁÙÊ±×ÊÔ´
-        blob.Release();
-        foreach (var output in outputs) output.Release();
-
-        return results;
+                    return results;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"æ£€æµ‹å‡ºé”™: {ex.Message}");
+                return new List<YoloResult>();
+            }
+        }
     }
 
-    /// <summary>
-    /// ½âÎöYOLOv8Êä³ö¸ñÊ½£¨[1, 84, 8400]£©
-    /// </summary>
+    public void UpdateThresholds(float confidenceThreshold, float iouThreshold)
+    {
+        _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
+        _iouThreshold = Mathf.Clamp01(iouThreshold);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    #endregion
+
+    #region ç§æœ‰æ–¹æ³•
+    private Mat PreprocessImage(Mat frame)
+    {
+        // ä¿®æ­£BlobFromImageå‚æ•°ï¼ˆç§»é™¤MatTypeå‚æ•°ï¼Œé€‚é…ä½ç‰ˆæœ¬OpenCvSharpï¼‰
+        return CvDnn.BlobFromImage(
+            frame,
+            1 / 255.0,
+            _inputSize,
+            new Scalar(0, 0, 0),
+            true,
+            false);
+    }
+
     private List<YoloResult> ParseDetectionOutput(Mat output, int frameWidth, int frameHeight)
     {
-        List<YoloResult> results = new List<YoloResult>();
-        int rows = output.Rows; // 8400¸öºòÑ¡¿ò
-        int cols = output.Cols; // 84 = 4£¨×ø±ê£©+ 1£¨ÖÃĞÅ¶È£©+ 80£¨Àà±ğ·ÖÊı£©
+        var results = new List<YoloResult>();
+        int rows = output.Rows;
+        int cols = output.Cols;
+
+        if (cols != 5 + _classNames.Count)
+        {
+            Debug.LogError("è¾“å‡ºç»´åº¦ä¸åŒ¹é…");
+            return results;
+        }
+
+        // ä¿®æ­£GetArrayæ–¹æ³•è°ƒç”¨ï¼ˆä½¿ç”¨ä½ç‰ˆæœ¬å…¼å®¹å†™æ³•ï¼‰
+        float[] outputData = new float[rows * cols];
+        output.GetArray(out outputData);
 
         for (int i = 0; i < rows; i++)
         {
-            // »ñÈ¡ºòÑ¡¿òÖÃĞÅ¶È£¨ÊÇ·ñ°üº¬Ä¿±ê£©
-            float boxConfidence = output.At<float>(i, 4);
-            if (boxConfidence < confidenceThreshold)
+            int baseIndex = i * cols;
+            float boxConfidence = outputData[baseIndex + 4];
+            if (boxConfidence < _confidenceThreshold)
                 continue;
 
-            // ¼ÆËã×î¸ßÖÃĞÅ¶ÈµÄÀà±ğ
             int classId = -1;
             float maxClassScore = 0;
             for (int j = 5; j < cols; j++)
             {
-                float classScore = output.At<float>(i, j);
+                float classScore = outputData[baseIndex + j];
                 if (classScore > maxClassScore)
                 {
                     maxClassScore = classScore;
-                    classId = j - 5; // Àà±ğID£¨0-79£©
+                    classId = j - 5;
                 }
             }
 
-            // ¹ıÂËµÍÖÃĞÅ¶ÈÀà±ğ
-            if (maxClassScore < confidenceThreshold || classId < 0)
+            if (maxClassScore < _confidenceThreshold || classId < 0 || classId >= _classNames.Count)
                 continue;
 
-            // ¼ÆËãÕæÊµÍ¼Ïñ×ø±ê£¨·´¹éÒ»»¯£©
-            float cx = output.At<float>(i, 0) * frameWidth; // ÖĞĞÄµãX
-            float cy = output.At<float>(i, 1) * frameHeight; // ÖĞĞÄµãY
-            float w = output.At<float>(i, 2) * frameWidth; // ¿í¶È
-            float h = output.At<float>(i, 3) * frameHeight; // ¸ß¶È
-            float x1 = cx - w / 2; // ×óÉÏ½ÇX
-            float y1 = cy - h / 2; // ×óÉÏ½ÇY
+            float cx = outputData[baseIndex + 0] * frameWidth;
+            float cy = outputData[baseIndex + 1] * frameHeight;
+            float w = outputData[baseIndex + 2] * frameWidth;
+            float h = outputData[baseIndex + 3] * frameHeight;
 
-            // Ìí¼Óµ½½á¹ûÁĞ±í
+            float x1 = Mathf.Max(0, cx - w / 2);
+            float y1 = Mathf.Max(0, cy - h / 2);
+            float x2 = Mathf.Min(frameWidth, cx + w / 2);
+            float y2 = Mathf.Min(frameHeight, cy + h / 2);
+
             results.Add(new YoloResult
             {
                 ClassId = classId,
-                ClassName = classNames[classId],
-                Confidence = boxConfidence * maxClassScore, // ×ÛºÏÖÃĞÅ¶È
-                Rect = new Rect2d(x1, y1, w, h)
+                ClassName = _classNames[classId],
+                Confidence = boxConfidence * maxClassScore,
+                Rect = new Rect2d(x1, y1, x2 - x1, y2 - y1)
             });
         }
 
-        // ·Ç¼«´óÖµÒÖÖÆ£¨NMS£©£ºÈ¥³ıÖØ¸´¼ì²â¿ò
-        results = ApplyNonMaxSuppression(results);
-
-        return results;
+        return ApplyNonMaxSuppression(results);
     }
 
-    /// <summary>
-    /// ·Ç¼«´óÖµÒÖÖÆ£¨NMS£©£º¹ıÂËÖØµş¼ì²â¿ò
-    /// </summary>
     private List<YoloResult> ApplyNonMaxSuppression(List<YoloResult> results)
     {
         if (results.Count == 0)
             return results;
 
-        // ÌáÈ¡ÖÃĞÅ¶ÈºÍ±ß½ç¿ò
         float[] confidences = new float[results.Count];
         Rect2d[] boxes = new Rect2d[results.Count];
+
         for (int i = 0; i < results.Count; i++)
         {
             confidences[i] = results[i].Confidence;
             boxes[i] = results[i].Rect;
         }
 
-        // Ö´ĞĞNMS
         int[] indices;
-        CvDnn.NMSBoxes(boxes, confidences, confidenceThreshold, iouThreshold, out indices);
+        CvDnn.NMSBoxes(boxes, confidences, _confidenceThreshold, _iouThreshold, out indices);
 
-        // É¸Ñ¡NMSºóµÄ½á¹û
-        List<YoloResult> nmsResults = new List<YoloResult>();
+        var nmsResults = new List<YoloResult>();
         foreach (int idx in indices)
         {
-            nmsResults.Add(results[idx]);
+            if (idx >= 0 && idx < results.Count)
+                nmsResults.Add(results[idx]);
         }
 
         return nmsResults;
     }
 
-    /// <summary>
-    /// ÊÍ·Å×ÊÔ´£¨ÊµÏÖIDisposable½Ó¿Ú£©
-    /// </summary>
-    public void Dispose()
+    private bool InitializeEngine()
     {
-        net?.Dispose();
-    }
-}
+        if (string.IsNullOrEmpty(_modelPath) || !File.Exists(_modelPath))
+        {
+            Debug.LogError($"æ¨¡å‹æ–‡ä»¶ä¸å­˜åœ¨: {_modelPath}");
+            return false;
+        }
 
-/// <summary>
-/// YOLO¼ì²â½á¹ûÊı¾İ½á¹¹
-/// </summary>
-public class YoloResult
-{
-    public int ClassId { get; set; } // Àà±ğID
-    public string ClassName { get; set; } // Àà±ğÃû³Æ
-    public float Confidence { get; set; } // ×ÛºÏÖÃĞÅ¶È
-    public Rect2d Rect { get; set; } // ±ß½ç¿ò£¨ÆÁÄ»×ø±ê£©
+        try
+        {
+            Debug.Log($"å¼€å§‹åŠ è½½æ¨¡å‹: {_modelPath}");
+            _net = CvDnn.ReadNetFromOnnx(_modelPath);
+
+            if (_net == null || _net.Empty())
+            {
+                Debug.LogError("æ¨¡å‹åŠ è½½å¤±è´¥ï¼Œç½‘ç»œä¸ºç©º");
+                return false;
+            }
+
+            ConfigureNetBackend();
+            Debug.Log("æ¨¡å‹åŠ è½½æˆåŠŸ");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"åŠ è½½æ¨¡å‹æ—¶å‘ç”Ÿå¼‚å¸¸: {ex.Message}\n{ex.StackTrace}");
+            return false;
+        }
+    }
+
+    // ä¿®æ­£ç‰ˆï¼šé…ç½®ç½‘ç»œåç«¯ï¼ˆç§»é™¤Cudaå’ŒGraphicsDeviceTypeç›¸å…³æ£€æµ‹ï¼‰
+    private void ConfigureNetBackend()
+    {
+        if (_net == null) return;
+
+        // ç›´æ¥ä½¿ç”¨CPUåç«¯é…ç½®ï¼Œé¿å…CUDAç›¸å…³APIè°ƒç”¨
+        ConfigureCpuBackend();
+    }
+
+    // CPUåç«¯é…ç½®
+    private void ConfigureCpuBackend()
+    {
+        _net.SetPreferableBackend(Backend.OPENCV);
+        _net.SetPreferableTarget(Target.CPU);
+        Debug.Log("ä½¿ç”¨CPUæ¨ç†");
+    }
+
+    private List<string> GetDefaultCocoClassNames()
+    {
+        return new List<string>
+        {
+            "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+            "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+            "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe",
+            "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
+            "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
+            "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl",
+            "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
+            "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet",
+            "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven",
+            "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+            "hair drier", "toothbrush"
+        };
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // é‡Šæ”¾æ‰˜ç®¡èµ„æº
+        }
+        // é‡Šæ”¾éæ‰˜ç®¡èµ„æº
+        if (_net != null)
+        {
+            _net.Dispose();
+            _net = null;
+        }
+    }
+
+    ~YoloV8Engine()
+    {
+        Dispose(false);
+    }
+    #endregion
 }
