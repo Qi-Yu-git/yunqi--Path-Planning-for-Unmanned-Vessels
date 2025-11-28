@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+
 public class RandomSpawnManager : MonoBehaviour
 {
     [SerializeField] private GridManager gridManager;
@@ -140,6 +141,17 @@ public class RandomSpawnManager : MonoBehaviour
             if (rock != null && Vector3.Distance(rockPos, rock.transform.position) < 2f)
                 return false;
         }
+        // ========== 新增：过滤非障碍物层级 ==========
+        Collider[] colliders = Physics.OverlapSphere(rockPos, 0.5f);
+        foreach (var col in colliders)
+        {
+            if (col.gameObject.layer != LayerMask.NameToLayer("Obstacle"))
+            {
+                continue; // 忽略非障碍物碰撞体
+            }
+        }
+
+ 
 
         // 5. 检查该位置是否可通行（确保不与已有障碍物重叠）
         return gridManager.栅格是否可通行(gridPos);

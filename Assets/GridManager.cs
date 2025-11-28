@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-
+using System; // 新增：引入System命名空间，支持Array类
 internal struct Node
 {
     public bool walkable;
@@ -157,10 +157,12 @@ public class GridManager : MonoBehaviour
             Debug.LogWarning("GridManager：标记障碍物失败，栅格地图未初始化！");
             return;
         }
-
         float 实际检测半径 = 栅格半尺寸 + obstacleCheckRadius + radiusOffset;
         int 总节点数 = 栅格宽度 * 栅格高度;
         int 障碍物数量 = 0;
+
+        // ========== 新增：每次检测前清空碰撞数组 ==========
+        Array.Clear(碰撞检测结果, 0, 碰撞检测结果.Length);
 
         for (int i = 0; i < 总节点数; i += 8)
         {
@@ -169,8 +171,10 @@ public class GridManager : MonoBehaviour
                 int 索引 = i + j;
                 int x = 索引 / 栅格高度;
                 int z = 索引 % 栅格高度;
-
                 Node 节点 = 栅格地图[x, z];
+
+                /*========== 注释：打印碰撞信息（调试用，现在删除/注释） ==========
+                // ========== 新增：打印碰撞信息，定位误判 ==========
                 int 碰撞数量 = Physics.OverlapSphereNonAlloc(
                     节点.worldPosition,
                     实际检测半径,
@@ -179,6 +183,24 @@ public class GridManager : MonoBehaviour
                     QueryTriggerInteraction.Ignore
                 );
 
+                // 调试日志：输出误判的碰撞体名称
+                if (碰撞数量 > 0 && 碰撞检测结果[0] != null)
+                {
+                    Debug.LogWarning($"误判障碍物：节点({x},{z}) 检测到 {碰撞检测结果[0].name}（层级：{LayerMask.LayerToName(碰撞检测结果[0].gameObject.layer)}）");
+                }
+                */
+
+                // ========== 恢复原有碰撞检测逻辑（保留核心功能） ==========
+                int 碰撞数量 = Physics.OverlapSphereNonAlloc(
+    节点.worldPosition,
+    实际检测半径,
+    碰撞检测结果,
+    obstacleLayer,
+    QueryTriggerInteraction.Ignore
+);
+
+
+
                 if (碰撞数量 > 0)
                 {
                     节点.walkable = false;
@@ -186,13 +208,11 @@ public class GridManager : MonoBehaviour
                 }
                 else
                 {
-                    节点.walkable = true;
+                    节点.walkable = true; // 强制重置为可通行
                 }
-
                 栅格地图[x, z] = 节点;
             }
         }
-
         Debug.Log($"GridManager：障碍物标记完成，共检测{总节点数}个节点，发现{障碍物数量}个障碍物节点");
     }
 
@@ -451,10 +471,19 @@ public class GridManager : MonoBehaviour
         {
             for (int z = 0; z < 栅格高度; z++)
             {
-                if (!栅格地图[x, z].walkable)
+                // ========== 新增：双重验证walkable状态 ==========
+                bool isReallyObstacle = !栅格地图[x, z].walkable;
+                // 额外验证：该节点是否真的检测到碰撞体
+                Collider[] tempColliders = Physics.OverlapSphere(
+                    栅格地图[x, z].worldPosition,
+                    栅格半尺寸 + obstacleCheckRadius,
+                    obstacleLayer
+                );
+                isReallyObstacle = tempColliders.Length > 0;
+
+                if (isReallyObstacle)
                 {
                     Vector3 障碍物中心 = 栅格转世界(new Vector2Int(x, z));
-                    // 仅绘制水域内的障碍物
                     if (障碍物中心.x >= waterMinX && 障碍物中心.x <= waterMaxX &&
                         障碍物中心.z >= waterMinZ && 障碍物中心.z <= waterMaxZ)
                     {

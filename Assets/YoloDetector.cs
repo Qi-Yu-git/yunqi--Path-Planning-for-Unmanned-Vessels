@@ -37,7 +37,7 @@ public class YoloDetector : MonoBehaviour
     private GUIStyle _boxStyle;               // 边界框GUI样式
     private GUIStyle _labelStyle;             // 标签GUI样式
 
-
+    private YoloV8Engine yoloEngine;
     void Start()
     {
         // 初始化YOLO引擎

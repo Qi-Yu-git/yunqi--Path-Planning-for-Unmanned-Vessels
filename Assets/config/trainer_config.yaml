@@ -1,5 +1,5 @@
 My behaviors:
-  USVBehavior:
+  USV_GlobalRLAgent:  
     trainer_type: ppo
     hyperparameters:
       batch_size: 1024
@@ -15,8 +15,9 @@ My behaviors:
       hidden_units: 256
       num_layers: 2
       activation: tanh
-
       encoding_size: 64
+      observation_size: 128  
+
     reward_signals:
       extrinsic:
         gamma: 0.99

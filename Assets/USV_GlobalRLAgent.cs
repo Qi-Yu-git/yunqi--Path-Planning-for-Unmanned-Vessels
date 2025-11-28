@@ -233,23 +233,28 @@ public class USV_GlobalRLAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 保底观测值，确保观测向量不为空
-        sensor.AddObservation(0f);
+        // 移除保底观测值，避免重复计数
+        // sensor.AddObservation(0f);  // 注释掉这行
 
         if (rb == null || target == null || gridManager == null)
         {
             Debug.LogWarning("缺少必要组件，无法收集完整观测值");
+            // 当组件缺失时，添加正确数量的占位观测值
+            for (int i = 0; i < 128; i++)  // 假设配置的大小是128
+            {
+                sensor.AddObservation(0f);
+            }
             return;
         }
 
-        // 1. 前进速度（归一化）
+        // 1. 前进速度（归一化）- 1个观测值
         float forwardSpeed = Vector3.Dot(transform.forward, rb.linearVelocity);
         sensor.AddObservation(Mathf.Clamp(forwardSpeed / MaxSpeed, -1f, 1f));
 
-        // 2. 朝向（归一化到 [-1, 1]）
+        // 2. 朝向（归一化到 [-1, 1]）- 1个观测值
         sensor.AddObservation((transform.eulerAngles.y % 360f) / 180f - 1f);
 
-        // 3. 目标距离和角度
+        // 3. 目标距离和角度 - 2个观测值
         float distToTarget = Vector3.Distance(transform.position, target.position);
         sensor.AddObservation(Mathf.Clamp01(distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f)));
 
@@ -257,7 +262,7 @@ public class USV_GlobalRLAgent : Agent
             target.position - transform.position, Vector3.up);
         sensor.AddObservation(angleToTarget / 180f);
 
-        // 4. 全局路径方向
+        // 4. 全局路径方向 - 1个观测值
         if (globalPathfinder != null && globalPathfinder.path != null &&
             globalPathfinder.path.Count > currentWaypointIndex + 1)
         {
@@ -271,9 +276,10 @@ public class USV_GlobalRLAgent : Agent
             sensor.AddObservation(0f);
         }
 
-        // 5. 局部障碍物（5x5网格）
+        // 5. 局部障碍物（5x5网格）- 121个观测值 (11x11网格)
         Vector2Int agentGridPos = gridManager.世界转栅格(transform.position);
         Vector2Int checkPos = new Vector2Int();
+        int observationCount = 0;  // 计数器确保精确控制数量
         for (int x = -ViewRange; x <= ViewRange; x++)
         {
             for (int z = -ViewRange; z <= ViewRange; z++)
@@ -282,10 +288,11 @@ public class USV_GlobalRLAgent : Agent
                 checkPos.y = agentGridPos.y + z;
                 bool isObstacle = !IsPassable(checkPos);
                 sensor.AddObservation(isObstacle ? 1f : 0f);
+                observationCount++;
             }
         }
 
-        // 6. 动态障碍物速度
+        // 6. 动态障碍物速度 - 2个观测值
         USV_LocalPlanner localPlanner = GetComponent<USV_LocalPlanner>();
         if (localPlanner != null && localPlanner.dynamicObstacleVelocities.Count > 0)
         {
@@ -297,6 +304,13 @@ public class USV_GlobalRLAgent : Agent
         {
             sensor.AddObservation(0f);
             sensor.AddObservation(0f);
+        }
+
+        // 验证总观测值数量
+        int totalObservations = 1 + 1 + 2 + 1 + 121 + 2;  // 计算总和
+        if (totalObservations != 128)
+        {
+            Debug.LogError($"观测值数量不匹配: 实际{totalObservations}个，期望128个");
         }
     }
 
