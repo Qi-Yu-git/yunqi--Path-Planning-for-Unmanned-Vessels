@@ -9,6 +9,7 @@ using UnityEngine;
 
 /// <summary>
 /// YOLOv8目标检测引擎，封装OpenCV DNN推理功能（适配 (1,84,8400) 模型格式 + 低版本兼容）
+/// 核心优化：适配84列模型（4坐标+80类别，无单独置信度列），修复检测解析逻辑
 /// </summary>
 public class YoloV8Engine : IDisposable
 {
@@ -21,6 +22,7 @@ public class YoloV8Engine : IDisposable
     private bool _isInitialized;       // 初始化状态标记
     private readonly object _lockObj = new object(); // 线程同步锁
     private Size _inputSize = new Size(640, 640); // 模型输入尺寸
+    private bool _isNoSeparateConfidence; // 是否为无单独置信度列的模型（84列格式）
     #endregion
 
     #region 公共属性
@@ -32,12 +34,13 @@ public class YoloV8Engine : IDisposable
     #region 构造函数
     public YoloV8Engine(string modelPath, List<string> classNames = null,
                        float confidenceThreshold = 0.5f, float iouThreshold = 0.4f,
-                       Size? inputSize = null)
+                       Size? inputSize = null, bool isNoSeparateConfidence = true)
     {
         _modelPath = modelPath;
         _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
         _iouThreshold = Mathf.Clamp01(iouThreshold);
         _classNames = classNames ?? GetDefaultCocoClassNames();
+        _isNoSeparateConfidence = isNoSeparateConfidence; // 默认为84列模型（无单独置信度）
         if (inputSize.HasValue) _inputSize = inputSize.Value;
 
         try
@@ -136,6 +139,15 @@ public class YoloV8Engine : IDisposable
         _iouThreshold = Mathf.Clamp01(iouThreshold);
     }
 
+    /// <summary>
+    /// 切换模型格式（84列/85列）
+    /// </summary>
+    public void SetModelFormat(bool isNoSeparateConfidence)
+    {
+        _isNoSeparateConfidence = isNoSeparateConfidence;
+        Debug.Log($"🔄 模型格式已切换：{(isNoSeparateConfidence ? "84列（4坐标+80类别）" : "85列（4坐标+1置信度+80类别）")}");
+    }
+
     public void Dispose()
     {
         Dispose(true);
@@ -160,7 +172,7 @@ public class YoloV8Engine : IDisposable
     }
 
     /// <summary>
-    /// 解析检测输出（修复置信度、边界框计算）
+    /// 解析检测输出（核心修复：适配84列模型，修正置信度计算逻辑）
     /// </summary>
     private List<YoloResult> ParseDetectionOutput(Mat output, int frameWidth, int frameHeight)
     {
@@ -196,15 +208,17 @@ public class YoloV8Engine : IDisposable
             }
         }
 
-        // 关键适配：兼容84列（5+79类）和85列（5+80类）
-        int expectedCols = 5 + _classNames.Count;
-        Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}");
+        // 关键适配：自动计算预期列数（根据模型格式切换）
+        int expectedCols = _isNoSeparateConfidence
+            ? 4 + _classNames.Count()  // 84列：4坐标 + 80类别（无单独置信度）
+            : 5 + _classNames.Count(); // 85列：4坐标 + 1置信度 + 80类别
+        Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
 
-        // 允许±1的误差范围，避免严格匹配导致的问题
-        if (Mathf.Abs(cols - expectedCols) > 1)
+        // 严格匹配列数（避免解析错误）
+        if (cols != expectedCols)
         {
             Debug.LogError($"❌ 输出维度不匹配：实际{cols}列，预期{expectedCols}列");
-            Debug.LogError($"💡 可能原因：1.模型类别数与配置不匹配 2.模型输出格式异常");
+            Debug.LogError($"💡 可能原因：1.模型类别数与配置不匹配 2.模型格式设置错误（当前设置：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
             return results;
         }
 
@@ -247,37 +261,66 @@ public class YoloV8Engine : IDisposable
             float w = outputData[baseIndex + 2];
             float h = outputData[baseIndex + 3];
 
-            // 2. 读取框置信度（模型已通过Sigmoid激活，直接使用0~1区间值）
-            float boxConfidence = outputData[baseIndex + 4];
-            if (boxConfidence < _confidenceThreshold)
-                continue; // 过滤低置信度框
-
-            // 3. 查找最高分数的类别（修复数组越界问题）
-            float maxClassScore = 0;
+            // 2. 计算置信度（根据模型格式切换逻辑）
+            float finalConfidence = 0;
             int maxClassId = -1;
-            int classStartIndex = baseIndex + 5;
-            int classEndIndex = baseIndex + 5 + _classNames.Count;
-
-            // 确保不超出数组范围
-            if (classEndIndex > outputData.Length)
-                classEndIndex = outputData.Length;
-
-            for (int j = classStartIndex; j < classEndIndex; j++)
+            if (_isNoSeparateConfidence)
             {
-                float classScore = outputData[j]; // 模型已激活，0~1区间
-                if (classScore > maxClassScore)
+                // 84列模型：无单独置信度列，取最大类别概率作为置信度
+                float maxClassScore = 0;
+                int classStartIndex = baseIndex + 4; // 类别从第4列开始
+                int classEndIndex = baseIndex + 4 + _classNames.Count();
+
+                // 确保不超出数组范围
+                if (classEndIndex > outputData.Length)
+                    classEndIndex = outputData.Length;
+
+                for (int j = classStartIndex; j < classEndIndex; j++)
                 {
-                    maxClassScore = classScore;
-                    maxClassId = j - classStartIndex; // 类别ID从0开始
+                    float classScore = outputData[j]; // 模型已通过Sigmoid激活（0~1）
+                    if (classScore > maxClassScore)
+                    {
+                        maxClassScore = classScore;
+                        maxClassId = j - classStartIndex; // 类别ID从0开始
+                    }
                 }
+
+                finalConfidence = maxClassScore;
+            }
+            else
+            {
+                // 85列模型：单独置信度列 + 类别分数
+                float boxConfidence = outputData[baseIndex + 4];
+                if (boxConfidence < _confidenceThreshold)
+                    continue; // 过滤低置信度框
+
+                // 查找最高分数的类别
+                float maxClassScore = 0;
+                int classStartIndex = baseIndex + 5;
+                int classEndIndex = baseIndex + 5 + _classNames.Count();
+
+                if (classEndIndex > outputData.Length)
+                    classEndIndex = outputData.Length;
+
+                for (int j = classStartIndex; j < classEndIndex; j++)
+                {
+                    float classScore = outputData[j];
+                    if (classScore > maxClassScore)
+                    {
+                        maxClassScore = classScore;
+                        maxClassId = j - classStartIndex;
+                    }
+                }
+
+                // 最终置信度 = 框置信度 × 类别分数
+                finalConfidence = boxConfidence * maxClassScore;
             }
 
-            // 4. 计算最终置信度（框置信度 × 类别分数）
-            float finalConfidence = boxConfidence * maxClassScore;
-            if (finalConfidence < _confidenceThreshold)
+            // 过滤低置信度目标
+            if (finalConfidence < _confidenceThreshold || maxClassId < 0)
                 continue;
 
-            // 5. 转换为图像实际坐标（反归一化 + 边界限制，修复负数坐标问题）
+            // 3. 转换为图像实际坐标（反归一化 + 边界限制，修复负数坐标问题）
             float left = (x - w / 2) * frameWidth;  // 左上角x
             float top = (y - h / 2) * frameHeight;  // 左上角y
             float width = w * frameWidth;           // 宽度
@@ -289,19 +332,21 @@ public class YoloV8Engine : IDisposable
             width = Mathf.Max(1, Mathf.Min(frameWidth - left, width));
             height = Mathf.Max(1, Mathf.Min(frameHeight - top, height));
 
-            // 6. 构造检测结果
+            // 4. 构造检测结果（确保类别名称有效）
+            string className = maxClassId < _classNames.Count()
+                ? _classNames[maxClassId]
+                : $"unknown_{maxClassId}";
+
             results.Add(new YoloResult
             {
                 ClassId = maxClassId,
-                ClassName = (maxClassId >= 0 && maxClassId < _classNames.Count)
-                            ? _classNames[maxClassId]
-                            : "unknown",
+                ClassName = className,
                 Confidence = finalConfidence,
                 Rect = new Rect2d(left, top, width, height)
             });
         }
 
-        // 7. 执行NMS去重（优化：按类别分组，避免不同类别互相抑制）
+        // 5. 执行NMS去重（优化：按类别分组，避免不同类别互相抑制）
         return ApplyNonMaxSuppression(results);
     }
 
@@ -311,7 +356,10 @@ public class YoloV8Engine : IDisposable
     private List<YoloResult> ApplyNonMaxSuppression(List<YoloResult> results)
     {
         if (results.Count == 0)
+        {
+            Debug.Log("📌 NMS：无有效检测框");
             return results;
+        }
 
         var nmsResults = new List<YoloResult>();
 
@@ -332,7 +380,16 @@ public class YoloV8Engine : IDisposable
 
             // 执行NMS
             int[] indices;
-            CvDnn.NMSBoxes(boxes, confidences, _confidenceThreshold, _iouThreshold, out indices);
+            CvDnn.NMSBoxes(
+                boxes,
+                confidences,
+                _confidenceThreshold,
+                _iouThreshold,
+                out indices,
+                eta: 1.0f,  // 显式指定eta参数为1.0f
+                topK: 200   // 可选：指定最大输出框数量
+            
+            );
 
             // 添加NMS后的结果
             foreach (int idx in indices)
@@ -342,7 +399,7 @@ public class YoloV8Engine : IDisposable
             }
         }
 
-        Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框");
+        Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）");
         return nmsResults;
     }
 
@@ -380,7 +437,7 @@ public class YoloV8Engine : IDisposable
             }
 
             ConfigureNetBackend();
-            Debug.Log("✅ YOLOv8引擎初始化成功");
+            Debug.Log($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count()}）");
             return true;
         }
         catch (DllNotFoundException ex)
