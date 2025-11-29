@@ -23,25 +23,58 @@ public class YoloV8Engine : IDisposable
     private readonly object _lockObj = new object(); // 线程同步锁
     private Size _inputSize = new Size(640, 640); // 模型输入尺寸
     private bool _isNoSeparateConfidence; // 是否为无单独置信度列的模型（84列格式）
+
+    // 日志控制字段
+    private bool _logModelProcessing = true;
+    private bool _logNmsResults = true;
+    private float _lastAggregateLogTime;
+    private Dictionary<string, int> _classCountAggregate = new Dictionary<string, int>();
     #endregion
 
     #region 公共属性
     public bool IsInitialized => _isInitialized;
     public Size InputSize => _inputSize;
     public IReadOnlyList<string> ClassNames => _classNames.AsReadOnly();
+
+
+
+    // 日志控制配置
+    [Header("日志控制")]
+    public bool LogModelProcessing
+    {
+        get => _logModelProcessing;
+        set => _logModelProcessing = value;
+    }
+    public bool LogNmsResults
+    {
+        get => _logNmsResults;
+        set => _logNmsResults = value;
+    }
+    public float AggregateLogInterval { get; set; } = 1f; // 聚合日志输出间隔（秒）
+    public List<string> LogIncludedClasses { get; set; } = new List<string>();
+    public List<string> LogExcludedClasses { get; set; } = new List<string>();
     #endregion
 
     #region 构造函数
+    // 在YoloV8Engine的构造函数中添加日志参数
     public YoloV8Engine(string modelPath, List<string> classNames = null,
                        float confidenceThreshold = 0.5f, float iouThreshold = 0.4f,
-                       Size? inputSize = null, bool isNoSeparateConfidence = true)
+                       Size? inputSize = null, bool isNoSeparateConfidence = true,
+                       bool logModelProcessing = false,  // 新增：控制模型处理日志
+                       bool logNmsResults = false,       // 新增：控制NMS日志
+                       float aggregateLogInterval = 5f)  // 新增：控制聚合日志间隔
     {
         _modelPath = modelPath;
         _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
         _iouThreshold = Mathf.Clamp01(iouThreshold);
         _classNames = classNames ?? GetDefaultCocoClassNames();
-        _isNoSeparateConfidence = isNoSeparateConfidence; // 默认为84列模型（无单独置信度）
+        _isNoSeparateConfidence = isNoSeparateConfidence;
         if (inputSize.HasValue) _inputSize = inputSize.Value;
+
+        // ========== 接收外部日志配置 ==========
+        _logModelProcessing = logModelProcessing;
+        _logNmsResults = logNmsResults;
+        AggregateLogInterval = aggregateLogInterval;
 
         try
         {
@@ -86,8 +119,9 @@ public class YoloV8Engine : IDisposable
                     string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
                     Mat output = _net.Forward(outputLayerNames[0]);
 
-                    // ===================== 核心修复：低版本兼容的维度转换（适配 (1,84,8400)）=====================
-                    Debug.Log($"原始输出形状: ({output.Size(0)}, {output.Size(1)}, {output.Size(2)})");
+                    // 核心修复：低版本兼容的维度转换（适配 (1,84,8400)）
+                    if (_logModelProcessing)
+                        Debug.Log($"原始输出形状: ({output.Size(0)}, {output.Size(1)}, {output.Size(2)})");
 
                     if (output.Dims == 3 && output.Size(0) == 1)
                     {
@@ -113,8 +147,8 @@ public class YoloV8Engine : IDisposable
                         output = output.T(); // 转置为 (8400,84)
                     }
 
-                    Debug.Log($"调整后形状: {output.Rows}行 x {output.Cols}列");
-                    // ==================================================================================
+                    if (_logModelProcessing)
+                        Debug.Log($"调整后形状: {output.Rows}行 x {output.Cols}列");
 
                     var results = ParseDetectionOutput(output, frameWidth, frameHeight);
                     output.Release();
@@ -145,7 +179,69 @@ public class YoloV8Engine : IDisposable
     public void SetModelFormat(bool isNoSeparateConfidence)
     {
         _isNoSeparateConfidence = isNoSeparateConfidence;
-        Debug.Log($"🔄 模型格式已切换：{(isNoSeparateConfidence ? "84列（4坐标+80类别）" : "85列（4坐标+1置信度+80类别）")}");
+        if (_logModelProcessing)
+            Debug.Log($"🔄 模型格式已切换：{(isNoSeparateConfidence ? "84列（4坐标+80类别）" : "85列（4坐标+1置信度+80类别）")}");
+    }
+
+    /// <summary>
+    /// 处理检测日志（包含聚合和过滤功能）
+    /// </summary>
+    public void ProcessDetectionLogs(List<YoloResult> results)
+    {
+        // 聚合统计
+        foreach (var result in results)
+        {
+            if (_classCountAggregate.ContainsKey(result.ClassName))
+                _classCountAggregate[result.ClassName]++;
+            else
+                _classCountAggregate[result.ClassName] = 1;
+        }
+
+        // 定时输出聚合结果
+        if (Time.time - _lastAggregateLogTime > AggregateLogInterval)
+        {
+            if (_classCountAggregate.Count == 0)
+            {
+                // 降低空结果日志频率
+                if (Time.frameCount % 30 == 0)
+                    Debug.Log("📌 聚合统计：未检测到任何目标");
+            }
+            else
+            {
+                string aggregateLog = "📊 聚合统计：";
+                foreach (var kvp in _classCountAggregate)
+                {
+                    aggregateLog += $"{kvp.Key}({kvp.Value}) ";
+                }
+                Debug.Log(aggregateLog);
+
+                // 检测到过多目标时警告
+                int total = _classCountAggregate.Values.Sum();
+                if (total > 50)
+                    Debug.LogWarning($"⚠️ 检测到大量目标（{total}个），可能影响性能");
+            }
+            _classCountAggregate.Clear();
+            _lastAggregateLogTime = Time.time;
+        }
+
+        // 输出详细日志（带过滤）
+        if (results == null || results.Count == 0) return;
+
+        Debug.Log($"📌 检测到 {results.Count} 个目标");
+        foreach (var result in results)
+        {
+            // 检查是否需要输出该类别的详细日志
+            bool shouldLog = true;
+            if (LogIncludedClasses.Count > 0 && !LogIncludedClasses.Contains(result.ClassName))
+                shouldLog = false;
+            if (LogExcludedClasses.Contains(result.ClassName))
+                shouldLog = false;
+
+            if (shouldLog && result.Confidence > 0.8f)
+            {
+                Debug.Log($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 位置：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
+            }
+        }
     }
 
     public void Dispose()
@@ -178,8 +274,9 @@ public class YoloV8Engine : IDisposable
     {
         var results = new List<YoloResult>();
 
-        // 增加详细维度日志
-        Debug.Log($"输出矩阵信息: 维度={output.Dims}, 形状=({output.Size(0)},{output.Size(1)})");
+        // 增加详细维度日志（带开关控制）
+        if (_logModelProcessing)
+            Debug.Log($"输出矩阵信息: 维度={output.Dims}, 形状=({output.Size(0)},{output.Size(1)})");
 
         // 校验输出矩阵有效性
         if (output == null || output.Empty())
@@ -212,7 +309,9 @@ public class YoloV8Engine : IDisposable
         int expectedCols = _isNoSeparateConfidence
             ? 4 + _classNames.Count()  // 84列：4坐标 + 80类别（无单独置信度）
             : 5 + _classNames.Count(); // 85列：4坐标 + 1置信度 + 80类别
-        Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
+
+        if (_logModelProcessing)
+            Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
 
         // 严格匹配列数（避免解析错误）
         if (cols != expectedCols)
@@ -357,7 +456,8 @@ public class YoloV8Engine : IDisposable
     {
         if (results.Count == 0)
         {
-            Debug.Log("📌 NMS：无有效检测框");
+            if (_logNmsResults)
+                Debug.Log("📌 NMS：无有效检测框");
             return results;
         }
 
@@ -388,7 +488,6 @@ public class YoloV8Engine : IDisposable
                 out indices,
                 eta: 1.0f,  // 显式指定eta参数为1.0f
                 topK: 200   // 可选：指定最大输出框数量
-            
             );
 
             // 添加NMS后的结果
@@ -399,15 +498,21 @@ public class YoloV8Engine : IDisposable
             }
         }
 
-        Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）");
+        // 只在数量变化时输出NMS日志
+        if (_logNmsResults && results.Count != nmsResults.Count)
+        {
+            Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）");
+        }
         return nmsResults;
     }
 
     /// <summary>
     /// 初始化引擎（修复库路径加载、模型验证问题）
     /// </summary>
+    /// </summary>
     private bool InitializeEngine()
     {
+        // ========== 1. 先检查模型文件（核心逻辑不能被跳过） ==========
         if (string.IsNullOrEmpty(_modelPath) || !File.Exists(_modelPath))
         {
             Debug.LogError($"模型文件不存在: {_modelPath}");
@@ -416,28 +521,44 @@ public class YoloV8Engine : IDisposable
 
         try
         {
-            // 显式指定库加载路径（适配Unity不同目录结构）
+            // ========== 2. 配置库路径（核心逻辑） ==========
             var libPath = Path.Combine(Application.dataPath, "Packages/OpenCvSharp4.runtime.win.4.8.0.20230708/runtimes/win-x64/native/");
             if (!Directory.Exists(libPath))
             {
-                // 兼容Plugins目录（常见部署路径）
                 libPath = Path.Combine(Application.dataPath, "Plugins/OpenCvSharp/");
             }
             Environment.SetEnvironmentVariable("PATH", $"{Environment.GetEnvironmentVariable("PATH")};{libPath}");
-            Debug.Log($"✅ 已添加OpenCvSharp库路径：{libPath}");
 
-            // 加载ONNX模型
+            // 仅在日志开启时输出库路径
+            if (_logModelProcessing)
+                Debug.Log($"✅ 已添加OpenCvSharp库路径：{libPath}");
+
+
+            // ========== 3. 加载模型（核心逻辑） ==========
             _net = CvDnn.ReadNetFromOnnx(_modelPath);
-
-            // 验证模型加载结果
             if (_net == null || _net.Empty())
             {
                 Debug.LogError("❌ 模型加载失败，返回的网络为空或无效");
                 return false;
             }
 
+
+            // ========== 4. 配置后端 + 日志控制（可外部配置） ==========
             ConfigureNetBackend();
-            Debug.Log($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count()}）");
+
+
+            // ========== 5. 日志控制（可通过外部参数调整） ==========
+            // （如果需要在外部动态控制，可将这些变量暴露为public属性，或通过构造函数传入）
+            // 这里先默认关闭，需要开启时改为true即可
+            _logModelProcessing = false;   // 控制“模型处理/加载”相关日志
+            _logNmsResults = false;        // 控制“NMS去重”相关日志
+            AggregateLogInterval = 5f;     // 控制“聚合统计”日志的输出间隔（设为float.PositiveInfinity则关闭）
+
+
+            // ========== 6. 初始化成功日志（仅在日志开启时输出） ==========
+            if (_logModelProcessing)
+                Debug.Log($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count()}）");
+
             return true;
         }
         catch (DllNotFoundException ex)
@@ -465,7 +586,8 @@ public class YoloV8Engine : IDisposable
             // 使用数值常量代替枚举（避免低版本OpenCvSharp枚举不存在）
             _net.SetPreferableBackend(0); // 0 = Backend.OPENCV
             _net.SetPreferableTarget(0);  // 0 = Target.CPU
-            Debug.Log("✅ 已配置CPU推理后端（兼容模式，无需CUDA）");
+            if (_logModelProcessing)
+                Debug.Log("✅ 已配置CPU推理后端（兼容模式，无需CUDA）");
         }
         catch (Exception ex)
         {
@@ -503,6 +625,7 @@ public class YoloV8Engine : IDisposable
         {
             // 释放托管资源
             _classNames?.Clear();
+            _classCountAggregate?.Clear();
         }
         // 释放非托管资源
         if (_net != null)
@@ -510,7 +633,8 @@ public class YoloV8Engine : IDisposable
             _net.Dispose();
             _net = null;
         }
-        Debug.Log("✅ YOLOv8引擎已释放资源");
+        if (_logModelProcessing)
+            Debug.Log("✅ YOLOv8引擎已释放资源");
     }
 
     ~YoloV8Engine()

@@ -28,6 +28,26 @@ public class YoloResult
     public Rect2d Rect { get; set; }
 
     /// <summary>
+    /// 目标中心点位置（图像坐标系）
+    /// </summary>
+    /// 
+    // 添加追踪ID（如果模型支持）
+    public int TrackId { get; set; }  // 新增这一行
+
+    public Vector3 Position
+    {
+        get
+        {
+            // 计算边界框中心点作为位置
+            return new Vector3(
+                (float)(Rect.X + Rect.Width / 2),
+                0,  // Y轴默认为0，可根据实际需求调整
+                (float)(Rect.Y + Rect.Height / 2)
+            );
+        }
+    }
+
+    /// <summary>
     /// 转换为字符串（便于日志输出）
     /// </summary>
     public override string ToString()

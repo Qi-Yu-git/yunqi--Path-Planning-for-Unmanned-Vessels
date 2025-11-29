@@ -59,6 +59,9 @@ public class YoloDetector : MonoBehaviour
     private List<YoloResult> _detectionResults = new();
     private int _lastFrameWidth;
     private int _lastFrameHeight;
+    // 在YoloDetector.cs的类定义中添加：
+    public List<YoloResult> DetectedResults { get; private set; } = new List<YoloResult>();
+
 
     void Start()
     {
@@ -178,11 +181,14 @@ public class YoloDetector : MonoBehaviour
             }
 
             // 初始化引擎
+            // 在YoloDetector的InitYoloEngine方法中
             _yoloEngine = new YoloV8Engine(
                 fullModelPath,
                 confidenceThreshold: confidenceThreshold,
                 iouThreshold: iouThreshold,
-                inputSize: new Size(640, 640)
+                logModelProcessing: true,  // 开启模型处理日志
+                logNmsResults: false,     // 关闭NMS日志
+                aggregateLogInterval: 10f // 聚合日志每10秒输出一次
             );
 
             if (_yoloEngine.IsInitialized)
@@ -395,6 +401,9 @@ public class YoloDetector : MonoBehaviour
     /// <summary>
     /// 处理检测日志输出
     /// </summary>
+    /// <summary>
+    /// 处理检测日志输出
+    /// </summary>
     private void ProcessDetectionLogs(List<YoloResult> results)
     {
         if (results == null || results.Count == 0)
@@ -406,7 +415,8 @@ public class YoloDetector : MonoBehaviour
         Debug.Log($"📌 检测到 {results.Count} 个目标：");
         foreach (var result in results)
         {
-            Debug.Log($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 位置：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
+            // 修正Position引用，使用新添加的Position属性
+            Debug.Log($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 中心点：({result.Position.x:F1}, {result.Position.z:F1}) | 边界框：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
         }
     }
 
