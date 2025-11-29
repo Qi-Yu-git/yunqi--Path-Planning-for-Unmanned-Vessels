@@ -76,22 +76,20 @@ public class BoatController : MonoBehaviour
     }
 
     // 碰撞处理
+    // 在OnCollisionEnter中（约85行），确保不重置目标点，仅清空当前路径
     private void OnCollisionEnter(Collision collision)
     {
         if (collision.collider.CompareTag("USV") || collision.collider.CompareTag("Obstacle"))
         {
-            Debug.LogError($"与{collision.collider.tag}发生碰撞！暂停并重新规划路径");
+            Debug.LogError($"与{collision.collider.tag}发生碰撞！重新规划路径至原目标");
             StopMovement();
-            isReachedEnd = true;
-            worldPath.Clear();
-            Invoke(nameof(ResumeMovement), 1f);
-            if (pathfinder != null)
-            {
-                // 延迟更长时间再重规划，避免碰撞瞬间连续触发
-                Invoke(nameof(ReplanPath), 2f);
-            }
+            worldPath.Clear(); // 仅清空路径，保留目标点
+            isPathLoaded = false;
+            Invoke(nameof(ReplanPath), 1f); // 直接重规划，不重置起点终点
         }
     }
+
+
 
     // 停止移动
     private void StopMovement()
@@ -110,15 +108,16 @@ public class BoatController : MonoBehaviour
         Debug.Log("恢复移动，继续前往路径点");
     }
 
-    // 重新规划路径
+    // 优化ReplanPath方法（约125行），替换不存在的RecalculatePath
     private void ReplanPath()
     {
         if (pathfinder != null)
         {
-            Debug.Log("触发路径重新规划...");
-            pathfinder.CalculatePathAfterDelay();  // 调用A*的路径计算方法
-            路径重试次数 = 0;                     // 重置重试计数器
-            Invoke(nameof(TryLoadPath), 1f);       // 1秒后尝试加载新路径
+            Debug.Log("使用原目标点重新规划路径...");
+            // 替换为实际存在的路径计算方法（根据代码片段，使用CalculatePathAfterDelay）
+            pathfinder.CalculatePathAfterDelay();
+            路径重试次数 = 0;
+            Invoke(nameof(TryLoadPath), 1f);
         }
     }
 

@@ -1172,7 +1172,7 @@ MonoBehaviour:
   useSceneCamera: 1
   sceneCamera: {fileID: 537956247}
   webCamResolution: {x: 1280, y: 720}
-  logDetectionResults: 0
+  logDetectionResults: 1
   drawBoundingBoxes: 1
   boxColor: {r: 1, g: 0, b: 0, a: 1}
   labelColor: {r: 0, g: 1, b: 0, a: 1}
@@ -1724,13 +1724,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 537956244}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.056862824, y: -0.00031378857, z: 0.000017875802, w: 0.998382}
-  m_LocalPosition: {x: -0.02, y: -0.053, z: 0.83}
+  m_LocalRotation: {x: 0.10125953, y: -0.00031271574, z: 0.000031840053, w: 0.99486005}
+  m_LocalPosition: {x: -0.02, y: -0.064, z: 0.923}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 173794670}
-  m_LocalEulerAnglesHint: {x: 6.52, y: -0.036, z: 0}
+  m_LocalEulerAnglesHint: {x: 11.623, y: -0.036, z: 0}
 --- !u!114 &537956249
 MonoBehaviour:
   m_ObjectHideFlags: 0
