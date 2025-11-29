@@ -1,52 +1,214 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 
-// ±ÜÃâRectÀàĞÍ³åÍ»£¨Ã÷È·Ö¸¶¨UnityµÄRect£©
+// é¿å…Rectç±»å‹å†²çªï¼ˆæ˜ç¡®æŒ‡å®šUnityçš„Rectï¼‰
 using UnityRect = UnityEngine.Rect;
 
 /// <summary>
-/// YOLOv8Ä¿±ê¼ì²âUnity×é¼ş
-/// ·â×°Í¼Ïñ²É¼¯¡¢¸ñÊ½×ª»»ºÍ¼ì²â½á¹û¿ÉÊÓ»¯
+/// YOLOv8ç›®æ ‡æ£€æµ‹Unityç»„ä»¶ï¼ˆä¼˜åŒ–ç‰ˆï¼‰
+/// ç‰¹æ€§ï¼šçº¿ç¨‹å®‰å…¨ã€èµ„æºè‡ªåŠ¨é‡Šæ”¾ã€åŒæ•°æ®æºæ”¯æŒã€æ£€æµ‹æ¡†æ­£ç¡®ç»˜åˆ¶
 /// </summary>
 public class YoloDetector : MonoBehaviour
 {
-    [Header("Ä£ĞÍÅäÖÃ")]
-    public string modelPath = "yolov8n.onnx"; // Ä£ĞÍÎÄ¼şÃû£¨Ä¬ÈÏ·ÅÔÚStreamingAssetsÄ¿Â¼£©
-    public float confidenceThreshold = 0.5f;  // ÖÃĞÅ¶ÈãĞÖµ£¨0-1£©
-    public float iouThreshold = 0.4f;         // IOUãĞÖµ£¨0-1£©
+    [Header("æ¨¡å‹æ ¸å¿ƒé…ç½®")]
+    [Tooltip("æ¨¡å‹æ–‡ä»¶åï¼ˆéœ€æ”¾åœ¨StreamingAssetsç›®å½•ï¼‰")]
+    public string modelPath = "yolov8n.onnx";
+    [Tooltip("ç½®ä¿¡åº¦é˜ˆå€¼ï¼ˆ0-1ï¼Œå€¼è¶Šé«˜æ£€æµ‹è¶Šä¸¥æ ¼ï¼‰")]
+    public float confidenceThreshold = 0.5f;
+    [Tooltip("IOUé˜ˆå€¼ï¼ˆ0-1ï¼Œç”¨äºè¿‡æ»¤é‡å¤æ£€æµ‹æ¡†ï¼‰")]
+    public float iouThreshold = 0.4f;
 
-    [Header("Êı¾İÔ´Ñ¡Ôñ")]
-    [Tooltip("ÇĞ»»Ê¹ÓÃ³¡¾°Ïà»ú/USBÉãÏñÍ·")]
-    public bool useSceneCamera = false;
-    public Camera sceneCamera;                // ³¡¾°ÖĞµÄ¼ì²âÏà»ú
-    public WebCamTexture webCamTexture;       // USBÉãÏñÍ·ÎÆÀí
+    [Header("æ•°æ®æºé…ç½®")]
+    [Tooltip("true=ä½¿ç”¨åœºæ™¯ç›¸æœºï¼Œfalse=ä½¿ç”¨USBæ‘„åƒå¤´")]
+    public bool useSceneCamera = true;
+    [Tooltip("åœºæ™¯æ£€æµ‹ç›¸æœºï¼ˆéœ€æå‰åœ¨åœºæ™¯ä¸­åˆ›å»ºï¼‰")]
+    public Camera sceneCamera;
+    [Tooltip("USBæ‘„åƒå¤´åˆ†è¾¨ç‡ï¼ˆé»˜è®¤1280x720ï¼‰")]
+    public Vector2 webCamResolution = new(1280, 720);
 
-    [Header("ÏÔÊ¾ÅäÖÃ")]
-    public bool logDetectionResults = true;   // ÊÇ·ñÊä³ö¼ì²âÈÕÖ¾
-    public bool drawBoundingBoxes = true;     // ÊÇ·ñÔÚGameÊÓÍ¼»æÖÆ±ß½ç¿ò
-    public Color boxColor = Color.red;        // ±ß½ç¿òÑÕÉ«
-    public Color labelColor = Color.green;    // ±êÇ©±³¾°É«
+    [Header("æ˜¾ç¤ºä¸æ€§èƒ½é…ç½®")]
+    [Tooltip("æ˜¯å¦åœ¨æ§åˆ¶å°è¾“å‡ºæ£€æµ‹æ—¥å¿—")]
+    public bool logDetectionResults = true;
+    [Tooltip("æ˜¯å¦åœ¨Gameè§†å›¾ç»˜åˆ¶æ£€æµ‹æ¡†")]
+    public bool drawBoundingBoxes = true;
+    [Tooltip("æ£€æµ‹æ¡†é¢œè‰²")]
+    public Color boxColor = Color.red;
+    [Tooltip("æ ‡ç­¾èƒŒæ™¯è‰²")]
+    public Color labelColor = Color.green;
+    [Tooltip("æ£€æµ‹é—´éš”ï¼ˆç§’ï¼‰ï¼Œå€¼è¶Šå°æ£€æµ‹è¶Šé¢‘ç¹ï¼ˆå»ºè®®â‰¥0.05ï¼‰")]
+    public float detectInterval = 0.1f;
+    [Tooltip("æ£€æµ‹æ¡†çº¿å®½ï¼ˆåƒç´ ï¼‰")]
+    public int boxLineWidth = 2;
+    [Tooltip("æ ‡ç­¾å­—ä½“å¤§å°")]
+    public int labelFontSize = 12;
 
-    private YoloV8Engine _yoloEngine;         // YOLOÒıÇæÊµÀı
-    private Mat _frameMat;                    // OpenCVÍ¼Ïñ»º´æ
-    private Texture2D _sceneCamTexture;       // ³¡¾°Ïà»úÎÆÀí
-    private RenderTexture _tempRenderTexture; // ÁÙÊ±äÖÈ¾ÎÆÀí£¨³¡¾°Ïà»úÓÃ£©
-    private GUIStyle _boxStyle;               // ±ß½ç¿òGUIÑùÊ½
-    private GUIStyle _labelStyle;             // ±êÇ©GUIÑùÊ½
+    // ç§æœ‰æˆå‘˜
+    private YoloV8Engine _yoloEngine;
+    private Mat _frameMat;
+    private Texture2D _sceneCamTexture;
+    private RenderTexture _tempRenderTexture;
+    private WebCamTexture _webCamTexture;
+    private GUIStyle _boxStyle;
+    private GUIStyle _labelStyle;
+    private float _lastDetectTime;
+    private readonly object _resultLock = new();
+    private List<YoloResult> _detectionResults = new();
+    private int _lastFrameWidth;
+    private int _lastFrameHeight;
 
-    private YoloV8Engine yoloEngine;
     void Start()
     {
-        // ³õÊ¼»¯YOLOÒıÇæ
-        InitYoloEngine();
+        try
+        {
+            // åˆå§‹åŒ–é¡ºåºï¼šæ ·å¼ â†’ æ•°æ®æº â†’ å¼•æ“
+            InitGUIStyles();
+            InitDataSource();
+            InitYoloEngine();
 
-        // ³õÊ¼»¯GUIÑùÊ½
-        InitGUIStyles();
+            // åˆå§‹åŒ–ä¸»çº¿ç¨‹è°ƒåº¦å™¨
+            UnityMainThreadDispatcher.Init();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"åˆå§‹åŒ–å¤±è´¥ï¼š{e.Message}\n{e.StackTrace}");
+        }
+    }
 
-        // ³õÊ¼»¯Êı¾İÔ´
+    void Update()
+    {
+        // æ£€æµ‹é¢‘ç‡æ§åˆ¶
+        if (Time.time - _lastDetectTime < detectInterval) return;
+        _lastDetectTime = Time.time;
+
+        // å¼•æ“æœªå°±ç»ªåˆ™è·³è¿‡
+        if (_yoloEngine == null || !_yoloEngine.IsInitialized)
+        {
+            Debug.LogWarning("YOLOå¼•æ“æœªåˆå§‹åŒ–ï¼Œè·³è¿‡æ£€æµ‹");
+            return;
+        }
+
+        // å¼‚æ­¥å¤„ç†æ£€æµ‹ï¼ˆé¿å…é˜»å¡ä¸»çº¿ç¨‹ï¼‰
+        _ = ProcessDetectionAsync();
+    }
+
+    /// <summary>
+    /// å¼‚æ­¥å¤„ç†æ£€æµ‹æµç¨‹ï¼ˆä¼˜åŒ–æ€§èƒ½ï¼‰
+    /// </summary>
+    private async Task ProcessDetectionAsync()
+    {
+        try
+        {
+            List<YoloResult> results = new();
+            int frameWidth = 0;
+            int frameHeight = 0;
+
+            // æ ¹æ®æ•°æ®æºè·å–å¸§å¹¶æ£€æµ‹
+            if (useSceneCamera && sceneCamera != null)
+            {
+                (Mat sceneMat, int w, int h) = await CaptureSceneCameraFrameAsync();
+                if (sceneMat != null && !sceneMat.Empty())
+                {
+                    results = _yoloEngine.Detect(sceneMat);
+                    frameWidth = w;
+                    frameHeight = h;
+                    sceneMat.Release();
+                }
+            }
+            else if (!useSceneCamera && _webCamTexture != null && _webCamTexture.isPlaying)
+            {
+                (Mat webMat, int w, int h) = CaptureWebCameraFrame();
+                if (webMat != null && !webMat.Empty())
+                {
+                    results = _yoloEngine.Detect(webMat);
+                    frameWidth = w;
+                    frameHeight = h;
+                    webMat.Release();
+                }
+            }
+
+            // çº¿ç¨‹å®‰å…¨æ›´æ–°æ£€æµ‹ç»“æœ
+            lock (_resultLock)
+            {
+                _detectionResults = results;
+                _lastFrameWidth = frameWidth;
+                _lastFrameHeight = frameHeight;
+            }
+
+            // ä¸»çº¿ç¨‹è¾“å‡ºæ—¥å¿—ï¼ˆä½¿ç”¨é™æ€ç±»è°ƒç”¨æ–¹å¼ï¼‰
+            if (logDetectionResults)
+            {
+                UnityMainThreadDispatcher.Enqueue(() =>
+                {
+                    ProcessDetectionLogs(results);
+                });
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"æ£€æµ‹å¼‚å¸¸ï¼š{e.Message}\n{e.StackTrace}");
+        }
+    }
+
+    /// <summary>
+    /// åˆå§‹åŒ–YOLOå¼•æ“ï¼ˆå«è·¯å¾„éªŒè¯å’Œå¼‚å¸¸å¤„ç†ï¼‰
+    /// </summary>
+    private void InitYoloEngine()
+    {
+        try
+        {
+            // éªŒè¯StreamingAssetsç›®å½•
+            if (!Directory.Exists(Application.streamingAssetsPath))
+            {
+                Directory.CreateDirectory(Application.streamingAssetsPath);
+                Debug.LogWarning("å·²è‡ªåŠ¨åˆ›å»ºStreamingAssetsç›®å½•ï¼Œè¯·å°†æ¨¡å‹æ–‡ä»¶æ”¾å…¥è¯¥ç›®å½•");
+            }
+
+            // æ‹¼æ¥å®Œæ•´è·¯å¾„
+            string fullModelPath = Path.Combine(Application.streamingAssetsPath, modelPath);
+
+            // éªŒè¯æ¨¡å‹æ–‡ä»¶
+            if (!File.Exists(fullModelPath))
+            {
+                Debug.LogError($"æ¨¡å‹æ–‡ä»¶ä¸å­˜åœ¨ï¼š{fullModelPath}\nè¯·æ£€æŸ¥æ–‡ä»¶è·¯å¾„å’Œåç§°æ˜¯å¦æ­£ç¡®");
+                return;
+            }
+
+            // åˆå§‹åŒ–å¼•æ“
+            _yoloEngine = new YoloV8Engine(
+                fullModelPath,
+                confidenceThreshold: confidenceThreshold,
+                iouThreshold: iouThreshold,
+                inputSize: new Size(640, 640)
+            );
+
+            if (_yoloEngine.IsInitialized)
+            {
+                Debug.Log($"âœ… YOLOå¼•æ“åˆå§‹åŒ–æˆåŠŸï¼ç±»åˆ«æ•°ï¼š{_yoloEngine.ClassNames.Count}");
+            }
+            else
+            {
+                Debug.LogError("âŒ YOLOå¼•æ“åˆå§‹åŒ–å¤±è´¥");
+            }
+        }
+        catch (DllNotFoundException e)
+        {
+            Debug.LogError($"âŒ ç¼ºå°‘OpenCvSharpä¾èµ–åº“ï¼š{e.Message}\nè¯·ç¡®ä¿å·²å¯¼å…¥OpenCvSharpç›¸å…³åŒ…");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"âŒ å¼•æ“åˆå§‹åŒ–å¼‚å¸¸ï¼š{e.Message}\n{e.StackTrace}");
+        }
+    }
+
+    /// <summary>
+    /// åˆå§‹åŒ–æ•°æ®æºï¼ˆåœºæ™¯ç›¸æœº/USBæ‘„åƒå¤´ï¼‰
+    /// </summary>
+    private void InitDataSource()
+    {
         if (useSceneCamera)
         {
             InitSceneCamera();
@@ -57,97 +219,32 @@ public class YoloDetector : MonoBehaviour
         }
     }
 
-    void Update()
-    {
-        // Ôö¼Ó¸üÑÏ¸ñµÄ¿ÕÖµ¼ì²é
-        if (_yoloEngine == null || !_yoloEngine.IsInitialized)
-        {
-            Debug.LogWarning("YOLOÒıÇæÎ´³õÊ¼»¯£¬Ìø¹ı¼ì²â");
-            return;
-        }
-
-        // ´¦Àí²»Í¬µÄÊı¾İÔ´Ö¡
-        if (useSceneCamera && sceneCamera != null)
-        {
-            ProcessSceneCameraFrame();
-        }
-        else if (!useSceneCamera && webCamTexture != null && webCamTexture.isPlaying)
-        {
-            ProcessWebCameraFrame();
-        }
-    }
-
     /// <summary>
-    /// ³õÊ¼»¯YOLOÒıÇæ£¨º¬Â·¾¶ÑéÖ¤£©
-    /// </summary>
-    private void InitYoloEngine()
-    {
-        try
-        {
-            // È·±£StreamingAssetsÄ¿Â¼´æÔÚ
-            if (!Directory.Exists(Application.streamingAssetsPath))
-            {
-                Directory.CreateDirectory(Application.streamingAssetsPath);
-                Debug.LogWarning("´´½¨ÁËÈ±Ê§µÄStreamingAssetsÄ¿Â¼£¬Çë½«Ä£ĞÍÎÄ¼ş·ÅÈë¸ÃÄ¿Â¼");
-            }
-
-            // Æ´½ÓÍêÕûÄ£ĞÍÂ·¾¶
-            string fullModelPath = Path.Combine(Application.streamingAssetsPath, modelPath);
-
-            // ÑéÖ¤Ä£ĞÍÎÄ¼ş´æÔÚĞÔ
-            if (!File.Exists(fullModelPath))
-            {
-                Debug.LogError($"Ä£ĞÍÎÄ¼ş²»´æÔÚ£º{fullModelPath}\nÇë¼ì²éÂ·¾¶ÊÇ·ñÕıÈ·");
-                return;
-            }
-
-            // ³õÊ¼»¯ÒıÇæ£¨Ê¹ÓÃÄ¬ÈÏCOCOÀà±ğ£©
-            _yoloEngine = new YoloV8Engine(
-                fullModelPath,
-                confidenceThreshold: confidenceThreshold,
-                iouThreshold: iouThreshold
-            );
-
-            if (_yoloEngine.IsInitialized)
-            {
-                Debug.Log("YOLOÒıÇæ³õÊ¼»¯³É¹¦");
-            }
-            else
-            {
-                Debug.LogError("YOLOÒıÇæ³õÊ¼»¯Ê§°Ü");
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"³õÊ¼»¯YOLOÒıÇæ³ö´í£º{e.Message}\n{e.StackTrace}");
-        }
-    }
-
-    /// <summary>
-    /// ³õÊ¼»¯³¡¾°Ïà»ú
+    /// åˆå§‹åŒ–åœºæ™¯ç›¸æœº
     /// </summary>
     private void InitSceneCamera()
     {
+        // è‡ªåŠ¨æŸ¥æ‰¾ç›¸æœº
         if (sceneCamera == null)
         {
-            // ×Ô¶¯²éÕÒÃûÎª"DetectionCamera"µÄÏà»ú
             sceneCamera = GameObject.Find("DetectionCamera")?.GetComponent<Camera>();
             if (sceneCamera == null)
             {
-                Debug.LogError("Î´ÕÒµ½³¡¾°Ïà»ú£¬ÇëÔÚInspectorÖĞÖ¸¶¨");
-                return;
+                sceneCamera = Camera.main;
+                Debug.LogWarning("æœªæŒ‡å®šåœºæ™¯ç›¸æœºï¼Œè‡ªåŠ¨ä½¿ç”¨ä¸»ç›¸æœº");
             }
         }
 
-        // ´´½¨ÁÙÊ±äÖÈ¾ÎÆÀí
+        // åˆ›å»ºæ¸²æŸ“çº¹ç†
         _tempRenderTexture = new RenderTexture(
             sceneCamera.pixelWidth,
             sceneCamera.pixelHeight,
-            24
+            24,
+            RenderTextureFormat.ARGB32
         );
         sceneCamera.targetTexture = _tempRenderTexture;
 
-        // ´´½¨³¡¾°Ïà»úÎÆÀí
+        // åˆ›å»ºçº¹ç†ç¼“å­˜
         _sceneCamTexture = new Texture2D(
             _tempRenderTexture.width,
             _tempRenderTexture.height,
@@ -155,194 +252,238 @@ public class YoloDetector : MonoBehaviour
             false
         );
 
-        Debug.Log("³¡¾°Ïà»ú³õÊ¼»¯Íê³É");
+        Debug.Log($"âœ… åœºæ™¯ç›¸æœºåˆå§‹åŒ–å®Œæˆï¼šåˆ†è¾¨ç‡({_tempRenderTexture.width}x{_tempRenderTexture.height})");
     }
 
     /// <summary>
-    /// ³õÊ¼»¯USBÉãÏñÍ·
+    /// åˆå§‹åŒ–USBæ‘„åƒå¤´
     /// </summary>
     private void InitWebCamera()
     {
-        if (webCamTexture == null)
+        // æ£€æŸ¥æ‘„åƒå¤´è®¾å¤‡
+        WebCamDevice[] devices = WebCamTexture.devices;
+        if (devices.Length == 0)
         {
-            WebCamDevice[] devices = WebCamTexture.devices;
-            if (devices.Length == 0)
-            {
-                Debug.LogError("Î´¼ì²âµ½¿ÉÓÃµÄUSBÉãÏñÍ·");
-                return;
-            }
-
-            // Ê¹ÓÃµÚÒ»¸ö¿ÉÓÃÉãÏñÍ·£¬ÉèÖÃ·Ö±æÂÊÎª1280x720
-            webCamTexture = new WebCamTexture(devices[0].name, 1280, 720);
+            Debug.LogError("âŒ æœªæ£€æµ‹åˆ°å¯ç”¨çš„USBæ‘„åƒå¤´");
+            return;
         }
 
-        if (!webCamTexture.isPlaying)
-        {
-            webCamTexture.Play();
-            Debug.Log("USBÉãÏñÍ·Æô¶¯³É¹¦");
-        }
-    }
-
-    /// <summary>
-    /// ´¦Àí³¡¾°Ïà»úÖ¡
-    /// </summary>
-    private void ProcessSceneCameraFrame()
-    {
-        // ¶ÁÈ¡äÖÈ¾ÎÆÀíµ½Texture2D
-        RenderTexture.active = _tempRenderTexture;
-        _sceneCamTexture.ReadPixels(
-            new UnityRect(0, 0, _tempRenderTexture.width, _tempRenderTexture.height),
-            0, 0
+        // åˆå§‹åŒ–æ‘„åƒå¤´çº¹ç†
+        _webCamTexture = new WebCamTexture(
+            devices[0].name,
+            (int)webCamResolution.x,
+            (int)webCamResolution.y,
+            30
         );
-        _sceneCamTexture.Apply();
-        RenderTexture.active = null;
 
-        // ×ª»»ÎªOpenCV Mat²¢¼ì²â
-        _frameMat = Texture2DToMat(_sceneCamTexture);
-        List<YoloResult> results = _yoloEngine.Detect(_frameMat);
-
-        // ´¦Àí¼ì²â½á¹û
-        ProcessDetectionResults(results, _tempRenderTexture.width, _tempRenderTexture.height);
-
-        // ÊÍ·Å×ÊÔ´
-        _frameMat.Release();
+        // å¯åŠ¨æ‘„åƒå¤´
+        _webCamTexture.Play();
+        if (_webCamTexture.isPlaying)
+        {
+            Debug.Log($"âœ… USBæ‘„åƒå¤´å¯åŠ¨æˆåŠŸï¼š{devices[0].name}ï¼Œåˆ†è¾¨ç‡({_webCamTexture.width}x{_webCamTexture.height})");
+        }
+        else
+        {
+            Debug.LogError("âŒ USBæ‘„åƒå¤´å¯åŠ¨å¤±è´¥");
+        }
     }
 
     /// <summary>
-    /// ´¦ÀíUSBÉãÏñÍ·Ö¡
+    /// å¼‚æ­¥æ•è·åœºæ™¯ç›¸æœºå¸§ï¼ˆé¿å…é˜»å¡ä¸»çº¿ç¨‹ï¼‰
     /// </summary>
-    private void ProcessWebCameraFrame()
-    {
-        // ×ª»»ÎªOpenCV Mat²¢¼ì²â
-        _frameMat = WebCamTextureToMat(webCamTexture);
-        List<YoloResult> results = _yoloEngine.Detect(_frameMat);
-
-        // ´¦Àí¼ì²â½á¹û
-        ProcessDetectionResults(results, webCamTexture.width, webCamTexture.height);
-
-        // ÊÍ·Å×ÊÔ´
-        _frameMat.Release();
-    }
-
     /// <summary>
-    /// WebCamTexture×ª»»ÎªOpenCV Mat
+    /// å¼‚æ­¥æ•è·åœºæ™¯ç›¸æœºå¸§ï¼ˆä¿®å¤ä¸»çº¿ç¨‹è°ƒç”¨é—®é¢˜ï¼‰
     /// </summary>
-    private Mat WebCamTextureToMat(WebCamTexture texture)
+    // ä¿®æ”¹CaptureSceneCameraFrameAsyncæ–¹æ³•ä¸­çš„ä¸»çº¿ç¨‹è°ƒåº¦éƒ¨åˆ†
+    private async Task<(Mat, int, int)> CaptureSceneCameraFrameAsync()
     {
-        // ÁÙÊ±Texture2D´æ´¢ÉãÏñÍ·Êı¾İ
-        Texture2D tempTex = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
-        tempTex.SetPixels(texture.GetPixels());
+        int frameWidth = 0;
+        int frameHeight = 0;
+        byte[] imageBytes = null;
+
+        var tcs = new TaskCompletionSource<bool>();
+        UnityMainThreadDispatcher.Enqueue(() =>
+        {
+            try
+            {
+                lock (sceneCamera)
+                {
+                    if (_tempRenderTexture == null || _sceneCamTexture == null)
+                    {
+                        tcs.SetResult(false);
+                        return;
+                    }
+
+                    // è¯»å–æ¸²æŸ“çº¹ç†ï¼ˆå¿…é¡»åœ¨ä¸»çº¿ç¨‹æ‰§è¡Œï¼‰
+                    RenderTexture.active = _tempRenderTexture;
+                    _sceneCamTexture.ReadPixels(
+                        new UnityRect(0, 0, _tempRenderTexture.width, _tempRenderTexture.height),
+                        0, 0
+                    );
+                    _sceneCamTexture.Apply();
+                    RenderTexture.active = null;
+
+                    frameWidth = _tempRenderTexture.width;
+                    frameHeight = _tempRenderTexture.height;
+
+                    // åœ¨ä¸»çº¿ç¨‹ä¸­æ‰§è¡ŒEncodeToPNG
+                    imageBytes = _sceneCamTexture.EncodeToPNG();
+
+                    tcs.SetResult(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        // ç­‰å¾…ä¸»çº¿ç¨‹æ“ä½œå®Œæˆ
+        await tcs.Task;
+
+        // åœ¨å­çº¿ç¨‹ä¸­è¿›è¡Œçº¹ç†è½¬æ¢ï¼ˆä¸æ¶‰åŠUnity APIï¼‰
+        return await Task.Run(() =>
+        {
+            if (imageBytes == null) return (null, 0, 0);
+
+            // è½¬æ¢ä¸ºMat
+            Mat mat = Texture2DToMat(imageBytes);
+            return (mat, frameWidth, frameHeight);
+        });
+    }
+    /// <summary>
+    /// æ•è·USBæ‘„åƒå¤´å¸§
+    private (Mat, int, int) CaptureWebCameraFrame()
+    {
+        if (_webCamTexture == null || !_webCamTexture.isPlaying) return (null, 0, 0);
+
+        // è½¬æ¢ä¸ºTexture2Dï¼ˆåœ¨ä¸»çº¿ç¨‹æ‰§è¡Œï¼‰
+        Texture2D tempTex = new Texture2D(
+            _webCamTexture.width,
+            _webCamTexture.height,
+            TextureFormat.RGBA32,
+            false
+        );
+        tempTex.SetPixels(_webCamTexture.GetPixels());
         tempTex.Apply();
 
-        // ×ª»»ÎªMat²¢·­×ª£¨½â¾öÉãÏñÍ·¾µÏñÎÊÌâ£©
-        Mat mat = Texture2DToMat(tempTex);
-        Cv2.Flip(mat, mat, FlipMode.Y); // YÖá·­×ª
+        // åœ¨ä¸»çº¿ç¨‹ä¸­æ‰§è¡ŒEncodeToPNG
+        byte[] bytes = tempTex.EncodeToPNG();
 
-        // ÊÍ·ÅÁÙÊ±ÎÆÀí
+        // é‡Šæ”¾ä¸´æ—¶çº¹ç†
         Destroy(tempTex);
-        return mat;
-    }
 
+        // è½¬æ¢ä¸ºMatå¹¶ç¿»è½¬ï¼ˆè§£å†³é•œåƒé—®é¢˜ï¼‰
+        Mat mat = Texture2DToMat(bytes);
+        Cv2.Flip(mat, mat, FlipMode.Y);
+
+        return (mat, _webCamTexture.width, _webCamTexture.height);
+    }
     /// <summary>
-    /// Texture2D×ª»»ÎªOpenCV Mat£¨Í¨ÓÃ·½·¨£©
+    /// Texture2Dè½¬OpenCV Matï¼ˆä¼˜åŒ–é¢œè‰²ç©ºé—´è½¬æ¢ï¼‰
     /// </summary>
-    private Mat Texture2DToMat(Texture2D texture)
+    /// <summary>
+    /// Texture2Dè½¬OpenCV Matï¼ˆä¼˜åŒ–é¢œè‰²ç©ºé—´è½¬æ¢ï¼‰
+    /// </summary>
+    private Mat Texture2DToMat(byte[] imageBytes)
     {
-        byte[] bytes = texture.EncodeToPNG();
-        Mat mat = Cv2.ImDecode(bytes, ImreadModes.Color); // ½âÂëÎªBGR¸ñÊ½
+        Mat mat = Cv2.ImDecode(imageBytes, ImreadModes.Color); // BGRæ ¼å¼
+        Cv2.CvtColor(mat, mat, ColorConversionCodes.BGR2RGB); // è½¬ä¸ºRGBæ ¼å¼ï¼ˆåŒ¹é…YOLOè¾“å…¥ï¼‰
         return mat;
     }
 
     /// <summary>
-    /// ´¦Àí¼ì²â½á¹û£¨ÈÕÖ¾+»æÖÆ£©
+    /// å¤„ç†æ£€æµ‹æ—¥å¿—è¾“å‡º
     /// </summary>
-    private void ProcessDetectionResults(List<YoloResult> results, int frameWidth, int frameHeight)
+    private void ProcessDetectionLogs(List<YoloResult> results)
     {
         if (results == null || results.Count == 0)
         {
-            if (logDetectionResults)
-                Debug.Log("Î´¼ì²âµ½ÈÎºÎÄ¿±ê");
+            Debug.Log("ğŸ“Œ æœªæ£€æµ‹åˆ°ä»»ä½•ç›®æ ‡");
             return;
         }
 
-        // Êä³ö¼ì²âÈÕÖ¾
-        if (logDetectionResults)
+        Debug.Log($"ğŸ“Œ æ£€æµ‹åˆ° {results.Count} ä¸ªç›®æ ‡ï¼š");
+        foreach (var result in results)
         {
-            Debug.Log($"¼ì²âµ½{results.Count}¸öÄ¿±ê£º");
-            foreach (var result in results)
-            {
-                Debug.Log(result.ToString());
-            }
-        }
-
-        // »æÖÆ±ß½ç¿ò£¨ÑÓ³Ùµ½OnGUIÖ´ĞĞ£©
-        if (drawBoundingBoxes)
-        {
-            foreach (var result in results)
-            {
-                DrawBoundingBox(result, frameWidth, frameHeight);
-            }
+            Debug.Log($"  - ç±»åˆ«ï¼š{result.ClassName} | ç½®ä¿¡åº¦ï¼š{result.Confidence:F2} | ä½ç½®ï¼š({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
         }
     }
 
     /// <summary>
-    /// ³õÊ¼»¯GUIÑùÊ½£¨±ß½ç¿òºÍ±êÇ©£©
+    /// åˆå§‹åŒ–GUIæ ·å¼ï¼ˆä¼˜åŒ–ç»˜åˆ¶æ•ˆæœï¼‰
     /// </summary>
     private void InitGUIStyles()
     {
-        // ±ß½ç¿òÑùÊ½
+        // æ£€æµ‹æ¡†æ ·å¼ï¼ˆä»…ç»˜åˆ¶è¾¹æ¡†ï¼Œæ— èƒŒæ™¯ï¼‰
         _boxStyle = new GUIStyle
         {
-            normal = { background = MakeTex(1, 1, new Color(0, 0, 0, 0)) }, // Í¸Ã÷±³¾°
-            border = new RectOffset(2, 2, 2, 2)
+            normal = { background = MakeTex(1, 1, new Color(0, 0, 0, 0)) },
+            border = new RectOffset(boxLineWidth, boxLineWidth, boxLineWidth, boxLineWidth)
         };
 
-        // ±êÇ©ÑùÊ½
+        // æ ‡ç­¾æ ·å¼ï¼ˆåŠé€æ˜èƒŒæ™¯ï¼Œå±…ä¸­æ–‡å­—ï¼‰
         _labelStyle = new GUIStyle
         {
             normal = { background = MakeTex(1, 1, labelColor), textColor = Color.white },
-            padding = new RectOffset(5, 5, 2, 2),
-            fontSize = 12
+            padding = new RectOffset(8, 8, 2, 2),
+            fontSize = labelFontSize,
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap = false
         };
     }
 
     /// <summary>
-    /// ÔÚGameÊÓÍ¼»æÖÆ±ß½ç¿ò£¨Í¨¹ıOnGUI£©
+    /// OnGUIç»˜åˆ¶æ£€æµ‹æ¡†ï¼ˆæ­£ç¡®çš„ç»˜åˆ¶æ—¶æœºï¼‰
     /// </summary>
     private void OnGUI()
     {
-        if (!drawBoundingBoxes || _boxStyle == null || _labelStyle == null)
-            return;
+        if (!drawBoundingBoxes || _boxStyle == null || _labelStyle == null) return;
+        if (_detectionResults == null || _detectionResults.Count == 0) return;
 
-        // È·±£ÔÚRepaintÊÂ¼şÊ±»æÖÆ£¨±ÜÃâÖØ¸´»æÖÆ£©
-        if (Event.current.type != EventType.Repaint)
-            return;
+        // çº¿ç¨‹å®‰å…¨è®¿é—®æ£€æµ‹ç»“æœ
+        lock (_resultLock)
+        {
+            foreach (var result in _detectionResults)
+            {
+                DrawSingleBoundingBox(result);
+            }
+        }
     }
 
     /// <summary>
-    /// »æÖÆµ¥¸öÄ¿±êµÄ±ß½ç¿òºÍ±êÇ©
+    /// ç»˜åˆ¶å•ä¸ªç›®æ ‡çš„æ£€æµ‹æ¡†å’Œæ ‡ç­¾ï¼ˆé€‚é…å±å¹•åˆ†è¾¨ç‡ï¼‰
     /// </summary>
-    private void DrawBoundingBox(YoloResult result, int frameWidth, int frameHeight)
+    private void DrawSingleBoundingBox(YoloResult result)
     {
-        float screenScaleX = (float)Screen.width / frameWidth;
-        float screenScaleY = (float)Screen.height / frameHeight;
+        if (_lastFrameWidth == 0 || _lastFrameHeight == 0) return;
 
-        // Ã÷È··ÃÎÊÕıÈ·µÄRect³ÉÔ±
-        float x = (float)result.Rect.X * screenScaleX;
-        float y = (float)(frameHeight - result.Rect.Y - result.Rect.Height) * screenScaleY;
-        float width = (float)result.Rect.Width * screenScaleX;
-        float height = (float)result.Rect.Height * screenScaleY;
+        // è®¡ç®—å±å¹•ç¼©æ”¾æ¯”ä¾‹
+        float scaleX = (float)Screen.width / _lastFrameWidth;
+        float scaleY = (float)Screen.height / _lastFrameHeight;
 
+        // è½¬æ¢ä¸ºå±å¹•åæ ‡ï¼ˆé€‚é…Unity Yè½´æ–¹å‘ï¼‰
+        float x = (float)result.Rect.X * scaleX;
+        float y = Screen.height - (float)(result.Rect.Y + result.Rect.Height) * scaleY;
+        float width = (float)result.Rect.Width * scaleX;
+        float height = (float)result.Rect.Height * scaleY;
+
+        // é™åˆ¶åæ ‡åœ¨å±å¹•å†…
+        x = Mathf.Clamp(x, 0, Screen.width - width);
+        y = Mathf.Clamp(y, 0, Screen.height - height);
+
+        // ç»˜åˆ¶æ£€æµ‹æ¡†
         _boxStyle.normal.textColor = boxColor;
         GUI.Box(new UnityRect(x, y, width, height), "", _boxStyle);
 
-        // Ã÷È··ÃÎÊClassNameºÍConfidence³ÉÔ±
-        string label = $"{result.ClassName} {result.Confidence:F2}";
-        GUI.Label(new UnityRect(x, y - 20, width, 20), label, _labelStyle);
+        // ç»˜åˆ¶æ ‡ç­¾ï¼ˆé¿å…è¶…å‡ºå±å¹•é¡¶éƒ¨ï¼‰
+        float labelY = Mathf.Max(y - 25, 0);
+        string labelText = $"{result.ClassName} {result.Confidence:F2}";
+        GUI.Label(new UnityRect(x, labelY, width, 25), labelText, _labelStyle);
     }
 
     /// <summary>
-    /// ´´½¨´¿É«ÎÆÀí£¨ÓÃÓÚGUIÑùÊ½£©
+    /// åˆ›å»ºçº¯è‰²çº¹ç†ï¼ˆç”¨äºGUIæ ·å¼ï¼‰
     /// </summary>
     private Texture2D MakeTex(int width, int height, Color color)
     {
@@ -351,27 +492,28 @@ public class YoloDetector : MonoBehaviour
         {
             pixels[i] = color;
         }
-        Texture2D tex = new Texture2D(width, height);
+        Texture2D tex = new Texture2D(width, height, TextureFormat.ARGB32, false);
         tex.SetPixels(pixels);
         tex.Apply();
         return tex;
     }
 
     /// <summary>
-    /// ÊÍ·Å×ÊÔ´£¨±ÜÃâÄÚ´æĞ¹Â©£©
+    /// é‡Šæ”¾èµ„æºï¼ˆé¿å…å†…å­˜æ³„æ¼ï¼‰
     /// </summary>
-    void OnDestroy()
+    private void OnDestroy()
     {
-        // ÊÍ·ÅYOLOÒıÇæ
+        // é‡Šæ”¾YOLOå¼•æ“
         _yoloEngine?.Dispose();
 
-        // Í£Ö¹ÉãÏñÍ·
-        if (webCamTexture != null && webCamTexture.isPlaying)
+        // åœæ­¢USBæ‘„åƒå¤´
+        if (_webCamTexture != null && _webCamTexture.isPlaying)
         {
-            webCamTexture.Stop();
+            _webCamTexture.Stop();
+            Destroy(_webCamTexture);
         }
 
-        // ÊÍ·Å³¡¾°Ïà»ú×ÊÔ´
+        // é‡Šæ”¾åœºæ™¯ç›¸æœºèµ„æº
         if (sceneCamera != null)
         {
             sceneCamera.targetTexture = null;
@@ -379,6 +521,130 @@ public class YoloDetector : MonoBehaviour
         Destroy(_tempRenderTexture);
         Destroy(_sceneCamTexture);
 
-        Debug.Log("¼ì²â×ÊÔ´ÒÑÊÍ·Å");
+        // é‡Šæ”¾OpenCVèµ„æº
+        _frameMat?.Release();
+
+        // æ¸…ç†ä¸»çº¿ç¨‹è°ƒåº¦å™¨
+        UnityMainThreadDispatcher.Cleanup();
+
+        Debug.Log("ğŸ”Œ æ£€æµ‹èµ„æºå·²æˆåŠŸé‡Šæ”¾");
+    }
+
+    /// <summary>
+    /// ç¼–è¾‘å™¨æ¨¡å¼ä¸‹æ›´æ–°GUIæ ·å¼ï¼ˆå®æ—¶é¢„è§ˆé…ç½®å˜åŒ–ï¼‰
+    /// </summary>
+    private void OnValidate()
+    {
+        if (Application.isPlaying && _boxStyle != null && _labelStyle != null)
+        {
+            _boxStyle.border = new RectOffset(boxLineWidth, boxLineWidth, boxLineWidth, boxLineWidth);
+            _labelStyle.normal.background = MakeTex(1, 1, labelColor);
+            _labelStyle.fontSize = labelFontSize;
+        }
+    }
+}
+
+// è¾…åŠ©ç±»ï¼šä¸»çº¿ç¨‹è°ƒåº¦å™¨ï¼ˆä¿®å¤é™æ€ç±»ç›¸å…³é”™è¯¯ï¼‰
+public static class UnityMainThreadDispatcher
+{
+    // é™æ€é˜Ÿåˆ—å­˜å‚¨éœ€è¦åœ¨ä¸»çº¿ç¨‹æ‰§è¡Œçš„æ“ä½œ
+    private static readonly Queue<Action> _actions = new Queue<Action>();
+    private static GameObject _dispatcherObj;
+    private static DispatcherBehaviour _dispatcher;
+    private static readonly object _lock = new object();
+
+    /// <summary>
+    /// åˆå§‹åŒ–è°ƒåº¦å™¨
+    /// </summary>
+    public static void Init()
+    {
+        if (_dispatcherObj == null)
+        {
+            lock (_lock)
+            {
+                if (_dispatcherObj == null)
+                {
+                    _dispatcherObj = new GameObject("UnityMainThreadDispatcher");
+                    _dispatcher = _dispatcherObj.AddComponent<DispatcherBehaviour>();
+                    UnityEngine.Object.DontDestroyOnLoad(_dispatcherObj);
+                }
+            }
+        }
+    }
+
+    /// å¼‚æ­¥å…¥é˜Ÿä¸»çº¿ç¨‹æ‰§è¡Œçš„æ“ä½œ
+    /// </summary>
+    public static Task EnqueueAsync(Action action)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+
+        Enqueue(() =>
+        {
+            try
+            {
+                action();
+                tcs.SetResult(true);
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// å…¥é˜Ÿä¸»çº¿ç¨‹æ‰§è¡Œçš„æ“ä½œ
+    /// </summary>
+    public static void Enqueue(Action action)
+    {
+        if (action == null) return;
+
+        lock (_lock)
+        {
+            _actions.Enqueue(action);
+        }
+    }
+
+    /// <summary>
+    /// æ¸…ç†è°ƒåº¦å™¨èµ„æº
+    /// </summary>
+    public static void Cleanup()
+    {
+        lock (_lock)
+        {
+            if (_dispatcherObj != null)
+            {
+                UnityEngine.Object.Destroy(_dispatcherObj);
+                _dispatcherObj = null;
+                _dispatcher = null;
+            }
+            _actions.Clear();
+        }
+    }
+
+    /// <summary>
+    /// è°ƒåº¦å™¨è¡Œä¸ºç±»ï¼Œè´Ÿè´£åœ¨ä¸»çº¿ç¨‹æ‰§è¡Œé˜Ÿåˆ—ä¸­çš„æ“ä½œ
+    /// </summary>
+    private class DispatcherBehaviour : MonoBehaviour
+    {
+        private void Update()
+        {
+            lock (_lock)
+            {
+                while (_actions.Count > 0)
+                {
+                    try
+                    {
+                        _actions.Dequeue().Invoke();
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"ä¸»çº¿ç¨‹è°ƒåº¦å™¨æ‰§è¡Œå¤±è´¥ï¼š{e.Message}");
+                    }
+                }
+            }
+        }
     }
 }
