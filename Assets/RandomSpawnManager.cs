@@ -2,17 +2,13 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
 public class RandomSpawnManager : MonoBehaviour
 {
     [SerializeField] private GridManager gridManager;
-    [SerializeField] private Transform startPos;
-    [SerializeField] private Transform targetPos;
     [SerializeField] private Vector2 spawnRangeX = new Vector2(-10, 10); // 随机X范围
     [SerializeField] private Vector2 spawnRangeZ = new Vector2(-10, 10); // 随机Z范围
     [SerializeField] private float minStartTargetDistance = 8f; // 起点终点最小距离
     [SerializeField] private int maxSinglePosRetries = 5; // 单个位置最大重试次数
-
 
     // 礁石生成配置
     [Header("礁石生成参数")]
@@ -25,17 +21,25 @@ public class RandomSpawnManager : MonoBehaviour
     [SerializeField] private float rockAvoidDistance = 3f; // 礁石与起点/终点的安全距离
 
     private List<GameObject> spawnedRocks = new List<GameObject>(); // 已生成礁石列表
-    // 修改为public以解决访问权限问题
     public int currentMinRockCount;
     public int currentMaxRockCount;
+
+    [Header("A* 路径关联")]
+    public ImprovedAStar pathfinder; // 关联A*脚本
+    public Transform boatTransform; // 关联无人船Transform
+    public float spawnRange = 50f; // 生成范围（兼容原有大范围配置）
+
+    // 动态生成的起点/目标点（不再通过Inspector赋值）
+    private Transform dynamicStartPos;
+    private Transform dynamicTargetPos;
+    private GameObject markersParent; // 路径标记点父物体
 
     // 保留访问器方便后续扩展
     public int CurrentMinRockCount => currentMinRockCount;
     public int CurrentMaxRockCount => currentMaxRockCount;
 
     [Header("启动配置")]
-    public bool spawnOnStart = true; // 新增开关：是否在启动时自动生成
-
+    public bool spawnOnStart = true; // 开关：是否在启动时自动生成
 
     private void Start()
     {
@@ -48,7 +52,19 @@ public class RandomSpawnManager : MonoBehaviour
             return;
         }
 
-        // 核心修改：仅当spawnOnStart为true时，才启动生成
+        if (pathfinder == null)
+        {
+            Debug.LogError("RandomSpawnManager：ImprovedAStar未赋值！");
+            return;
+        }
+
+        if (boatTransform == null)
+        {
+            Debug.LogError("RandomSpawnManager：boatTransform未赋值！");
+            return;
+        }
+
+        // 仅当spawnOnStart为true时，启动生成流程
         if (spawnOnStart)
         {
             StartCoroutine(WaitForGridInitThenSetup());
@@ -58,6 +74,7 @@ public class RandomSpawnManager : MonoBehaviour
             Debug.Log("RandomSpawnManager：已禁用启动时自动生成");
         }
     }
+
     /// <summary>
     /// 供 Academy 调用，动态调整礁石生成数量范围
     /// </summary>
@@ -68,16 +85,65 @@ public class RandomSpawnManager : MonoBehaviour
         Debug.Log($"礁石数量范围更新为：{currentMinRockCount}-{currentMaxRockCount}");
     }
 
-
     private IEnumerator WaitForGridInitThenSetup()
     {
+        float timeout = 10f; // 超时时间10秒
+        float timer = 0f;
+        while (gridManager == null || !gridManager.IsGridReady())
+        {
+            timer += Time.deltaTime;
+            if (timer > timeout)
+            {
+                Debug.LogError("RandomSpawnManager：等待GridManager超时，尝试强制初始化栅格");
+                if (gridManager != null)
+                    gridManager.强制刷新栅格(); // 调用GridManager的强制刷新方法
+                timer = 0f; // 重置计时器
+            }
+            Debug.LogWarning("RandomSpawnManager：等待GridManager初始化...");
+            yield return new WaitForSeconds(0.5f);
+        }
+
+        // 等待栅格初始化完成
         while (!gridManager.IsGridReady())
         {
+            Debug.LogWarning("RandomSpawnManager：等待栅格初始化...");
             yield return new WaitForSeconds(0.2f);
         }
+
         ClearExistingRocks(); // 清除旧礁石
-        GenerateRandomRocks(); // 生成新礁石
-        GenerateRandomStartAndTarget(); // 生成起点终点
+        SpawnStartAndTarget(); // 生成动态起点/目标点（核心优化）
+        GenerateRandomRocks(); // 生成新礁石（依赖起点/目标点位置做避障）
+        Debug.Log("RandomSpawnManager：场景初始化完成！");
+    }
+
+    /// <summary>
+    /// 生成动态起点和目标点（优化：统一管理父物体，修复DontSaveInEditor问题）
+    /// </summary>
+    void SpawnStartAndTarget()
+    {
+        // 1. 创建父物体统一管理路径标记点（避免层级混乱）
+        markersParent = new GameObject("PathMarkers");
+        markersParent.hideFlags = HideFlags.None; // 关键：允许编辑器正常保存
+        DontDestroyOnLoad(markersParent); // 场景切换时自动销毁（Unity 2020+兼容）
+
+        // 2. 生成起点（无人船当前位置）
+        GameObject startObj = new GameObject("DynamicStartPos");
+        startObj.transform.parent = markersParent.transform; // 绑定父物体
+        startObj.hideFlags = HideFlags.None;
+        startObj.transform.position = boatTransform.position;
+        dynamicStartPos = startObj.transform;
+        pathfinder.startPos = dynamicStartPos; // 赋值给A*脚本
+
+        // 3. 生成目标点（随机位置，已通过GenerateValidRandomPos校验有效性）
+        Vector3 validTargetPos = GenerateValidRandomPos();
+        GameObject targetObj = new GameObject("DynamicTargetPos");
+        targetObj.transform.parent = markersParent.transform; // 绑定父物体
+        targetObj.hideFlags = HideFlags.None;
+        targetObj.transform.position = validTargetPos;
+        dynamicTargetPos = targetObj.transform;
+        pathfinder.targetPos = dynamicTargetPos; // 赋值给A*脚本
+
+        Debug.Log($"生成动态起点：{dynamicStartPos.position}，动态目标点：{dynamicTargetPos.position}");
     }
 
     // 生成随机礁石
@@ -86,7 +152,7 @@ public class RandomSpawnManager : MonoBehaviour
         // 从当前范围中随机礁石数量
         int rockCount = Random.Range(currentMinRockCount, currentMaxRockCount + 1);
         int spawned = 0;
-        int maxAttempts = rockCount * 2; // 减少最大尝试次数
+        int maxAttempts = rockCount * 2; // 合理尝试次数
         int attempts = 0;
 
         while (spawned < rockCount && attempts < maxAttempts)
@@ -100,9 +166,9 @@ public class RandomSpawnManager : MonoBehaviour
 
             if (IsRockPosValid(rockPos))
             {
-                // 实例化礁石的逻辑
+                // 实例化礁石
                 GameObject newRock = Instantiate(rockPrefab, rockPos, Quaternion.Euler(-90f, Random.Range(0f, 360f), 0f));
-                // 应用缩放
+                // 应用随机缩放
                 float scale = Random.Range(rockScaleMin, rockScaleMax);
                 newRock.transform.localScale = new Vector3(scale, scale, scale);
                 // 设置礁石层级
@@ -117,7 +183,7 @@ public class RandomSpawnManager : MonoBehaviour
         }
 
         Debug.Log($"生成礁石完成：成功生成 {spawned}/{rockCount} 个，尝试次数 {attempts}");
-        gridManager.强制刷新栅格();
+        gridManager.强制刷新栅格(); // 刷新栅格障碍物数据
     }
 
     // 校验礁石位置是否有效
@@ -129,10 +195,10 @@ public class RandomSpawnManager : MonoBehaviour
         if (!gridManager.IsValidGridPosition(gridPos))
             return false;
 
-        // 3. 检查是否与起点/终点过近
-        if (startPos != null && Vector3.Distance(rockPos, startPos.position) < rockAvoidDistance)
+        // 3. 检查是否与动态起点/目标点过近
+        if (dynamicStartPos != null && Vector3.Distance(rockPos, dynamicStartPos.position) < rockAvoidDistance)
             return false;
-        if (targetPos != null && Vector3.Distance(rockPos, targetPos.position) < rockAvoidDistance)
+        if (dynamicTargetPos != null && Vector3.Distance(rockPos, dynamicTargetPos.position) < rockAvoidDistance)
             return false;
 
         // 4. 检查是否与其他礁石过近
@@ -141,19 +207,18 @@ public class RandomSpawnManager : MonoBehaviour
             if (rock != null && Vector3.Distance(rockPos, rock.transform.position) < 2f)
                 return false;
         }
-        // ========== 新增：过滤非障碍物层级 ==========
+
+        // 5. 过滤非障碍物层级的碰撞体
         Collider[] colliders = Physics.OverlapSphere(rockPos, 0.5f);
         foreach (var col in colliders)
         {
-            if (col.gameObject.layer != LayerMask.NameToLayer("Obstacle"))
+            if (col.gameObject.layer == LayerMask.NameToLayer("Obstacle"))
             {
-                continue; // 忽略非障碍物碰撞体
+                return false; // 避免与已有障碍物重叠
             }
         }
 
- 
-
-        // 5. 检查该位置是否可通行（确保不与已有障碍物重叠）
+        // 6. 检查该位置是否可通行
         return gridManager.栅格是否可通行(gridPos);
     }
 
@@ -181,73 +246,65 @@ public class RandomSpawnManager : MonoBehaviour
         return layer;
     }
 
-
-    public void GenerateRandomStartAndTarget()
+    /// <summary>
+    /// 重新生成整个场景（含动态起点/目标点和礁石）
+    /// </summary>
+    public void Regenerate()
     {
-        // 生成有效起点
-        Vector3 validStart = GenerateValidRandomPos();
-        if (IsInvalidPos(validStart))
-        {
-            Debug.LogError("无法生成有效起点！");
-            return;
-        }
+        // 清除旧数据
+        ClearExistingRocks();
+        ClearDynamicMarkers();
 
-        // 生成有效终点
-        Vector3 validTarget = Vector3.zero;
-        int targetRetry = 0;
-        do
-        {
-            validTarget = GenerateValidRandomPos();
-            targetRetry++;
-        } while (IsInvalidPos(validTarget) ||
-                 Vector3.Distance(validStart, validTarget) < minStartTargetDistance &&
-                 targetRetry < maxSinglePosRetries * 2);
-
-        if (IsInvalidPos(validTarget))
-        {
-            Debug.LogError("无法生成有效终点！");
-            return;
-        }
-
-        // 赋值位置
-        if (startPos != null)
-            startPos.position = validStart;
-        if (targetPos != null)
-            targetPos.position = validTarget;
-        Debug.Log($"起点：{validStart} 终点：{validTarget} 距离：{Vector3.Distance(validStart, validTarget):F2}m");
+        // 重新生成
+        SpawnStartAndTarget();
+        GenerateRandomRocks();
+        gridManager.强制刷新栅格();
+        Debug.Log("RandomSpawnManager：场景重新生成完成！");
     }
 
-    // 生成随机有效位置
+    /// <summary>
+    /// 清除动态生成的起点/目标点
+    /// </summary>
+    private void ClearDynamicMarkers()
+    {
+        if (markersParent != null)
+        {
+            DestroyImmediate(markersParent);
+            markersParent = null;
+        }
+        dynamicStartPos = null;
+        dynamicTargetPos = null;
+        pathfinder.startPos = null;
+        pathfinder.targetPos = null;
+    }
+
+    // 生成随机有效位置（供目标点使用）
     private Vector3 GenerateValidRandomPos()
     {
         Vector3 randomPos;
         int retryCount = 0;
-        int maxAttempts = 50; // 增加最大尝试次数
+        int maxAttempts = 50;
 
         do
         {
-            // 生成随机位置，在指定范围内
-            float x = Random.Range(spawnRangeX.x, spawnRangeX.y);
-            float z = Random.Range(spawnRangeZ.x, spawnRangeZ.y);
+            // 优先在小范围内生成，多次失败则扩大范围
+            float x = retryCount > maxAttempts / 2
+                ? Random.Range(spawnRangeX.x - 5f, spawnRangeX.y + 5f)
+                : Random.Range(spawnRangeX.x, spawnRangeX.y);
+
+            float z = retryCount > maxAttempts / 2
+                ? Random.Range(spawnRangeZ.x - 5f, spawnRangeZ.y + 5f)
+                : Random.Range(spawnRangeZ.x, spawnRangeZ.y);
+
             randomPos = new Vector3(x, 0.4f, z);
-
-            // 如果多次尝试失败，扩大搜索范围
-            if (retryCount > maxAttempts / 2)
-            {
-                float expandRange = (retryCount - maxAttempts / 2) * 0.5f;
-                x = Random.Range(spawnRangeX.x - expandRange, spawnRangeX.y + expandRange);
-                z = Random.Range(spawnRangeZ.x - expandRange, spawnRangeZ.y + expandRange);
-                randomPos = new Vector3(x, 0.4f, z);
-            }
-
             retryCount++;
         } while (!IsPosValid(randomPos) && retryCount < maxAttempts);
 
-        // 如果所有尝试都失败，返回一个默认的安全位置
+        // 所有尝试失败时返回默认安全位置
         if (retryCount >= maxAttempts)
         {
             Debug.LogWarning("无法生成有效位置，使用默认位置");
-            return new Vector3(0, 0.4f, 0); // 默认位置
+            randomPos = new Vector3(0, 0.4f, 0);
         }
 
         return randomPos;
@@ -259,8 +316,14 @@ public class RandomSpawnManager : MonoBehaviour
         Vector2Int gridPos = gridManager.世界转栅格(worldPos);
         if (!gridManager.IsValidGridPosition(gridPos) || !gridManager.栅格是否可通行(gridPos))
             return false;
+
         if (Physics.CheckSphere(worldPos, 0.5f, obstacleLayer))
             return false;
+
+        // 确保与起点（无人船位置）距离达标
+        if (boatTransform != null && Vector3.Distance(worldPos, boatTransform.position) < minStartTargetDistance)
+            return false;
+
         return true;
     }
 
@@ -269,18 +332,10 @@ public class RandomSpawnManager : MonoBehaviour
         return pos == Vector3.negativeInfinity;
     }
 
-    // 重新生成整个场景
-    public void Regenerate()
-    {
-        ClearExistingRocks(); // 清除旧障碍物
-        GenerateRandomRocks(); // 生成新障碍物
-        GenerateRandomStartAndTarget(); // 生成新起点和目标点
-        gridManager.强制刷新栅格(); // 确保栅格障碍物数据同步
-    }
-
-    // 清理礁石（避免场景残留）
+    // 场景退出时清理所有动态生成的对象（兼容旧版本Unity）
     private void OnDestroy()
     {
         ClearExistingRocks();
+        ClearDynamicMarkers();
     }
 }

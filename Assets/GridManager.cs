@@ -68,22 +68,26 @@ public class GridManager : MonoBehaviour
     {
         if (水域平面 == null)
         {
-            Debug.LogError("GridManager：未赋值水域平面！");
+            Debug.LogError("GridManager：未赋值水域平面！请在Inspector中指定水域GameObject");
             return;
         }
 
         栅格半尺寸 = 栅格尺寸 / 2f;
-        计算水域大小(); // 核心优化：调用新的计算逻辑
+        计算水域大小();
 
-        // 核心修改1：取消Mathf.CeilToInt，用Mathf.RoundToInt精准匹配，避免向上取整导致超出
+        // 强制计算栅格尺寸（添加日志）
         栅格宽度 = Mathf.RoundToInt(水域大小缓存.x / 栅格尺寸);
         栅格高度 = Mathf.RoundToInt(水域大小缓存.y / 栅格尺寸);
+        Debug.Log($"GridManager：计算栅格尺寸：宽度={栅格宽度}，高度={栅格高度}（水域大小：{水域大小缓存.x}x{水域大小缓存.y}，栅格尺寸：{栅格尺寸}）");
 
-        // 核心修改2：强制限制栅格范围不超过水域尺寸（双重保险）
-        栅格宽度 = Mathf.Clamp(栅格宽度, 10, Mathf.RoundToInt(水域大小缓存.x / 栅格尺寸));
-        栅格高度 = Mathf.Clamp(栅格高度, 10, Mathf.RoundToInt(水域大小缓存.y / 栅格尺寸));
+        // 若栅格尺寸为0，强制赋值（临时修复）
+        if (栅格宽度 < 10 || 栅格高度 < 10)
+        {
+            Debug.LogError($"GridManager：栅格尺寸过小（{栅格宽度}x{栅格高度}），强制设置为100x80");
+            栅格宽度 = 100;
+            栅格高度 = 80;
+        }
 
-        // 栅格原点对齐水域中心（优化Y轴贴合水面）
         栅格原点 = 水域平面.position - new Vector3(水域大小缓存.x / 2, 0, 水域大小缓存.y / 2);
         栅格原点.y = 水域平面.position.y;
 
@@ -91,7 +95,7 @@ public class GridManager : MonoBehaviour
         isInitializing = true;
         初始化索引 = 0;
         initTimer = 0f;
-        Debug.Log($"GridManager：开始分帧初始化，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}，每帧处理{每帧初始化数量}个节点");
+        Debug.Log($"GridManager：开始初始化，总节点数：{栅格宽度 * 栅格高度}");
     }
     void Update()
     {
@@ -275,12 +279,23 @@ public class GridManager : MonoBehaviour
         initTimer = 0f;
         Debug.Log($"GridManager：重新初始化完成，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}");
     }
+
+    // 新增公共方法：供碰撞时触发栅格刷新
+    public void RefreshObstaclesOnCollision()
+    {
+        if (isGridReady)
+        {
+            Debug.Log("碰撞后强制刷新障碍物检测");
+            标记障碍物();  // 立即重新检测所有障碍物
+        }
+    }
     /// <summary>
     /// 核心优化：水域大小计算逻辑（自动读取/手动输入二选一）
     /// </summary>
     /// <summary>
     /// 核心优化：水域大小计算逻辑（自动读取/手动输入二选一）+ 日志防抖
     /// </summary>
+    /// 
     private void 计算水域大小()
     {
         if (水域平面 == null)

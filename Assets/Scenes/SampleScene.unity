@@ -774,6 +774,8 @@ MonoBehaviour:
   waypointDistance: 1
   endPointSlowRange: 2
   minEndSpeed: 0.5
+  "\u6700\u5927\u91CD\u8BD5\u6B21\u6570": 10
+  "\u8DEF\u5F84\u91CD\u8BD5\u6B21\u6570": 0
   isPathLoaded: 0
 --- !u!54 &173794666
 Rigidbody:
@@ -861,12 +863,24 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 1000
+  target: {fileID: 1521328185}
+  boatController: {fileID: 173794665}
+  spawnManager: {fileID: 398022124}
   targetProximitySmoothing: 0.3
   maxStepReward: 2
   minStepPenalty: -1
+  reachTargetReward: 15
+  collisionPenalty: -8
+  timeoutPenalty: -4
+  awayFromTargetPenaltyFactor: 0.2
   enableTaskLoop: 1
-  spawnManager: {fileID: 398022124}
-  target: {fileID: 1521328185}
+  debugMode: 1
+  enforceObservationCount: 1
+  gridWidth: 0
+  gridHeight: 0
+  viewRange: 5
+  maxSpeed: 2
+  maxAngularSpeed: 60
 --- !u!114 &173794673
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1172,7 +1186,7 @@ MonoBehaviour:
   useSceneCamera: 1
   sceneCamera: {fileID: 537956247}
   webCamResolution: {x: 1280, y: 720}
-  logDetectionResults: 1
+  logDetectionResults: 0
   drawBoundingBoxes: 1
   boxColor: {r: 1, g: 0, b: 0, a: 1}
   labelColor: {r: 0, g: 1, b: 0, a: 1}
@@ -1239,8 +1253,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gridManager: {fileID: 41255708}
-  startPos: {fileID: 173794670}
-  targetPos: {fileID: 1521328185}
   spawnRangeX: {x: -10, y: 10}
   spawnRangeZ: {x: -10, y: 10}
   minStartTargetDistance: 8
@@ -1256,6 +1268,9 @@ MonoBehaviour:
   rockAvoidDistance: 3
   currentMinRockCount: 0
   currentMaxRockCount: 0
+  pathfinder: {fileID: 173794667}
+  boatTransform: {fileID: 173794670}
+  spawnRange: 50
   spawnOnStart: 1
 --- !u!1 &414555417
 GameObject:

@@ -37,6 +37,10 @@ public partial class USV_LocalPlanner : MonoBehaviour
     private const float PortAvoidAngle = -30f;
     private const float HeadOnAvoidAngle = -45f;
 
+    // 避障超时控制变量
+    private float obstacleAvoidanceTimer = 0f;
+    private const float maxAvoidanceTime = 8f; // 最大避障时间（秒）
+
     void Awake()
     {
         globalAgent = GetComponent<USV_GlobalRLAgent>();
@@ -76,31 +80,98 @@ public partial class USV_LocalPlanner : MonoBehaviour
         Vector3 targetVelocity;
         float targetRotation;
 
-        // 局部规划优先级判定
-        if (dynamicObstacles.Count > 0)
+        // 新增：检测碰撞后路径失效，强制进入紧急避障状态
+        BoatController boatController = GetComponent<BoatController>();
+        bool isPathInvalid = boatController != null && !boatController.IsPathLoaded; // 调用公共属性判断路径状态
+        if (isPathInvalid)
         {
-            bool isInDangerZone = dynamicObstacles.Exists(obs =>
-                Vector3.Distance(transform.position, obs) < localSafeDistance);
-
-            bool hasImminentCollision = false;
-            for (int i = 0; i < dynamicObstacles.Count; i++)
+            // 避障超时逻辑
+            obstacleAvoidanceTimer += Time.deltaTime;
+            // 避障超时后强制退出避障状态
+            if (obstacleAvoidanceTimer > maxAvoidanceTime)
             {
-                if (IsCollisionImminent(transform.position, rb.linearVelocity,
-                    dynamicObstacles[i], dynamicObstacleVelocities[i], dwaPredictTime))
+                Debug.LogWarning("避障超时，强制回归路径导航");
+                isPathInvalid = false;
+                obstacleAvoidanceTimer = 0f;
+                // 重置路径加载状态
+                if (boatController != null)
                 {
-                    hasImminentCollision = true;
-                    break;
+                    boatController.isPathLoaded = false;
+                    boatController.TryLoadPath();
                 }
+                return;
             }
 
-            if (isInDangerZone || hasImminentCollision)
+            Debug.LogWarning("检测到路径失效（碰撞后），触发紧急避障");
+            // 紧急避障：向远离最近障碍物的方向移动，避免失控
+            if (dynamicObstacles.Count > 0)
             {
-                isAvoidingDynamicObstacle = true;
-                (targetVelocity, targetRotation) = LocalPlannerWithCOLREGs();
+                // 找到最近的障碍物
+                Vector3 closestObs = dynamicObstacles[0];
+                float minDist = Vector3.Distance(transform.position, closestObs);
+                foreach (var obs in dynamicObstacles)
+                {
+                    float dist = Vector3.Distance(transform.position, obs);
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                        closestObs = obs;
+                    }
+                }
+                // 计算远离障碍物的方向
+                Vector3 awayDir = (transform.position - closestObs).normalized;
+                targetVelocity = awayDir * 0.6f; // 缓慢后退（0.6倍速度，避免过快）
+                                                 // 转向远离方向
+                targetRotation = Vector3.SignedAngle(transform.forward, awayDir, Vector3.up);
             }
             else
             {
-                // 避障完成，回归全局路径
+                // 无障碍物时，缓慢原地旋转（寻找路径），不盲目移动
+                targetVelocity = Vector3.zero; // 停止线性移动
+                targetRotation = 8f; // 缓慢右转（降低旋转速度，避免过度转向）
+            }
+        }
+        else
+        {
+            // 非避障状态时重置计时器
+            obstacleAvoidanceTimer = 0f;
+
+            // 原有逻辑：正常避障或跟随全局路径（保留完整原有逻辑）
+            if (dynamicObstacles.Count > 0)
+            {
+                bool isInDangerZone = dynamicObstacles.Exists(obs =>
+                    Vector3.Distance(transform.position, obs) < localSafeDistance);
+
+                bool hasImminentCollision = false;
+                for (int i = 0; i < dynamicObstacles.Count; i++)
+                {
+                    if (IsCollisionImminent(transform.position, rb.linearVelocity,
+                        dynamicObstacles[i], dynamicObstacleVelocities[i], dwaPredictTime))
+                    {
+                        hasImminentCollision = true;
+                        break;
+                    }
+                }
+
+                if (isInDangerZone || hasImminentCollision)
+                {
+                    isAvoidingDynamicObstacle = true;
+                    (targetVelocity, targetRotation) = LocalPlannerWithCOLREGs();
+                }
+                else
+                {
+                    // 避障完成，回归全局路径
+                    if (isAvoidingDynamicObstacle && IsCloseToGlobalPath())
+                    {
+                        isAvoidingDynamicObstacle = false;
+                        Debug.Log("局部避障完成，回归全局路径");
+                    }
+                    (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
+                }
+            }
+            else
+            {
+                // 无障碍物时跟踪全局路径
                 if (isAvoidingDynamicObstacle && IsCloseToGlobalPath())
                 {
                     isAvoidingDynamicObstacle = false;
@@ -109,18 +180,8 @@ public partial class USV_LocalPlanner : MonoBehaviour
                 (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
             }
         }
-        else
-        {
-            // 无障碍物时跟踪全局路径
-            if (isAvoidingDynamicObstacle && IsCloseToGlobalPath())
-            {
-                isAvoidingDynamicObstacle = false;
-                Debug.Log("局部避障完成，回归全局路径");
-            }
-            (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
-        }
 
-        // 紧急情况处理
+        // 紧急情况处理（保留原有逻辑）
         if (IsExtremeDanger())
         {
             targetVelocity *= 0.2f;
@@ -130,7 +191,7 @@ public partial class USV_LocalPlanner : MonoBehaviour
         rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
         transform.Rotate(0, targetRotation * Time.deltaTime, 0);
 
-        // 局部规划奖励系统
+        // 局部规划奖励系统（保留原有逻辑）
         AddLocalPlanningRewards();
     }
 
@@ -152,7 +213,7 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
         // 输出检测数量日志
         Debug.Log($"检测到障碍物总数：{obstacleResults.Count}，其中无人船数量：{obstacleResults.Count(r => r.ClassName.ToLower() == "unmanned boat")}");
-    
+
         if (obstacleResults.Count == 0)
             return;
 

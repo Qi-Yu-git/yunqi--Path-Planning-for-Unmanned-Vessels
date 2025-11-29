@@ -10,6 +10,11 @@ public class ImprovedAStar : MonoBehaviour
     private const int NEIGHBOR_SEARCH_RANGE = 2;
     private const float DIAGONAL_COST = 1.41421356f; // 精确√2值
     private const float STRAIGHT_COST = 1f;
+
+    // 新增公共属性：暴露起点和目标点（供外部访问）
+    public Transform StartPos => startPos;
+    public Transform TargetPos => targetPos;
+
     // 静态邻居偏移量（8方向）
     private static readonly Vector2Int[] NeighborOffsets = new[]
     {
@@ -18,8 +23,8 @@ public class ImprovedAStar : MonoBehaviour
         new Vector2Int(-1, 1),  new Vector2Int(0, 1), new Vector2Int(1, 1)
     };
     [SerializeField] private GridManager gridManager;
-    [SerializeField] private Transform startPos;
-    [SerializeField] private Transform targetPos;
+    [SerializeField] public Transform startPos;
+    [SerializeField] public Transform targetPos;
     public List<Vector2Int> path;
 
     // 栅格参数缓存
@@ -107,117 +112,144 @@ public class ImprovedAStar : MonoBehaviour
         StartCoroutine(CalculatePathCoroutine());
     }
 
-
-    // 协程版路径计算（带重试机制）
+    // 协程版路径计算（带重试机制，按要求修改）
     private IEnumerator CalculatePathCoroutine()
     {
         int retryCount = 0;
-        while (retryCount < 3)
+        isCalculatingPath = true; // 标记计算中状态
+        while (retryCount < 8)
         {
             if (gridManager == null)
             {
-                Debug.LogError("A*路径计算失败：gridManager 未赋值！");
+                Debug.LogError("A* 路径生成失败：gridManager 未赋值！");
                 path = null;
+                isCalculatingPath = false;
                 yield break;
             }
 
-            // 等待栅格初始化
+            // 等待栅格初始化（优化：限制最大等待时间5秒）
             float waitTime = 0f;
             while (!gridManager.IsGridReady() && waitTime < 5f)
             {
-                Debug.LogWarning($"A*等待栅格初始化...已等待{waitTime:F1}秒");
+                Debug.LogWarning($"A* 等待栅格初始化...（已等{waitTime:F1}秒）");
                 waitTime += 0.5f;
                 yield return new WaitForSeconds(0.5f);
             }
 
             if (!gridManager.IsGridReady())
             {
-                Debug.LogError("A*路径计算失败：栅格初始化超时！");
-                path = null;
-                yield break;
+                Debug.LogError("A* 路径生成失败：栅格初始化超时！");
+                gridManager.重置栅格();
+                gridManager.强制刷新栅格(); // 新增：强制刷新栅格
+                retryCount++;
+                yield return new WaitForSeconds(Mathf.Min(1f + retryCount * 0.2f, 5f)); // 等待时间上限5秒
+                continue;
             }
 
+            // 刷新障碍物
+            gridManager.标记障碍物();
             CacheGridParameters();
             InitializeNodeDataArray();
 
-            // 校验并修正起点/终点
-            Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
-            Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
-            Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
-            Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
-
-            // 调用带搜索半径的FindValidGrid
-            startGrid = FindValidGrid(startGrid, 5);
-            targetGrid = FindValidGrid(targetGrid, 5);
-
-            if (startGrid.x == -1 || targetGrid.x == -1)
+            // 转换起点/目标点到栅格坐标（增加空值检查）
+            if (startPos == null || targetPos == null)
             {
-                Debug.LogError($"第{retryCount + 1}次重试：无法找到有效起点/终点！");
+                Debug.LogError("A* 起点/目标点为null！");
                 retryCount++;
                 yield return new WaitForSeconds(1f);
                 continue;
             }
 
-            // 更新起点/终点世界坐标
-            startWorldPos = gridManager.栅格转世界(startGrid);
-            startWorldPos.y = WATER_Y_HEIGHT;
-            startPos.position = startWorldPos;
-            targetWorldPos = gridManager.栅格转世界(targetGrid);
-            targetWorldPos.y = WATER_Y_HEIGHT;
-            targetPos.position = targetWorldPos;
+            Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
+            Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
+            Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
+            Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
+
+            // 扩大搜索范围至10，提高复杂场景下找到有效点的概率
+            startGrid = FindValidGrid(startGrid, 10);
+            targetGrid = FindValidGrid(targetGrid, 10);
+
+            if (startGrid.x == -1 || targetGrid.x == -1)
+            {
+                Debug.LogError($"第{retryCount + 1}次重试：无法找到有效起点/终点！");
+                retryCount++;
+                yield return new WaitForSeconds(Mathf.Min(1f + retryCount * 0.2f, 5f)); // 等待时间上限5秒
+                continue;
+            }
+
+            // 更新起点/终点世界坐标（简化DontDestroyOnLoad判断，直接修改位置）
+            UpdateStartAndTargetPositions(startGrid, targetGrid);
 
             // 计算路径（包含简化）
             path = FindPath(startGrid, targetGrid);
             if (path != null && path.Count > 1)
             {
-                
                 Debug.Log($"路径计算成功，包含{path.Count}个点：{string.Join("->", path)}");
-
+                isCalculatingPath = false;
                 yield break;
             }
             else
             {
-                Debug.LogError("路径为空或只有一个点，无法显示");
-
+                Debug.LogError($"第{retryCount + 1}次重试：路径为空或只有一个点");
+                // 路径计算失败时重置栅格缓存
+                gridManager.重置栅格();
                 retryCount++;
-                yield return new WaitForSeconds(1f);
+                // 失败后等待时间按规则递增，上限5秒
+                yield return new WaitForSeconds(Mathf.Min(1f + retryCount * 0.2f, 5f));
             }
-
-            // 当路径计算成功并返回时
-            if (path != null && path.Count > 1)
-            {
-                Debug.Log($"路径计算成功，包含{path.Count}个点：{string.Join("->", path)}");
-                isCalculatingPath = false; // 重置状态
-                yield break;
-            }
-
         }
-        isCalculatingPath = false; // 循环结束后重置状态
 
-        // 修复：使用Unity 6推荐的API替换过时的FindObjectOfType
-        Debug.LogError("A*路径计算失败：3次重试后仍为空！尝试重新生成起点终点...");
+        isCalculatingPath = false;
+
+        // 多次失败后，更激进的恢复策略
+        Debug.LogError("A*路径计算彻底失败，尝试恢复措施...");
         RandomSpawnManager spawnManager = FindFirstObjectByType<RandomSpawnManager>();
         if (spawnManager != null)
         {
             spawnManager.Regenerate();
-            yield return new WaitForSeconds(0.3f);
-            StartCoroutine(CalculatePathCoroutine()); // 重新计算路径
+            yield return new WaitForSeconds(0.5f); // 延长等待时间，确保生成完成
+                                                   // 重新计算前强制刷新栅格
+            gridManager.标记障碍物();
+            StartCoroutine(CalculatePathCoroutine());
         }
-        path = null;
+        else
+        {
+            // 无生成器时，直接通知船控制器路径失效
+            BoatController boat = FindFirstObjectByType<BoatController>();
+            if (boat != null)
+            {
+                boat.ClearPathAndMarkUnloaded(); // 调用公共方法，避免访问私有变量
+            }
+            path = null;
+        }
     }
 
-    // 限制坐标在栅格范围内
+    // 辅助方法：确保起点/目标点在栅格范围内（增加空值保护）
     private Vector3 ClampPositionToGrid(Vector3 worldPos)
     {
-        worldPos.y = WATER_Y_HEIGHT;
-        float minX = gridOrigin.x + cellSize * 0.5f;
-        float maxX = gridOrigin.x + (gridWidth - 1) * cellSize + cellSize * 0.5f;
-        float minZ = gridOrigin.z + cellSize * 0.5f;
-        float maxZ = gridOrigin.z + (gridHeight - 1) * cellSize + cellSize * 0.5f;
-        worldPos.x = Mathf.Clamp(worldPos.x, minX, maxX);
-        worldPos.z = Mathf.Clamp(worldPos.z, minZ, maxZ);
-        Debug.Log($"Clamp前坐标：{worldPos}，Clamp后坐标：{worldPos}，边界[X: {minX}-{maxX}, Z: {minZ}-{maxZ}]");
-        return worldPos;
+        if (gridManager == null) return worldPos; // 空值保护
+        Vector2Int gridPos = gridManager.世界转栅格(worldPos);
+        gridPos.x = Mathf.Clamp(gridPos.x, 0, gridManager.gridWidth - 1);
+        gridPos.y = Mathf.Clamp(gridPos.y, 0, gridManager.gridHeight - 1);
+        return gridManager.栅格转世界(gridPos);
+    }
+
+    // 修改位置逻辑（简化DontDestroyOnLoad判断）
+    private void UpdateStartAndTargetPositions(Vector2Int startGrid, Vector2Int targetGrid)
+    {
+        if (startPos != null)
+        {
+            Vector3 startWorldPos = gridManager.栅格转世界(startGrid);
+            startWorldPos.y = WATER_Y_HEIGHT;
+            startPos.position = startWorldPos; // 直接修改，无需临时解除父物体
+        }
+
+        if (targetPos != null)
+        {
+            Vector3 targetWorldPos = gridManager.栅格转世界(targetGrid);
+            targetWorldPos.y = WATER_Y_HEIGHT;
+            targetPos.position = targetWorldPos;
+        }
     }
 
     // ImprovedAStar.cs - FindValidGrid() 方法增强
@@ -432,6 +464,7 @@ public class ImprovedAStar : MonoBehaviour
         Debug.Log($"路径简化完成：原始{path.Count}个点 → 简化后{simplified.Count}个点");
         return simplified;
     }
+
     // NodeData结构体定义
     private struct NodeData
     {
