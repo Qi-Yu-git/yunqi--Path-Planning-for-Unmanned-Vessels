@@ -4,46 +4,28 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-
-// 避免Rect类型冲突（明确指定Unity的Rect）
+using System.Threading;
 using UnityRect = UnityEngine.Rect;
 
-/// <summary>
-/// YOLOv8目标检测Unity组件（优化版）
-/// 特性：线程安全、资源自动释放、双数据源支持、检测框正确绘制
-/// </summary>
 public class YoloDetector : MonoBehaviour
 {
     [Header("模型核心配置")]
-    [Tooltip("模型文件名（需放在StreamingAssets目录）")]
     public string modelPath = "yolov8n.onnx";
-    [Tooltip("置信度阈值（0-1，值越高检测越严格）")]
     public float confidenceThreshold = 0.5f;
-    [Tooltip("IOU阈值（0-1，用于过滤重复检测框）")]
     public float iouThreshold = 0.4f;
 
     [Header("数据源配置")]
-    [Tooltip("true=使用场景相机，false=使用USB摄像头")]
     public bool useSceneCamera = true;
-    [Tooltip("场景检测相机（需提前在场景中创建）")]
     public Camera sceneCamera;
-    [Tooltip("USB摄像头分辨率（默认1280x720）")]
     public Vector2 webCamResolution = new(1280, 720);
 
     [Header("显示与性能配置")]
-    [Tooltip("是否在控制台输出检测日志")]
     public bool logDetectionResults = true;
-    [Tooltip("是否在Game视图绘制检测框")]
     public bool drawBoundingBoxes = true;
-    [Tooltip("检测框颜色")]
     public Color boxColor = Color.red;
-    [Tooltip("标签背景色")]
     public Color labelColor = Color.green;
-    [Tooltip("检测间隔（秒），值越小检测越频繁（建议≥0.05）")]
     public float detectInterval = 0.1f;
-    [Tooltip("检测框线宽（像素）")]
     public int boxLineWidth = 2;
-    [Tooltip("标签字体大小")]
     public int labelFontSize = 12;
 
     // 私有成员
@@ -55,24 +37,37 @@ public class YoloDetector : MonoBehaviour
     private GUIStyle _boxStyle;
     private GUIStyle _labelStyle;
     private float _lastDetectTime;
-    private readonly object _resultLock = new();
-    private List<YoloResult> _detectionResults = new();
+    private readonly object _resultLock = new object();
+    private List<YoloResult> _detectionResults = new List<YoloResult>();
     private int _lastFrameWidth;
     private int _lastFrameHeight;
-    // 在YoloDetector.cs的类定义中添加：
-    public List<YoloResult> DetectedResults { get; private set; } = new List<YoloResult>();
 
+    // 公开线程安全的检测结果
+    public List<YoloResult> DetectedResults
+    {
+        get
+        {
+            lock (_resultLock)
+            {
+                return new List<YoloResult>(_detectionResults);
+            }
+        }
+        private set
+        {
+            lock (_resultLock)
+            {
+                _detectionResults = value ?? new List<YoloResult>();
+            }
+        }
+    }
 
     void Start()
     {
         try
         {
-            // 初始化顺序：样式 → 数据源 → 引擎
             InitGUIStyles();
             InitDataSource();
             InitYoloEngine();
-
-            // 初始化主线程调度器
             UnityMainThreadDispatcher.Init();
         }
         catch (Exception e)
@@ -83,24 +78,18 @@ public class YoloDetector : MonoBehaviour
 
     void Update()
     {
-        // 检测频率控制
         if (Time.time - _lastDetectTime < detectInterval) return;
         _lastDetectTime = Time.time;
 
-        // 引擎未就绪则跳过
         if (_yoloEngine == null || !_yoloEngine.IsInitialized)
         {
             Debug.LogWarning("YOLO引擎未初始化，跳过检测");
             return;
         }
 
-        // 异步处理检测（避免阻塞主线程）
         _ = ProcessDetectionAsync();
     }
 
-    /// <summary>
-    /// 异步处理检测流程（优化性能）
-    /// </summary>
     private async Task ProcessDetectionAsync()
     {
         try
@@ -109,7 +98,6 @@ public class YoloDetector : MonoBehaviour
             int frameWidth = 0;
             int frameHeight = 0;
 
-            // 根据数据源获取帧并检测
             if (useSceneCamera && sceneCamera != null)
             {
                 (Mat sceneMat, int w, int h) = await CaptureSceneCameraFrameAsync();
@@ -133,15 +121,16 @@ public class YoloDetector : MonoBehaviour
                 }
             }
 
-            // 线程安全更新检测结果
+            // 核心修复：同步帧尺寸+检测结果
             lock (_resultLock)
             {
-                _detectionResults = results;
+                _detectionResults = new List<YoloResult>(results);
                 _lastFrameWidth = frameWidth;
                 _lastFrameHeight = frameHeight;
+                DetectedResults = new List<YoloResult>(results);
+                Debug.Log($"[Yolo] 检测结果更新：{results.Count}个目标，绘制开关：{drawBoundingBoxes}，帧尺寸：{frameWidth}x{frameHeight}");
             }
 
-            // 主线程输出日志（使用静态类调用方式）
             if (logDetectionResults)
             {
                 UnityMainThreadDispatcher.Enqueue(() =>
@@ -156,39 +145,30 @@ public class YoloDetector : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 初始化YOLO引擎（含路径验证和异常处理）
-    /// </summary>
     private void InitYoloEngine()
     {
         try
         {
-            // 验证StreamingAssets目录
             if (!Directory.Exists(Application.streamingAssetsPath))
             {
                 Directory.CreateDirectory(Application.streamingAssetsPath);
                 Debug.LogWarning("已自动创建StreamingAssets目录，请将模型文件放入该目录");
             }
 
-            // 拼接完整路径
             string fullModelPath = Path.Combine(Application.streamingAssetsPath, modelPath);
-
-            // 验证模型文件
             if (!File.Exists(fullModelPath))
             {
-                Debug.LogError($"模型文件不存在：{fullModelPath}\n请检查文件路径和名称是否正确");
+                Debug.LogError($"模型文件不存在：{fullModelPath}");
                 return;
             }
 
-            // 初始化引擎
-            // 在YoloDetector的InitYoloEngine方法中
             _yoloEngine = new YoloV8Engine(
                 fullModelPath,
                 confidenceThreshold: confidenceThreshold,
                 iouThreshold: iouThreshold,
-                logModelProcessing: true,  // 开启模型处理日志
-                logNmsResults: false,     // 关闭NMS日志
-                aggregateLogInterval: 10f // 聚合日志每10秒输出一次
+                logModelProcessing: true,
+                logNmsResults: false,
+                aggregateLogInterval: 10f
             );
 
             if (_yoloEngine.IsInitialized)
@@ -202,7 +182,7 @@ public class YoloDetector : MonoBehaviour
         }
         catch (DllNotFoundException e)
         {
-            Debug.LogError($"❌ 缺少OpenCvSharp依赖库：{e.Message}\n请确保已导入OpenCvSharp相关包");
+            Debug.LogError($"❌ 缺少OpenCvSharp依赖库：{e.Message}");
         }
         catch (Exception e)
         {
@@ -210,9 +190,42 @@ public class YoloDetector : MonoBehaviour
         }
     }
 
+    // 添加在YoloDetector.cs的类中（建议放在私有方法区域，如InitDataSource之后）
     /// <summary>
-    /// 初始化数据源（场景相机/USB摄像头）
+    /// 将YOLO检测的图像坐标转换为场景世界坐标（适配X-Y平面）
     /// </summary>
+    public Vector3 ConvertYoloToWorldPosition(Rect2d rect)
+    {
+        if (sceneCamera == null)
+        {
+            Debug.LogError("[YoloDetector] 场景相机未初始化，无法转换坐标");
+            return Vector3.zero;
+        }
+
+        // 计算图像中心点（YOLO的Rect坐标）
+        float imgCenterX = (float)(rect.X + rect.Width / 2);
+        float imgCenterY = (float)(rect.Y + rect.Height / 2);
+
+        // 图像坐标转屏幕坐标（适配相机分辨率）
+        float screenX = Mathf.Clamp(imgCenterX, 0, sceneCamera.pixelWidth);
+        float screenY = Mathf.Clamp(imgCenterY, 0, sceneCamera.pixelHeight);
+
+        // 屏幕坐标转射线（Z轴在你的场景中是高度，这里固定高度为0）
+        Ray ray = sceneCamera.ScreenPointToRay(new Vector3(screenX, screenY, 0));
+
+        // 假设地面在Z=0平面（根据你的场景调整）
+        Plane groundPlane = new Plane(Vector3.forward, 0); // Z轴朝前作为高度轴
+        if (groundPlane.Raycast(ray, out float distance))
+        {
+            Vector3 worldPos = ray.GetPoint(distance);
+            // 修正：在你的坐标系中，Y轴是前后方向，Z轴固定为高度
+            return new Vector3(worldPos.x, worldPos.y, 0); // 忽略Z轴（高度）
+        }
+
+        Debug.LogWarning("[YoloDetector] 坐标转换失败");
+        return Vector3.zero;
+    }
+
     private void InitDataSource()
     {
         if (useSceneCamera)
@@ -225,12 +238,8 @@ public class YoloDetector : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 初始化场景相机
-    /// </summary>
     private void InitSceneCamera()
     {
-        // 自动查找相机
         if (sceneCamera == null)
         {
             sceneCamera = GameObject.Find("DetectionCamera")?.GetComponent<Camera>();
@@ -241,7 +250,6 @@ public class YoloDetector : MonoBehaviour
             }
         }
 
-        // 创建渲染纹理
         _tempRenderTexture = new RenderTexture(
             sceneCamera.pixelWidth,
             sceneCamera.pixelHeight,
@@ -250,7 +258,6 @@ public class YoloDetector : MonoBehaviour
         );
         sceneCamera.targetTexture = _tempRenderTexture;
 
-        // 创建纹理缓存
         _sceneCamTexture = new Texture2D(
             _tempRenderTexture.width,
             _tempRenderTexture.height,
@@ -261,12 +268,8 @@ public class YoloDetector : MonoBehaviour
         Debug.Log($"✅ 场景相机初始化完成：分辨率({_tempRenderTexture.width}x{_tempRenderTexture.height})");
     }
 
-    /// <summary>
-    /// 初始化USB摄像头
-    /// </summary>
     private void InitWebCamera()
     {
-        // 检查摄像头设备
         WebCamDevice[] devices = WebCamTexture.devices;
         if (devices.Length == 0)
         {
@@ -274,7 +277,6 @@ public class YoloDetector : MonoBehaviour
             return;
         }
 
-        // 初始化摄像头纹理
         _webCamTexture = new WebCamTexture(
             devices[0].name,
             (int)webCamResolution.x,
@@ -282,7 +284,6 @@ public class YoloDetector : MonoBehaviour
             30
         );
 
-        // 启动摄像头
         _webCamTexture.Play();
         if (_webCamTexture.isPlaying)
         {
@@ -294,20 +295,13 @@ public class YoloDetector : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 异步捕获场景相机帧（避免阻塞主线程）
-    /// </summary>
-    /// <summary>
-    /// 异步捕获场景相机帧（修复主线程调用问题）
-    /// </summary>
-    // 修改CaptureSceneCameraFrameAsync方法中的主线程调度部分
     private async Task<(Mat, int, int)> CaptureSceneCameraFrameAsync()
     {
         int frameWidth = 0;
         int frameHeight = 0;
         byte[] imageBytes = null;
-
         var tcs = new TaskCompletionSource<bool>();
+
         UnityMainThreadDispatcher.Enqueue(() =>
         {
             try
@@ -320,7 +314,6 @@ public class YoloDetector : MonoBehaviour
                         return;
                     }
 
-                    // 读取渲染纹理（必须在主线程执行）
                     RenderTexture.active = _tempRenderTexture;
                     _sceneCamTexture.ReadPixels(
                         new UnityRect(0, 0, _tempRenderTexture.width, _tempRenderTexture.height),
@@ -331,10 +324,7 @@ public class YoloDetector : MonoBehaviour
 
                     frameWidth = _tempRenderTexture.width;
                     frameHeight = _tempRenderTexture.height;
-
-                    // 在主线程中执行EncodeToPNG
                     imageBytes = _sceneCamTexture.EncodeToPNG();
-
                     tcs.SetResult(true);
                 }
             }
@@ -344,26 +334,20 @@ public class YoloDetector : MonoBehaviour
             }
         });
 
-        // 等待主线程操作完成
         await tcs.Task;
 
-        // 在子线程中进行纹理转换（不涉及Unity API）
         return await Task.Run(() =>
         {
             if (imageBytes == null) return (null, 0, 0);
-
-            // 转换为Mat
             Mat mat = Texture2DToMat(imageBytes);
             return (mat, frameWidth, frameHeight);
         });
     }
-    /// <summary>
-    /// 捕获USB摄像头帧
+
     private (Mat, int, int) CaptureWebCameraFrame()
     {
         if (_webCamTexture == null || !_webCamTexture.isPlaying) return (null, 0, 0);
 
-        // 转换为Texture2D（在主线程执行）
         Texture2D tempTex = new Texture2D(
             _webCamTexture.width,
             _webCamTexture.height,
@@ -373,37 +357,21 @@ public class YoloDetector : MonoBehaviour
         tempTex.SetPixels(_webCamTexture.GetPixels());
         tempTex.Apply();
 
-        // 在主线程中执行EncodeToPNG
         byte[] bytes = tempTex.EncodeToPNG();
-
-        // 释放临时纹理
         Destroy(tempTex);
 
-        // 转换为Mat并翻转（解决镜像问题）
         Mat mat = Texture2DToMat(bytes);
         Cv2.Flip(mat, mat, FlipMode.Y);
-
         return (mat, _webCamTexture.width, _webCamTexture.height);
     }
-    /// <summary>
-    /// Texture2D转OpenCV Mat（优化颜色空间转换）
-    /// </summary>
-    /// <summary>
-    /// Texture2D转OpenCV Mat（优化颜色空间转换）
-    /// </summary>
+
     private Mat Texture2DToMat(byte[] imageBytes)
     {
-        Mat mat = Cv2.ImDecode(imageBytes, ImreadModes.Color); // BGR格式
-        Cv2.CvtColor(mat, mat, ColorConversionCodes.BGR2RGB); // 转为RGB格式（匹配YOLO输入）
+        Mat mat = Cv2.ImDecode(imageBytes, ImreadModes.Color);
+        Cv2.CvtColor(mat, mat, ColorConversionCodes.BGR2RGB);
         return mat;
     }
 
-    /// <summary>
-    /// 处理检测日志输出
-    /// </summary>
-    /// <summary>
-    /// 处理检测日志输出
-    /// </summary>
     private void ProcessDetectionLogs(List<YoloResult> results)
     {
         if (results == null || results.Count == 0)
@@ -415,24 +383,22 @@ public class YoloDetector : MonoBehaviour
         Debug.Log($"📌 检测到 {results.Count} 个目标：");
         foreach (var result in results)
         {
-            // 修正Position引用，使用新添加的Position属性
-            Debug.Log($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 中心点：({result.Position.x:F1}, {result.Position.z:F1}) | 边界框：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
+            Debug.Log($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 边界框：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
         }
     }
 
-    /// <summary>
-    /// 初始化GUI样式（优化绘制效果）
-    /// </summary>
     private void InitGUIStyles()
     {
-        // 检测框样式（仅绘制边框，无背景）
+        // 检测框样式（修复线宽不生效问题）
         _boxStyle = new GUIStyle
         {
             normal = { background = MakeTex(1, 1, new Color(0, 0, 0, 0)) },
-            border = new RectOffset(boxLineWidth, boxLineWidth, boxLineWidth, boxLineWidth)
+            border = new RectOffset(boxLineWidth, boxLineWidth, boxLineWidth, boxLineWidth),
+            stretchWidth = true,
+            stretchHeight = true
         };
 
-        // 标签样式（半透明背景，居中文字）
+        // 标签样式
         _labelStyle = new GUIStyle
         {
             normal = { background = MakeTex(1, 1, labelColor), textColor = Color.white },
@@ -443,58 +409,70 @@ public class YoloDetector : MonoBehaviour
         };
     }
 
-    /// <summary>
-    /// OnGUI绘制检测框（正确的绘制时机）
-    /// </summary>
+    // 核心修复：OnGUI绘制逻辑（修正缩放+边界）
     private void OnGUI()
     {
-        if (!drawBoundingBoxes || _boxStyle == null || _labelStyle == null) return;
-        if (_detectionResults == null || _detectionResults.Count == 0) return;
-
-        // 线程安全访问检测结果
-        lock (_resultLock)
+        if (!drawBoundingBoxes || _boxStyle == null || _labelStyle == null)
         {
-            foreach (var result in _detectionResults)
-            {
-                DrawSingleBoundingBox(result);
-            }
+            Debug.LogWarning($"[Yolo] 绘制跳过：drawBoundingBoxes={drawBoundingBoxes}，样式={(_boxStyle == null ? "空" : "正常")}");
+            return;
+        }
+
+        var results = DetectedResults;
+        if (results == null || results.Count == 0)
+        {
+            Debug.Log("[Yolo] 无检测结果可绘制");
+            return;
+        }
+
+        // 修复：强制同步帧尺寸（避免0值）
+        if (_lastFrameWidth == 0 || _lastFrameHeight == 0)
+        {
+            _lastFrameWidth = sceneCamera != null ? sceneCamera.pixelWidth : Screen.width;
+            _lastFrameHeight = sceneCamera != null ? sceneCamera.pixelHeight : Screen.height;
+        }
+
+        Debug.Log($"[Yolo] 开始绘制{results.Count}个检测框，帧尺寸：{_lastFrameWidth}x{_lastFrameHeight}，屏幕尺寸：{Screen.width}x{Screen.height}");
+
+        foreach (var result in results)
+        {
+            DrawSingleBoundingBox(result);
         }
     }
 
-    /// <summary>
-    /// 绘制单个目标的检测框和标签（适配屏幕分辨率）
-    /// </summary>
+    // 修复：红框绘制（适配任意分辨率）
     private void DrawSingleBoundingBox(YoloResult result)
     {
-        if (_lastFrameWidth == 0 || _lastFrameHeight == 0) return;
+        if (sceneCamera == null) return;
 
-        // 计算屏幕缩放比例
-        float scaleX = (float)Screen.width / _lastFrameWidth;
-        float scaleY = (float)Screen.height / _lastFrameHeight;
+        // 1. YOLO归一化坐标（0-1范围）转视口坐标
+        float viewportX = (float)(result.Rect.X + result.Rect.Width / 2);
+        float viewportY = 1 - (float)(result.Rect.Y + result.Rect.Height / 2); // 翻转Y轴（YOLO原点在左上角，Unity在左下角）
 
-        // 转换为屏幕坐标（适配Unity Y轴方向）
-        float x = (float)result.Rect.X * scaleX;
-        float y = Screen.height - (float)(result.Rect.Y + result.Rect.Height) * scaleY;
-        float width = (float)result.Rect.Width * scaleX;
-        float height = (float)result.Rect.Height * scaleY;
+        // 2. 视口坐标转屏幕坐标（适配检测相机）
+        Vector3 screenPos = sceneCamera.ViewportToScreenPoint(new Vector3(viewportX, viewportY, 0));
 
-        // 限制坐标在屏幕内
-        x = Mathf.Clamp(x, 0, Screen.width - width);
-        y = Mathf.Clamp(y, 0, Screen.height - height);
+        // 3. 计算屏幕空间的宽高
+        float screenWidth = sceneCamera.pixelWidth;
+        float screenHeight = sceneCamera.pixelHeight;
+        float boxWidth = (float)result.Rect.Width * screenWidth;
+        float boxHeight = (float)result.Rect.Height * screenHeight;
 
-        // 绘制检测框
+        // 4. 边界修正（防止超出屏幕）
+        float x = Mathf.Clamp(screenPos.x - boxWidth / 2, 0, screenWidth - boxWidth);
+        float y = Mathf.Clamp(screenPos.y - boxHeight / 2, 0, screenHeight - boxHeight);
+
+        Debug.Log($"[Yolo] 绘制目标：{result.ClassName}，屏幕坐标：({x:F1},{y:F1}) 尺寸：{boxWidth:F1}x{boxHeight:F1}");
+
+        // 5. 绘制红框和标签
         _boxStyle.normal.textColor = boxColor;
-        GUI.Box(new UnityRect(x, y, width, height), "", _boxStyle);
+        GUI.Box(new UnityRect(x, y, boxWidth, boxHeight), "", _boxStyle);
 
-        // 绘制标签（避免超出屏幕顶部）
         float labelY = Mathf.Max(y - 25, 0);
         string labelText = $"{result.ClassName} {result.Confidence:F2}";
-        GUI.Label(new UnityRect(x, labelY, width, 25), labelText, _labelStyle);
+        GUI.Label(new UnityRect(x, labelY, boxWidth, 25), labelText, _labelStyle);
     }
 
-    /// <summary>
-    /// 创建纯色纹理（用于GUI样式）
-    /// </summary>
     private Texture2D MakeTex(int width, int height, Color color)
     {
         Color[] pixels = new Color[width * height];
@@ -502,47 +480,36 @@ public class YoloDetector : MonoBehaviour
         {
             pixels[i] = color;
         }
+
         Texture2D tex = new Texture2D(width, height, TextureFormat.ARGB32, false);
         tex.SetPixels(pixels);
         tex.Apply();
         return tex;
     }
 
-    /// <summary>
-    /// 释放资源（避免内存泄漏）
-    /// </summary>
     private void OnDestroy()
     {
-        // 释放YOLO引擎
         _yoloEngine?.Dispose();
 
-        // 停止USB摄像头
         if (_webCamTexture != null && _webCamTexture.isPlaying)
         {
             _webCamTexture.Stop();
             Destroy(_webCamTexture);
         }
 
-        // 释放场景相机资源
         if (sceneCamera != null)
         {
             sceneCamera.targetTexture = null;
         }
+
         Destroy(_tempRenderTexture);
         Destroy(_sceneCamTexture);
-
-        // 释放OpenCV资源
         _frameMat?.Release();
-
-        // 清理主线程调度器
         UnityMainThreadDispatcher.Cleanup();
 
         Debug.Log("🔌 检测资源已成功释放");
     }
 
-    /// <summary>
-    /// 编辑器模式下更新GUI样式（实时预览配置变化）
-    /// </summary>
     private void OnValidate()
     {
         if (Application.isPlaying && _boxStyle != null && _labelStyle != null)
@@ -554,18 +521,14 @@ public class YoloDetector : MonoBehaviour
     }
 }
 
-// 辅助类：主线程调度器（修复静态类相关错误）
+// 主线程调度器（完整实现）
 public static class UnityMainThreadDispatcher
 {
-    // 静态队列存储需要在主线程执行的操作
     private static readonly Queue<Action> _actions = new Queue<Action>();
     private static GameObject _dispatcherObj;
     private static DispatcherBehaviour _dispatcher;
     private static readonly object _lock = new object();
 
-    /// <summary>
-    /// 初始化调度器
-    /// </summary>
     public static void Init()
     {
         if (_dispatcherObj == null)
@@ -582,12 +545,9 @@ public static class UnityMainThreadDispatcher
         }
     }
 
-    /// 异步入队主线程执行的操作
-    /// </summary>
     public static Task EnqueueAsync(Action action)
     {
         var tcs = new TaskCompletionSource<bool>();
-
         Enqueue(() =>
         {
             try
@@ -600,26 +560,18 @@ public static class UnityMainThreadDispatcher
                 tcs.SetException(ex);
             }
         });
-
         return tcs.Task;
     }
 
-    /// <summary>
-    /// 入队主线程执行的操作
-    /// </summary>
     public static void Enqueue(Action action)
     {
         if (action == null) return;
-
         lock (_lock)
         {
             _actions.Enqueue(action);
         }
     }
 
-    /// <summary>
-    /// 清理调度器资源
-    /// </summary>
     public static void Cleanup()
     {
         lock (_lock)
@@ -634,9 +586,6 @@ public static class UnityMainThreadDispatcher
         }
     }
 
-    /// <summary>
-    /// 调度器行为类，负责在主线程执行队列中的操作
-    /// </summary>
     private class DispatcherBehaviour : MonoBehaviour
     {
         private void Update()

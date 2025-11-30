@@ -1172,7 +1172,7 @@ MonoBehaviour:
   useSceneCamera: 1
   sceneCamera: {fileID: 537956247}
   webCamResolution: {x: 1280, y: 720}
-  logDetectionResults: 1
+  logDetectionResults: 0
   drawBoundingBoxes: 1
   boxColor: {r: 1, g: 0, b: 0, a: 1}
   labelColor: {r: 0, g: 1, b: 0, a: 1}

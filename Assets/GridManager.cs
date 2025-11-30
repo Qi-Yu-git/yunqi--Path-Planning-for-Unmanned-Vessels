@@ -9,6 +9,7 @@ internal struct Node
     public int gridX;
     public int gridY;
 
+
     public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY)
     {
         walkable = _walkable;
@@ -63,6 +64,30 @@ public class GridManager : MonoBehaviour
     private Vector2 水域大小缓存;
     private float 栅格半尺寸;
     private float initTimer = 0f;
+
+    // 水域边界缓存（新增）
+    private float waterMinX;
+    private float waterMaxX;
+    private float waterMinZ;
+    private float waterMaxZ;
+
+    // 新增：水域边界公共访问接口
+    public float WaterMinX => waterMinX;
+    public float WaterMaxX => waterMaxX;
+    public float WaterMinZ => waterMinZ;
+    public float WaterMaxZ => waterMaxZ;
+
+    // 在GridManager类中添加Y轴边界字段
+    public float WaterMinY { get; private set; }
+    public float WaterMaxY { get; private set; }
+
+    // 在GridManager类中添加私有字段用于缓存上次边界值
+    private float lastWaterMinX;
+    private float lastWaterMaxX;
+    private float lastWaterMinZ;
+    private float lastWaterMaxZ;
+    private float lastWaterMinY;
+    private float lastWaterMaxY;
 
     void Start()
     {
@@ -139,6 +164,7 @@ public class GridManager : MonoBehaviour
             }
         }
     }
+
 
     public bool IsValidGridPosition(Vector2Int gridPos)
     {
@@ -281,13 +307,36 @@ public class GridManager : MonoBehaviour
     /// <summary>
     /// 核心优化：水域大小计算逻辑（自动读取/手动输入二选一）+ 日志防抖
     /// </summary>
+    /// <summary>
+    /// 重新计算水域边界（适配X-Y平面）
+    /// </summary>
     private void 计算水域大小()
     {
-        if (水域平面 == null)
+        if (水域平面 == null)  // 恢复使用已配置的水域平面引用，而非硬编码"Water"
         {
             水域大小缓存 = Vector2.zero;
             Debug.LogError("GridManager：计算水域大小失败，未赋值水域平面！");
             return;
+        }
+
+        if (水域平面 == null) return;
+
+        // 假设水域平面是一个Plane，通过缩放计算实际大小
+        Vector3 scale = 水域平面.transform.lossyScale;
+        水域大小缓存 = new Vector2(scale.x * 10, scale.z * 10); // 假设Plane原始大小为10x10
+
+        // 计算边界
+        waterMinX = 水域平面.transform.position.x - 水域大小缓存.x / 2;
+        waterMaxX = 水域平面.transform.position.x + 水域大小缓存.x / 2;
+        waterMinZ = 水域平面.transform.position.z - 水域大小缓存.y / 2;
+        waterMaxZ = 水域平面.transform.position.z + 水域大小缓存.y / 2;
+        // 修改后
+        if (Mathf.Abs(waterMinX - lastWaterMinX) > 0.01f ||
+            Mathf.Abs(waterMaxX - lastWaterMaxX) > 0.01f ||
+            Mathf.Abs(waterMinZ - lastWaterMinZ) > 0.01f ||
+            Mathf.Abs(waterMaxZ - lastWaterMaxZ) > 0.01f)
+        {
+            Debug.Log($"[GridManager] 水域边界计算完成：X[{waterMinX:F1},{waterMaxX:F1}] Z[{waterMinZ:F1},{waterMaxZ:F1}]");
         }
 
         Vector2 newWaterSize; // 临时存储新计算的尺寸
@@ -303,12 +352,41 @@ public class GridManager : MonoBehaviour
             newWaterSize = new Vector2(manualWaterSizeX, manualWaterSizeZ);
         }
 
-        // 核心修改：仅当新尺寸与旧尺寸差异超过0.01f（避免浮点误差）时，才更新并打印日志
+        // 仅当新尺寸与旧尺寸差异超过0.01f（避免浮点误差）时，才更新
         if (Mathf.Abs(newWaterSize.x - 水域大小缓存.x) > 0.01f || Mathf.Abs(newWaterSize.y - 水域大小缓存.y) > 0.01f)
         {
             水域大小缓存 = newWaterSize;
             Debug.Log($"GridManager：计算水域大小完成，尺寸：{水域大小缓存.x}x{水域大小缓存.y}（自动读取：{autoReadWaterSize}）");
         }
+
+        // 计算并更新水域边界（赋值给私有字段，小写开头）
+        waterMinX = 水域平面.position.x - 水域大小缓存.x / 2;  // 正确：赋值给私有字段
+        waterMaxX = 水域平面.position.x + 水域大小缓存.x / 2;  // 正确：赋值给私有字段
+        waterMinZ = 水域平面.position.z - 水域大小缓存.y / 2;
+        waterMaxZ = 水域平面.position.z + 水域大小缓存.y / 2;
+
+        // 保留Y轴边界计算（如果需要）
+        WaterMinY = 水域平面.position.y - 0.1f;  // 示例值，根据实际需求调整
+        WaterMaxY = 水域平面.position.y + 0.1f;  // 示例值，根据实际需求调整
+                                             // 日志防抖：仅当边界变化超过0.01f时才打印日志
+        if (Mathf.Abs(waterMinX - lastWaterMinX) > 0.01f ||
+            Mathf.Abs(waterMaxX - lastWaterMaxX) > 0.01f ||
+            Mathf.Abs(waterMinZ - lastWaterMinZ) > 0.01f ||
+            Mathf.Abs(waterMaxZ - lastWaterMaxZ) > 0.01f ||
+            Mathf.Abs(WaterMinY - lastWaterMinY) > 0.01f ||
+            Mathf.Abs(WaterMaxY - lastWaterMaxY) > 0.01f)
+        {
+            Debug.Log($"GridManager：水域边界计算完成 → X[{waterMinX:F1},{waterMaxX:F1}] Z[{waterMinZ:F1},{waterMaxZ:F1}] Y[{WaterMinY:F1},{WaterMaxY:F1}]");
+
+            // 更新缓存值
+            lastWaterMinX = waterMinX;
+            lastWaterMaxX = waterMaxX;
+            lastWaterMinZ = waterMinZ;
+            lastWaterMaxZ = waterMaxZ;
+            lastWaterMinY = WaterMinY;
+            lastWaterMaxY = WaterMaxY;
+        }
+    
     }
 
     /// <summary>
@@ -423,8 +501,13 @@ public class GridManager : MonoBehaviour
             return;
         }
 
-        计算水域大小(); // 实时更新水域Gizmos
-                  // 绘制水域范围（灰色半透明）
+        // 仅在运行时或水域平面未初始化时才更新
+        if (Application.isPlaying || 水域平面 == null)
+        {
+            计算水域大小();
+        }
+
+        // 绘制水域范围（灰色半透明）
         Gizmos.color = new Color(0.3f, 0.3f, 0.3f, 0.1f);
         Gizmos.DrawWireCube(水域平面.position, new Vector3(水域大小缓存.x, 0.1f, 水域大小缓存.y));
 
