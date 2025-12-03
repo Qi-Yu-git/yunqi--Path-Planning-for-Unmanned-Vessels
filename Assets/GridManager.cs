@@ -336,7 +336,7 @@ public class GridManager : MonoBehaviour
             Mathf.Abs(waterMinZ - lastWaterMinZ) > 0.01f ||
             Mathf.Abs(waterMaxZ - lastWaterMaxZ) > 0.01f)
         {
-            Debug.Log($"[GridManager] 水域边界计算完成：X[{waterMinX:F1},{waterMaxX:F1}] Z[{waterMinZ:F1},{waterMaxZ:F1}]");
+            //Debug.Log($"[GridManager] 水域边界计算完成：X[{waterMinX:F1},{waterMaxX:F1}] Z[{waterMinZ:F1},{waterMaxZ:F1}]");
         }
 
         Vector2 newWaterSize; // 临时存储新计算的尺寸
@@ -356,7 +356,7 @@ public class GridManager : MonoBehaviour
         if (Mathf.Abs(newWaterSize.x - 水域大小缓存.x) > 0.01f || Mathf.Abs(newWaterSize.y - 水域大小缓存.y) > 0.01f)
         {
             水域大小缓存 = newWaterSize;
-            Debug.Log($"GridManager：计算水域大小完成，尺寸：{水域大小缓存.x}x{水域大小缓存.y}（自动读取：{autoReadWaterSize}）");
+         //   Debug.Log($"GridManager：计算水域大小完成，尺寸：{水域大小缓存.x}x{水域大小缓存.y}（自动读取：{autoReadWaterSize}）");
         }
 
         // 计算并更新水域边界（赋值给私有字段，小写开头）

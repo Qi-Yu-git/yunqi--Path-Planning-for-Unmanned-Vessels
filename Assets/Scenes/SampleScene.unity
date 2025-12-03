@@ -1535,7 +1535,7 @@ MonoBehaviour:
   clearDepth: 1
   volumeLayerMask:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 65
   volumeAnchorOverride: {fileID: 0}
   antialiasing: 0
   SMAAQuality: 2
@@ -1696,9 +1696,9 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.2
-  far clip plane: 5
-  field of view: 80
+  near clip plane: 1.3
+  far clip plane: 25
+  field of view: 30
   orthographic: 0
   orthographic size: 5
   m_Depth: 1
@@ -2031,7 +2031,7 @@ GameObject:
   - component: {fileID: 688525660}
   m_Layer: 6
   m_Name: "\u5E72\u6270\u7528\u65E0\u4EBA\u8239"
-  m_TagString: Untagged
+  m_TagString: USV
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0

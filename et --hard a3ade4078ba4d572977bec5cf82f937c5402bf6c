@@ -1,0 +1,327 @@
+[33mcommit a3ade4078ba4d572977bec5cf82f937c5402bf6c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mPPUV-YOLOv8[m[33m, [m[1;31morigin/PPUV-YOLOv8[m[33m)[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 30 22:44:53 2025 +0800
+
+    2025.11.30待排查红框绘制与局部避障失效问题
+
+[33mcommit 96d35cb68dd176da92cdaa1f67cb7cc921be0bcd[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 20:44:28 2025 +0800
+
+    局部路径待优化
+
+[33mcommit 92b6f8578c06fc4b6935aee773080e5ea3cdb833[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 17:10:12 2025 +0800
+
+    新增yoloDetector日志控制
+
+[33mcommit 16d9a9499991d10b1428b2e3395c45a93ff0c064[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 15:56:52 2025 +0800
+
+    yolo8成功检测_待增加避障
+
+[33mcommit 0c4781d3ce1ae59b2568c6150f7870d3e4c8691f[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 15:34:03 2025 +0800
+
+    YoloV8Engine.cs无报错版本
+
+[33mcommit ac601a322a961757ecfc7622965d1735824ea097[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 28 22:38:11 2025 +0800
+
+    解决yolo8无法工作问题_待解决输出维度不匹配
+
+[33mcommit ac1b553e26922ae9637d41ceffd319dda689d9a2[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 28 22:05:44 2025 +0800
+
+    修复栅格误检测问题
+
+[33mcommit 7dc519e9e8f13f19271dd475453d5cc68b341a77[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 28 20:38:06 2025 +0800
+
+    yolo8_Success！_待调试
+
+[33mcommit 8b30c6b3d98a0812894e8a9a8ee91b59d072c1b0[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 28 20:10:14 2025 +0800
+
+    2025.11.28bug修复1
+
+[33mcommit b065fadedce2e0870e31fc18e5d907ef5439b11e[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Tue Nov 25 22:02:27 2025 +0800
+
+    DetectionCamera_Yolo Detector_Web Can Texture可连接硬件摄像头
+
+[33mcommit 045a5ec010d6a5d82a80cf865e97c99ea6bf5ffb[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Mon Nov 24 22:01:27 2025 +0800
+
+    2025.11.24-可重复任务，未分模块职责
+
+[33mcommit 9b4d961d65008e02ff7cb8b7c58ae6ffe17c909c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 23 21:45:06 2025 +0800
+
+    2025.11.23基本解决问题
+
+[33mcommit 5d5c4e7a56e61fa3969e6c6cbfdf7b5ffb123991[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 23 18:04:39 2025 +0800
+
+    场景配置成功-代码已修复
+
+[33mcommit 7041af26823474da06c4ed959138179c8f502bfc[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 23 17:13:17 2025 +0800
+
+    场景配置完成-需调试代码
+
+[33mcommit ad8a8c4a73c8d5d37cadba7bffd58c3259a816de[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 23:13:29 2025 +0800
+
+    重建"com.unity.sentis 1.1.0"依赖-场景全白问题待解决
+
+[33mcommit ccfea875422e510d8e1c2dc30034818bd1b964c0[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 20:34:28 2025 +0800
+
+    运行后单次训练最终版本
+
+[33mcommit b819b7d9da333080203859e7963123f7965329ee[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 16:48:58 2025 +0800
+
+    随机生成优化-深度强化学习预备
+
+[33mcommit 63f5fcc4faaad3ab5cd9c77266d1ce83983c1606[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 15:54:44 2025 +0800
+
+    Configure Git LFS to track .dll files
+
+[33mcommit f23d0429fd76c7bac914b9c7c82e7a9132972a56[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 15:38:43 2025 +0800
+
+    删除不再需要的 .gitattributes 文件
+
+[33mcommit 5174b0685e65ef9d5cffeb8bca62b58ae69b71fd[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 15:37:30 2025 +0800
+
+    彻底删除大文件 UnityApplicationPatcher-1.1.1-Win.zip
+
+[33mcommit 2bb888cc88bfad988f3be438ae06f3477642d9ab[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 22 15:27:24 2025 +0800
+
+    日志优化
+
+[33mcommit 16108c85b5a6ec923fa316d7dcd100e44afa79b3[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Nov 20 22:48:32 2025 +0800
+
+    2025.11.20日志优化
+
+[33mcommit 881c3a4c2799d88d766a3ac5b26f6e763716df58[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Nov 20 22:30:30 2025 +0800
+
+    2025.11.20优化日志
+
+[33mcommit 7d86e246cb58579179997c8ebcd8735cf4a9b620[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Nov 20 22:23:45 2025 +0800
+
+    2025.11.20优化栅格、日志输出
+
+[33mcommit 0798b8d221f5e1739b77a730cda7b13af619de23[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Nov 19 18:06:12 2025 +0800
+
+    微调无人船_栅格与水域都要有GridManager
+
+[33mcommit cfcdb2527befc3a27b38c0c647ee20e012b6de8e[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Nov 19 17:53:13 2025 +0800
+
+    解决大半问题，准备加入深度强化学习模块
+
+[33mcommit b61735f2c2f0e0321d6c57d8bac1b7c5be43ffbf[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Nov 19 15:57:09 2025 +0800
+
+    2025.11.19改前留档
+
+[33mcommit b178b230ecea5f0f761bba0eea9be037420124aa[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Mon Nov 17 21:51:57 2025 +0800
+
+    2025.11.17留档
+
+[33mcommit d8d5836065063e03c779621b8834ed59fd39c49c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Mon Nov 17 20:31:58 2025 +0800
+
+    2025.11.17改前留档
+
+[33mcommit 0e97fe70d25ac3172a59ab2a0054cb7029a727d7[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 14 17:02:28 2025 +0800
+
+    调整了一些参数-预备：训练ML-Agents模型与按钮优化
+
+[33mcommit 2f2300fe4d76854aebcd5a3902e368ea10b56194[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 14 12:25:18 2025 +0800
+
+    YOLOv8添加成功-待调试
+
+[33mcommit 5322c552ff4c12e7f18c540f72aa7a2e79a0cc5c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Nov 13 21:59:45 2025 +0800
+
+    YOLOv8添加成功—未测试视觉
+
+[33mcommit 1ebef21154cb9bf6979d8d323951c34c5358be2e[m[33m ([m[1;32mfeature/ship_radar_to_vision[m[33m)[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Nov 13 16:48:41 2025 +0800
+
+    项目切换为Unity6000.0.62f1版本（此版本需科学上网下载）
+
+[33mcommit 1fa501bced529506e8877fff58f337f73c80035b[m[33m ([m[1;32mmaster[m[33m)[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Nov 12 15:01:33 2025 +0800
+
+    雷达最后一个版本
+
+[33mcommit 12a9bb9ce81225ac8a3bd2153d0144804fb93375[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Mon Nov 10 00:15:03 2025 +0800
+
+    基本功能全部实现-雷达预测尚未完成
+
+[33mcommit 97fc8a62283e596bd027f6a0a9ae47cb3ec0b431[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 9 22:40:37 2025 +0800
+
+    初版全局、局部路径和深度学习三合一
+
+[33mcommit 212ff5ad9b307023586745f5f27cff6acd3ac5c6[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 8 17:54:02 2025 +0800
+
+    全部修复
+
+[33mcommit 51e14f1ab2ce74ecf1c6f7774b92a2cb4f6af3aa[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 8 17:04:02 2025 +0800
+
+    修复栅格显示
+
+[33mcommit 27bbd29a35e4f4946559c27d0b7992fd622baa2a[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 8 15:05:38 2025 +0800
+
+    修复雷达显示
+
+[33mcommit 898700b27959d7bfb046ca5bd683db3ff71881b9[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 8 14:10:49 2025 +0800
+
+    未完成避让，已添加检测代码
+
+[33mcommit 8e6ccc2f28670e265322d68c732a97185d330509[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 8 10:42:20 2025 +0800
+
+    未完成对遇相让留档
+
+[33mcommit f4902252cfb354d2e256a6aa057aaa17de4d83e0[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 7 20:16:25 2025 +0800
+
+    新增对遇无人船
+
+[33mcommit e78abdda45e9ee86f52591b05cd2133912135e75[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 7 18:45:29 2025 +0800
+
+    全局-局部-雷达-模型
+
+[33mcommit e212a8499f991837cc14573f6f10dfa2043a569e[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 7 15:53:58 2025 +0800
+
+    强化学习训练脚本搭建-无人船USV未开启
+
+[33mcommit 3cb54c22b9d4c8baf7d5d48b211617a6ee00d4fc[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 7 15:26:35 2025 +0800
+
+    增加全局视角的基于 Unity ML-Agents 框架的强化学习智能体脚本
+
+[33mcommit fe233dce4a8388ac7c016f5d5140ccaecf37b353[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Nov 7 15:08:11 2025 +0800
+
+    全局代码性能优化-共5
+
+[33mcommit 40d15d0dfb44f4c36d17c2292eda6a7948a5ae9c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Tue Nov 4 22:21:58 2025 +0800
+
+    无人船全局栅格路径规划
+
+[33mcommit 2c240ee381d57d1befd1660ab0ac8362866bc17c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 2 22:10:38 2025 +0800
+
+    无人船替换版本
+
+[33mcommit bb068e745f439d2342081326d63f0afaf47aab6b[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 2 14:04:45 2025 +0800
+
+    提交说明：例如「优化A*算法路径规划效率，新增障碍物避障逻辑」
+
+[33mcommit 95890c8eb4271ddce93aa03b206acc327764c833[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 20:31:58 2025 +0800
+
+    Update README.md
+
+[33mcommit 400b98f2c3bddd3ac52d919623d01ebc1f37ff87[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 20:29:08 2025 +0800
+
+    Update README.md
+    
+    环境配置
+
+[33mcommit b0bb153207f1d78e918bad7cfb313b09311ff8db[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 19:33:51 2025 +0800
+
+    Update README.md
+
+[33mcommit 90a9544ca7c774ef6ca2fcf02e188d2fa7f96d40[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 19:32:50 2025 +0800
+
+    Create README.md
+    
+    本项目参考环境配置（建议在Anaconda中管理）
+
+[33mcommit 60b755de0bc38d71db41fc6c03529c4d393362d7[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 1 18:53:09 2025 +0800
+
+    首次提交：全局环境地图_栅格建模法
