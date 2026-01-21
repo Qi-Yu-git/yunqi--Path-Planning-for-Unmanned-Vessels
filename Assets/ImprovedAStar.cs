@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class ImprovedAStar : MonoBehaviour
 {
+    public Vector3 targetWorldPos; // 存储目标点的世界坐标
     // 常量定义
     private const float WATER_Y_HEIGHT = 0.05f;
     private const int NEIGHBOR_SEARCH_RANGE = 2;
@@ -261,7 +262,7 @@ public class ImprovedAStar : MonoBehaviour
     }
 
     // 核心A*寻路逻辑
-    private List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
+    public List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
     {
         ResetNodeData();
         openQueue.Clear();
