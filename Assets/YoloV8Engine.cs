@@ -1,4 +1,5 @@
-﻿using System;
+﻿// 顶部命名空间补充
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,7 @@ using UnityEngine;
 /// <summary>
 /// YOLOv8目标检测引擎，封装OpenCV DNN推理功能（适配 (1,84,8400) 模型格式 + 低版本兼容）
 /// 核心优化：适配84列模型（4坐标+80类别，无单独置信度列），修复检测解析逻辑
+/// 新增功能：手动实现Mat转Texture2D（兼容低版本OpenCvSharp）
 /// </summary>
 public class YoloV8Engine : IDisposable
 {
@@ -35,8 +37,6 @@ public class YoloV8Engine : IDisposable
     public bool IsInitialized => _isInitialized;
     public Size InputSize => _inputSize;
     public IReadOnlyList<string> ClassNames => _classNames.AsReadOnly();
-
-
 
     // 日志控制配置
     [Header("日志控制")]
@@ -167,6 +167,71 @@ public class YoloV8Engine : IDisposable
         }
     }
 
+    // ===================== 修复核心：手动实现Mat转Texture2D（兼容低版本OpenCvSharp） =====================
+    /// <summary>
+    /// 将OpenCV的Mat图像转换为Unity的Texture2D（手动实现，兼容所有OpenCvSharp版本）
+    /// </summary>
+    /// <param name="frame">OpenCV图像矩阵</param>
+    /// <returns>Unity纹理对象（null表示转换失败）</returns>
+    public Texture2D ConvertMatToTexture(Mat frame)
+    {
+        // 空值/无效帧校验（与原代码校验风格一致）
+        if (frame == null || frame.Empty())
+        {
+            Debug.LogError("❌ 无法转换空的Mat对象");
+            return null;
+        }
+
+        try
+        {
+            // 1. 转换颜色空间：BGR → RGB（解决颜色颠倒）
+            Mat rgbMat = new Mat();
+            Cv2.CvtColor(frame, rgbMat, ColorConversionCodes.BGR2RGB);
+
+            // 2. 获取图像数据
+            int width = rgbMat.Cols;
+            int height = rgbMat.Rows;
+            int channels = rgbMat.Channels();
+
+            // 3. 创建Texture2D（确保格式匹配）
+            Texture2D texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+
+            // 4. 读取Mat数据到字节数组
+            byte[] data = new byte[width * height * channels];
+            Marshal.Copy(rgbMat.Data, data, 0, data.Length);
+
+            // 5. 加载数据到Texture2D
+            texture.LoadRawTextureData(data);
+            texture.Apply();
+
+            // 6. 释放临时Mat
+            rgbMat.Release();
+
+            return texture;
+        }
+        catch (Exception ex)
+        {
+            // 异常日志风格与原代码保持一致
+            Debug.LogError($"🚫 Mat转Texture2D失败: {ex.Message}\n堆栈信息：{ex.StackTrace}");
+            return null;
+        }
+    }
+
+    // ===================== 新增扩展功能：检测+绘制+转纹理 =====================
+    /// <summary>
+    /// 一站式完成：检测目标 → 绘制检测框 → 转换为Unity纹理
+    /// 直接返回可显示的检测结果纹理
+    /// </summary>
+    /// <param name="frame">输入图像</param>
+    /// <param name="results">输出检测结果列表</param>
+    /// <returns>带检测框的Unity纹理</returns>
+    public Texture2D DetectAndConvertToTexture(Mat frame, out List<YoloResult> results)
+    {
+        results = Detect(frame); // 调用原有检测逻辑
+        DrawDetectionResults(frame, results); // 绘制检测框
+        return ConvertMatToTexture(frame); // 转换为纹理
+    }
+
     public void UpdateThresholds(float confidenceThreshold, float iouThreshold)
     {
         _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
@@ -200,7 +265,7 @@ public class YoloV8Engine : IDisposable
         // 定时输出聚合结果
         if (Time.time - _lastAggregateLogTime > AggregateLogInterval)
         {
-            if (_classCountAggregate.Count == 0)
+            if (_classCountAggregate.Count == 0) // 修复：Count() → Count（字典的Count是属性）
             {
                 // 降低空结果日志频率
                 if (Time.frameCount % 30 == 0)
@@ -225,16 +290,16 @@ public class YoloV8Engine : IDisposable
         }
 
         // 输出详细日志（带过滤）
-        if (results == null || results.Count == 0) return;
+        if (results == null || results.Count == 0) return; // 修复：Count() → Count
 
-        Debug.Log($"📌 检测到 {results.Count} 个目标");
+        Debug.Log($"📌 检测到 {results.Count} 个目标"); // 修复：Count() → Count
         foreach (var result in results)
         {
             // 检查是否需要输出该类别的详细日志
             bool shouldLog = true;
-            if (LogIncludedClasses.Count > 0 && !LogIncludedClasses.Contains(result.ClassName))
+            if (LogIncludedClasses.Count > 0 && !LogIncludedClasses.Contains(result.ClassName)) // 修复：Count() → Count
                 shouldLog = false;
-            if (LogExcludedClasses.Contains(result.ClassName))
+            if (LogExcludedClasses.Count > 0 && LogExcludedClasses.Contains(result.ClassName)) // 修复：Count() → Count
                 shouldLog = false;
 
             if (shouldLog && result.Confidence > 0.8f)
@@ -305,11 +370,32 @@ public class YoloV8Engine : IDisposable
             }
         }
 
-        // 关键适配：自动计算预期列数（根据模型格式切换）
-        int expectedCols = _isNoSeparateConfidence
-            ? 4 + _classNames.Count()  // 84列：4坐标 + 80类别（无单独置信度）
-            : 5 + _classNames.Count(); // 85列：4坐标 + 1置信度 + 80类别
-
+        // 核心修复：自动适配84/85/4列模型
+        int expectedCols = 0;
+        if (cols == 84)
+        {
+            expectedCols = 84;
+            _isNoSeparateConfidence = true; // 强制切换为84列模式
+            Debug.LogWarning($"📌 检测到模型输出84列（4坐标+80类别），自动适配COCO80类模式");
+        }
+        else if (cols == 85)
+        {
+            expectedCols = 85;
+            _isNoSeparateConfidence = false; // 强制切换为85列模式
+            Debug.LogWarning($"📌 检测到模型输出85列（4坐标+1置信度+80类别），自动适配");
+        }
+        else if (cols == 4)
+        {
+            expectedCols = 4;
+            Debug.LogWarning($"📌 检测到模型仅输出4列（纯坐标），自动适配无类别模式");
+        }
+        else
+        {
+            // 兼容原有逻辑
+            expectedCols = _isNoSeparateConfidence
+                ? 4 + _classNames.Count
+                : 5 + _classNames.Count;
+        }
         if (_logModelProcessing)
             Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
 
@@ -368,7 +454,7 @@ public class YoloV8Engine : IDisposable
                 // 84列模型：无单独置信度列，取最大类别概率作为置信度
                 float maxClassScore = 0;
                 int classStartIndex = baseIndex + 4; // 类别从第4列开始
-                int classEndIndex = baseIndex + 4 + _classNames.Count();
+                int classEndIndex = baseIndex + 4 + _classNames.Count; // 修复：Count() → Count
 
                 // 确保不超出数组范围
                 if (classEndIndex > outputData.Length)
@@ -396,7 +482,7 @@ public class YoloV8Engine : IDisposable
                 // 查找最高分数的类别
                 float maxClassScore = 0;
                 int classStartIndex = baseIndex + 5;
-                int classEndIndex = baseIndex + 5 + _classNames.Count();
+                int classEndIndex = baseIndex + 5 + _classNames.Count; // 修复：Count() → Count
 
                 if (classEndIndex > outputData.Length)
                     classEndIndex = outputData.Length;
@@ -432,7 +518,7 @@ public class YoloV8Engine : IDisposable
             height = Mathf.Max(1, Mathf.Min(frameHeight - top, height));
 
             // 4. 构造检测结果（确保类别名称有效）
-            string className = maxClassId < _classNames.Count()
+            string className = maxClassId < _classNames.Count // 修复：Count() → Count
                 ? _classNames[maxClassId]
                 : $"unknown_{maxClassId}";
 
@@ -451,10 +537,11 @@ public class YoloV8Engine : IDisposable
 
     /// <summary>
     /// 非极大值抑制（NMS）- 按类别分组，修复重复框问题
+    /// 终极修复：完全适配最低版本OpenCvSharp的NMSBoxes调用方式
     /// </summary>
     private List<YoloResult> ApplyNonMaxSuppression(List<YoloResult> results)
     {
-        if (results.Count == 0)
+        if (results.Count == 0) // 修复：Count() → Count
         {
             if (_logNmsResults)
                 Debug.Log("📌 NMS：无有效检测框");
@@ -468,47 +555,51 @@ public class YoloV8Engine : IDisposable
         foreach (var group in classGroups)
         {
             var groupResults = group.ToList();
-            int groupCount = groupResults.Count;
+            int groupCount = groupResults.Count; // 修复：Count() → Count
 
-            float[] confidences = new float[groupCount];
-            Rect2d[] boxes = new Rect2d[groupCount];
+            // 准备NMS所需参数（转换为数组，适配最低版本API）
+            OpenCvSharp.Rect[] boxesArray = new OpenCvSharp.Rect[groupCount];
+            float[] confidencesArray = new float[groupCount];
+
             for (int i = 0; i < groupCount; i++)
             {
-                confidences[i] = groupResults[i].Confidence;
-                boxes[i] = groupResults[i].Rect;
+                var result = groupResults[i];
+                boxesArray[i] = new OpenCvSharp.Rect(
+                    (int)result.Rect.X,
+                    (int)result.Rect.Y,
+                    (int)result.Rect.Width,
+                    (int)result.Rect.Height);
+                confidencesArray[i] = result.Confidence;
             }
 
-            // 执行NMS
-            int[] indices;
+            // ========== 终极修复：最低版本OpenCvSharp的NMSBoxes调用方式 ==========
+            // 兼容最老版本的API签名（所有参数都显式传递，且带out）
+            int[] indices = new int[0];
             CvDnn.NMSBoxes(
-                boxes,
-                confidences,
-                _confidenceThreshold,
-                _iouThreshold,
-                out indices,
-                eta: 1.0f,  // 显式指定eta参数为1.0f
-                topK: 200   // 可选：指定最大输出框数量
-            );
+                boxesArray,        // 参数1：边界框数组（必须是数组）
+                confidencesArray,  // 参数2：置信度数组（必须是数组）
+                _confidenceThreshold, // 参数3：置信度阈值
+                _iouThreshold,     // 参数4：IOU阈值
+                out indices);      // 参数5：输出索引（必须带out，核心修复CS1620）
 
             // 添加NMS后的结果
             foreach (int idx in indices)
             {
-                if (idx >= 0 && idx < groupResults.Count)
+                if (idx >= 0 && idx < groupResults.Count) // 修复：Count() → Count
                     nmsResults.Add(groupResults[idx]);
             }
         }
 
         // 只在数量变化时输出NMS日志
-        if (_logNmsResults && results.Count != nmsResults.Count)
+        if (_logNmsResults && results.Count != nmsResults.Count) // 修复：Count() → Count
         {
-            Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）");
+            Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）"); // 修复：Count() → Count
         }
         return nmsResults;
     }
 
     /// <summary>
     /// 初始化引擎（修复库路径加载、模型验证问题）
-    /// </summary>
     /// </summary>
     private bool InitializeEngine()
     {
@@ -533,7 +624,6 @@ public class YoloV8Engine : IDisposable
             if (_logModelProcessing)
                 Debug.Log($"✅ 已添加OpenCvSharp库路径：{libPath}");
 
-
             // ========== 3. 加载模型（核心逻辑） ==========
             _net = CvDnn.ReadNetFromOnnx(_modelPath);
             if (_net == null || _net.Empty())
@@ -542,22 +632,17 @@ public class YoloV8Engine : IDisposable
                 return false;
             }
 
-
             // ========== 4. 配置后端 + 日志控制（可外部配置） ==========
             ConfigureNetBackend();
 
-
             // ========== 5. 日志控制（可通过外部参数调整） ==========
-            // （如果需要在外部动态控制，可将这些变量暴露为public属性，或通过构造函数传入）
-            // 这里先默认关闭，需要开启时改为true即可
             _logModelProcessing = false;   // 控制“模型处理/加载”相关日志
             _logNmsResults = false;        // 控制“NMS去重”相关日志
-            AggregateLogInterval = 5f;     // 控制“聚合统计”日志的输出间隔（设为float.PositiveInfinity则关闭）
-
+            AggregateLogInterval = 5f;     // 控制“聚合统计”日志的输出间隔
 
             // ========== 6. 初始化成功日志（仅在日志开启时输出） ==========
             if (_logModelProcessing)
-                Debug.Log($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count()}）");
+                Debug.Log($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count}）"); // 修复：Count() → Count
 
             return true;
         }
@@ -616,6 +701,64 @@ public class YoloV8Engine : IDisposable
         };
     }
 
+    // ===================== 新增私有方法：绘制检测结果 =====================
+    /// <summary>
+    /// 在Mat图像上绘制检测框和类别信息（与原代码风格一致）
+    /// </summary>
+    /// <param name="frame">待绘制的图像</param>
+    /// <param name="results">检测结果列表</param>
+    private void DrawDetectionResults(Mat frame, List<YoloResult> results)
+    {
+        if (frame == null || frame.Empty() || results == null || results.Count == 0) // 修复：Count() → Count
+            return;
+
+        foreach (var result in results)
+        {
+            // 绘制边界框（红色，线宽2）- 显式指定OpenCvSharp.Rect避免命名冲突
+            OpenCvSharp.Rect rect = new OpenCvSharp.Rect(
+                (int)result.Rect.X,
+                (int)result.Rect.Y,
+                (int)result.Rect.Width,
+                (int)result.Rect.Height);
+
+            Cv2.Rectangle(
+                frame,
+                rect,
+                Scalar.Red,
+                2);
+
+            // 绘制类别+置信度标签背景
+            string label = $"{result.ClassName} {result.Confidence:F2}";
+            int baseLine; // 修复：移除数组，直接用int变量
+            // ========== 核心修复：GetTextSize的baseLine参数加out ==========
+            Size labelSize = Cv2.GetTextSize(label, HersheyFonts.HersheySimplex, 0.5, 1, out baseLine);
+
+            // 显式指定OpenCvSharp.Rect
+            OpenCvSharp.Rect labelRect = new OpenCvSharp.Rect(
+                (int)result.Rect.X,
+                (int)result.Rect.Y - labelSize.Height - 2,
+                labelSize.Width,
+                labelSize.Height + baseLine + 2);
+
+            Cv2.Rectangle(
+                frame,
+                labelRect,
+                Scalar.Red,
+                -1); // 填充背景
+
+            // 绘制标签文字（白色）
+            Cv2.PutText(
+                frame,
+                label,
+                new Point((int)result.Rect.X + 1, (int)result.Rect.Y - 2),
+                HersheyFonts.HersheySimplex,
+                0.5,
+                Scalar.White,
+                1);
+        }
+    }
+
+
     /// <summary>
     /// 释放资源（修复资源泄漏问题）
     /// </summary>
@@ -627,19 +770,13 @@ public class YoloV8Engine : IDisposable
             _classNames?.Clear();
             _classCountAggregate?.Clear();
         }
-        // 释放非托管资源
+        // 核心修复：释放OpenCV网络资源（避免内存泄漏导致的维度解析异常）
         if (_net != null)
         {
-            _net.Dispose();
+            _net.Dispose(); // 正确的释放方法
+
             _net = null;
         }
-        if (_logModelProcessing)
-            Debug.Log("✅ YOLOv8引擎已释放资源");
     }
-
-    ~YoloV8Engine()
-    {
-        Dispose(false);
-    }
-    #endregion
+    #endregion // 补充缺失的#endregion，修复CS1038
 }

@@ -1455,6 +1455,7 @@ GameObject:
   - component: {fileID: 537956245}
   - component: {fileID: 537956249}
   - component: {fileID: 537956250}
+  - component: {fileID: 537956251}
   m_Layer: 0
   m_Name: DetectionCamera
   m_TagString: Untagged
@@ -1608,7 +1609,7 @@ AudioListener:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 537956244}
-  m_Enabled: 1
+  m_Enabled: 0
 --- !u!20 &537956247
 Camera:
   m_ObjectHideFlags: 0
@@ -1645,10 +1646,10 @@ Camera:
   field of view: 90
   orthographic: 0
   orthographic size: 5
-  m_Depth: 10
+  m_Depth: 0
   m_CullingMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 0
   m_RenderingPath: -1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
@@ -1716,6 +1717,22 @@ MonoBehaviour:
   detectInterval: 0.1
   boxLineWidth: 10
   labelFontSize: 20
+--- !u!114 &537956251
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 537956244}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e49dd26762d223e4f9c27064c17ad35e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  renderWidth: 1280
+  renderHeight: 720
+  cullingLayerNames: "Default,\u6697\u7901,\u6C34\u57DF,Obstacle"
+  cameraDepth: 0
 --- !u!1 &595230123
 GameObject:
   m_ObjectHideFlags: 0
@@ -1731,7 +1748,7 @@ GameObject:
   - component: {fileID: 595230126}
   - component: {fileID: 595230125}
   - component: {fileID: 595230130}
-  m_Layer: 6
+  m_Layer: 0
   m_Name: "\u6309\u952E\u63A7\u5236\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -1998,7 +2015,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 688525660}
-  m_Layer: 6
+  m_Layer: 0
   m_Name: "\u5E72\u6270\u7528\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -3608,7 +3625,7 @@ GameObject:
   - component: {fileID: 1277783440}
   - component: {fileID: 1277783439}
   - component: {fileID: 1277783438}
-  m_Layer: 6
+  m_Layer: 0
   m_Name: "\u6D4B\u8BD5\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -3920,7 +3937,7 @@ GameObject:
   - component: {fileID: 1387586900}
   - component: {fileID: 1387586899}
   - component: {fileID: 1387586898}
-  m_Layer: 6
+  m_Layer: 0
   m_Name: "\u5DE6\u8237\u4EA4\u53C9\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
@@ -5221,7 +5238,7 @@ GameObject:
   - component: {fileID: 7631374008013765592}
   - component: {fileID: 8939682786763710997}
   - component: {fileID: 8939682786763710998}
-  m_Layer: 6
+  m_Layer: 0
   m_Name: "\u5BF9\u9047\u65E0\u4EBA\u8239"
   m_TagString: USV
   m_Icon: {fileID: 0}
