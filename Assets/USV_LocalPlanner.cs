@@ -182,7 +182,9 @@ public partial class USV_LocalPlanner : MonoBehaviour
         List<YoloResult> obstacleResults = yoloDetector.DetectedResults.FindAll(result =>
             result.ClassName.ToLower() == "unmanned boat" ||
             result.ClassName == "sports ball" ||
-            result.ClassName == "mouse"
+            result.ClassName == "mouse" ||
+    result.ClassName == "rock" || // 新增：YOLO识别的礁石类别名
+    result.ClassName == "obstacle"// 新增：通用障碍物类别
         );
 
         Debug.Log($"[LocalPlanner] 筛选出障碍物：{obstacleResults.Count}个（无人船：{obstacleResults.Count(r => r.ClassName.ToLower() == "unmanned boat")}，运动球：{obstacleResults.Count(r => r.ClassName.ToLower() == "sports ball")}）");

@@ -16,13 +16,10 @@ public class USV_Academy : MonoBehaviour
     [Header("环境配置参数")]
     [Tooltip("最小岩石数量")]
     [Min(1)] public int minRockCount = 5;
-
     [Tooltip("最大岩石数量")]
     [Min(1)] public int maxRockCount = 15;
-
     [Tooltip("USV最大速度")]
     [Range(1f, 5f)] public float maxUSVSpeed = 2.0f;
-
     [Tooltip("最大回合时长(秒)")]
     [Min(10f)] public float maxEpisodeTime = 60f;
     #endregion
@@ -32,10 +29,8 @@ public class USV_Academy : MonoBehaviour
     private RandomSpawnManager spawnManager;
     private GridManager gridManager;
     private USV_GlobalRLAgent usvAgent; // 重新持有智能体引用
-
     // 环境参数实例
     private EnvironmentParameters envParams;
-
     // 依赖项加载状态
     private bool areDependenciesLoaded = false;
     #endregion
@@ -58,9 +53,6 @@ public class USV_Academy : MonoBehaviour
     {
         StartCoroutine(WaitForDependencies());
     }
-    // USV_Academy.cs
-
-    // ... (其他代码) ...
 
     /// <summary>
     /// 每帧检查回合是否结束，以便自动重置环境
@@ -74,16 +66,15 @@ public class USV_Academy : MonoBehaviour
             ResetEnvironment();
         }
     }
-    // ... (其他代码) ...
     #endregion
 
     #region 依赖管理
-    // Academy.cs 修改 WaitForDependencies() 方法中的智能体查找逻辑
     private IEnumerator WaitForDependencies()
     {
+        // 修复2.0.1兼容：FindFirstObjectByType加泛型约束（旧版无，新版需要）
         while (gridManager == null)
         {
-            gridManager = Object.FindFirstObjectByType<GridManager>();
+            gridManager = Object.FindFirstObjectByType<GridManager>(FindObjectsInactive.Include);
             if (gridManager == null)
             {
                 Debug.LogWarning("等待GridManager加载...");
@@ -99,13 +90,13 @@ public class USV_Academy : MonoBehaviour
         }
         Debug.Log("GridManager 数据已就绪。");
 
-        spawnManager = Object.FindFirstObjectByType<RandomSpawnManager>();
-        // 核心修改：替换标签查找，直接查找USV_GlobalRLAgent组件（无需创建标签）
-        usvAgent = Object.FindFirstObjectByType<USV_GlobalRLAgent>();
+        spawnManager = Object.FindFirstObjectByType<RandomSpawnManager>(FindObjectsInactive.Include);
+        usvAgent = Object.FindFirstObjectByType<USV_GlobalRLAgent>(FindObjectsInactive.Include);
 
         if (ValidateDependencies())
         {
             areDependenciesLoaded = true;
+            // 关键：ML-Agents 2.0.1通过Academy.Instance获取全局实例
             envParams = Academy.Instance.EnvironmentParameters;
             RegisterEnvironmentParameters();
             Debug.Log("所有环境依赖项加载完成，准备启动第一个回合...");
@@ -116,11 +107,12 @@ public class USV_Academy : MonoBehaviour
             Debug.LogError("环境依赖项加载失败，部分组件缺失！请检查场景设置。");
         }
     }
+
     private bool ValidateDependencies()
     {
         bool isValid = true;
         if (spawnManager == null) { Debug.LogError("USV_Academy: 未找到 RandomSpawnManager！"); isValid = false; }
-        if (usvAgent == null) { Debug.LogError("USV_Academy: 未找到带有 'USVAgent' 标签的 USV_GlobalRLAgent！"); isValid = false; }
+        if (usvAgent == null) { Debug.LogError("USV_Academy: 未找到 USV_GlobalRLAgent 组件！"); isValid = false; }
         return isValid;
     }
     #endregion
@@ -130,22 +122,23 @@ public class USV_Academy : MonoBehaviour
     {
         if (envParams == null) { Debug.LogError("EnvironmentParameters 实例为空"); return; }
 
-        // 通过spawnManager设置岩石数量范围
-        // 在Academy.cs的RegisterEnvironmentParameters方法中
+        // 注册最小岩石数量回调
         envParams.RegisterCallback("rock_count_min", value =>
         {
             int newMin = Mathf.Max(1, Mathf.RoundToInt(value));
-            spawnManager?.SetRockCountRange(newMin, spawnManager.currentMaxRockCount); // 修改此处
+            spawnManager?.SetRockCountRange(newMin, spawnManager.currentMaxRockCount);
             Debug.Log($"[环境参数] 最小岩石数量: {newMin}");
         });
 
+        // 注册最大岩石数量回调
         envParams.RegisterCallback("rock_count_max", value =>
         {
-            int newMax = Mathf.Max(spawnManager.currentMinRockCount, Mathf.RoundToInt(value)); // 修改此处
-            spawnManager?.SetRockCountRange(spawnManager.currentMinRockCount, newMax); // 修改此处
+            int newMax = Mathf.Max(spawnManager.currentMinRockCount, Mathf.RoundToInt(value));
+            spawnManager?.SetRockCountRange(spawnManager.currentMinRockCount, newMax);
             Debug.Log($"[环境参数] 最大岩石数量: {newMax}");
         });
 
+        // 注册USV最大速度回调
         envParams.RegisterCallback("max_usv_speed", value =>
         {
             maxUSVSpeed = Mathf.Clamp(value, 1f, 5f);
@@ -159,6 +152,7 @@ public class USV_Academy : MonoBehaviour
     public void ResetEnvironment()
     {
         if (!areDependenciesLoaded) { Debug.LogWarning("环境依赖未加载完成，无法重置环境。"); return; }
+
         if (!gridManager.IsGridReady())
         {
             Debug.LogWarning("栅格未准备就绪，执行强制刷新...");
@@ -167,14 +161,13 @@ public class USV_Academy : MonoBehaviour
             return;
         }
 
-        // 核心修改：仅当任务循环开启时，才调用spawnManager生成
+        // 仅当任务循环开启时，生成障碍物并重置Agent
         if (usvAgent != null && usvAgent.enableTaskLoop && spawnManager != null)
         {
             spawnManager.SetRockCountRange(minRockCount, maxRockCount);
             spawnManager.Regenerate();
         }
 
-        // 仅当任务循环开启时，才重置Agent状态
         if (usvAgent != null && usvAgent.enableTaskLoop)
         {
             usvAgent.ResetAgentState(maxUSVSpeed, maxEpisodeTime);
@@ -186,7 +179,11 @@ public class USV_Academy : MonoBehaviour
 
     private IEnumerator WaitForGridRefreshThenReset()
     {
-        while (!gridManager.IsGridReady()) { Debug.LogWarning("等待栅格强制刷新..."); yield return new WaitForSeconds(0.1f); }
+        while (!gridManager.IsGridReady())
+        {
+            Debug.LogWarning("等待栅格强制刷新...");
+            yield return new WaitForSeconds(0.1f);
+        }
         Debug.Log("栅格强制刷新完成。");
         ResetEnvironment();
     }

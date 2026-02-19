@@ -3,59 +3,58 @@
 [RequireComponent(typeof(Camera))]
 public class FixDetectionCamera : MonoBehaviour
 {
-    [Tooltip("检测相机输出的分辨率宽度")]
-    [SerializeField] private int renderWidth = 1280;
-    [Tooltip("检测相机输出的分辨率高度")]
-    [SerializeField] private int renderHeight = 720;
-    [Tooltip("检测相机需要渲染的图层名称（用逗号分隔，如Default,水域,陆地）")]
-    [SerializeField] private string cullingLayerNames = "Default,水域,陆地"; // 改为字符串配置
+    [Tooltip("检测相机需要渲染的图层名称（用逗号分隔，如Default,水域,陆地,暗礁）")]
+    [SerializeField] private string cullingLayerNames = "Default,水域,陆地,暗礁";
     [Tooltip("检测相机的深度值（应高于主相机）")]
     [SerializeField] private int cameraDepth = 1;
+    [Tooltip("检测相机视野范围（调大以覆盖更多区域）")]
+    [SerializeField] private float fieldOfView = 120f;
 
     private Camera _detectCam;
-    private RenderTexture _targetRenderTexture;
-    private LayerMask _cullingLayers; // 延迟初始化
+    private LayerMask _cullingLayers;
 
     void Awake()
     {
         _detectCam = GetComponent<Camera>();
-        // 关键修复：在Awake中初始化图层，避免字段初始化阶段调用NameToLayer
+        // 初始化图层（修复NameToLayer调用时机问题）
         InitializeCullingLayers();
+        // 初始化相机核心配置（放弃RenderTexture，直接屏幕显示）
         InitializeDetectionCamera();
     }
 
-    // 在 FixDetectionCamera 类中新增 OnGUI 方法，Game 视图显示采集画面
-    void OnGUI()
-    {
-        // 仅在运行时显示
-        if (!Application.isPlaying) return;
-
-        // 检查 RenderTexture 是否有效
-        if (_targetRenderTexture != null && _targetRenderTexture.IsCreated())
-        {
-            // 在 Game 视图左上角绘制 300x200 的小窗口，显示相机采集的画面
-            GUI.DrawTexture(new Rect(10, 10, 300, 200), _targetRenderTexture);
-            // 标注文字，方便识别
-            GUI.Label(new Rect(10, 220, 200, 20), "DetectionCamera 采集画面");
-        }
-        else
-        {
-            GUI.Label(new Rect(10, 10, 200, 20), "❌ RenderTexture 未创建成功");
-        }
-    }
-
-    // 新增：单独初始化图层
+    /// <summary>
+    /// 初始化渲染图层（关键：在Awake中执行，避免构造函数调用NameToLayer）
+    /// </summary>
     private void InitializeCullingLayers()
     {
-        _cullingLayers = LayerMask.GetMask(cullingLayerNames.Split(','));
-        // 兜底：若图层配置错误，默认渲染Default层
+        // 拆分图层名并创建LayerMask
+        string[] layerNames = cullingLayerNames.Split(',');
+        _cullingLayers = 0;
+        foreach (string layerName in layerNames)
+        {
+            string trimedName = layerName.Trim(); // 去除空格
+            int layerIndex = LayerMask.NameToLayer(trimedName);
+            if (layerIndex != -1)
+            {
+                _cullingLayers |= (1 << layerIndex);
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ 图层 {trimedName} 不存在，请检查拼写！");
+            }
+        }
+
+        // 兜底：若图层配置全错，默认渲染Default层
         if (_cullingLayers == 0)
         {
             _cullingLayers = LayerMask.GetMask("Default");
-            Debug.LogWarning("⚠️ 图层配置错误，默认渲染Default层");
+            Debug.LogWarning("⚠️ 所有图层配置错误，默认渲染Default层");
         }
     }
 
+    /// <summary>
+    /// 初始化相机（放弃RenderTexture，直接屏幕显示）
+    /// </summary>
     private void InitializeDetectionCamera()
     {
         if (_detectCam == null)
@@ -64,63 +63,52 @@ public class FixDetectionCamera : MonoBehaviour
             return;
         }
 
-        // 兜底方案：放弃RenderTexture，直接修复Display配置
-        _detectCam.targetTexture = null;
-        _detectCam.targetDisplay = 0; // 强制输出到Display 0
-        _detectCam.rect = new Rect(0, 0, 1, 1); // 全屏显示
-
+        // 1. 移除冲突的AudioListener
         RemoveAudioListener();
+
+        // 2. 核心配置：让相机正常显示到屏幕（Display 0）
+        _detectCam.targetTexture = null; // 清空RenderTexture，改用屏幕显示
+        _detectCam.targetDisplay = 1;   
+        _detectCam.rect = new Rect(0, 0, 1, 1); // 全屏显示（也可设小窗口：new Rect(0,0,0.3f,0.3f)）
+
+        // 3. 基础渲染配置
         _detectCam.enabled = true;
-        _detectCam.cullingMask = _cullingLayers;
+        _detectCam.cullingMask = _cullingLayers; // 渲染目标图层
         _detectCam.clearFlags = CameraClearFlags.Skybox;
-        _detectCam.depth = 1;
+        _detectCam.depth = cameraDepth;          // 高于主相机（主相机一般为0）
+        _detectCam.fieldOfView = fieldOfView;    // 调大视野，覆盖更多场景
+        _detectCam.nearClipPlane = 0.1f;         // 近裁剪面，避免近距离物体消失
+        _detectCam.farClipPlane = 100f;          // 远裁剪面，覆盖场景所有物体
 
-        Debug.Log("✅ DetectionCamera 兜底初始化完成：输出到Display 0");
+        Debug.Log($"✅ DetectionCamera 初始化完成：\n" +
+                  $"→ 渲染图层：{cullingLayerNames}\n" +
+                  $"→ 输出到 Display 0（屏幕）\n" +
+                  $"→ 视野范围：{fieldOfView}°");
     }
 
-    // 以下方法（CreateRenderTexture/RemoveAudioListener/GetRenderTexture/OnDestroy/OnValidate）保持不变
-    private void CreateRenderTexture()
-    {
-        if (_targetRenderTexture != null)
-        {
-            Destroy(_targetRenderTexture);
-        }
-
-        _targetRenderTexture = new RenderTexture(renderWidth, renderHeight, 24, RenderTextureFormat.Default);
-        if (_targetRenderTexture.IsCreated())
-        {
-            _detectCam.targetTexture = _targetRenderTexture;
-        }
-        else
-        {
-            Debug.LogError("❌ 无法创建RenderTexture，检测相机初始化失败");
-        }
-    }
-
+    /// <summary>
+    /// 移除多余的AudioListener，避免与主相机冲突
+    /// </summary>
     private void RemoveAudioListener()
     {
         AudioListener listener = GetComponent<AudioListener>();
         if (listener != null)
         {
             Destroy(listener);
-            Debug.Log("ℹ️ 已移除检测相机上的AudioListener");
+            Debug.Log("ℹ️ 已移除检测相机上的AudioListener，避免冲突");
         }
     }
 
-    public RenderTexture GetRenderTexture()
+    /// <summary>
+    /// 供YoloDetector调用：获取当前检测相机
+    /// </summary>
+    /// <returns>配置好的检测相机</returns>
+    public Camera GetDetectionCamera()
     {
-        return _targetRenderTexture;
+        return _detectCam;
     }
 
-    void OnDestroy()
-    {
-        if (_targetRenderTexture != null)
-        {
-            Destroy(_targetRenderTexture);
-            _targetRenderTexture = null;
-        }
-    }
-
+    // 编辑器模式下实时更新配置
     void OnValidate()
     {
         if (_detectCam == null)
@@ -129,6 +117,7 @@ public class FixDetectionCamera : MonoBehaviour
         if (_detectCam != null)
         {
             _detectCam.depth = cameraDepth;
+            _detectCam.fieldOfView = fieldOfView;
         }
     }
 }

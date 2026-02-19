@@ -72,9 +72,9 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    protected override void Awake()
+    protected void Awake()
     {
-        base.Awake();
+        
         boatController = GetComponent<BoatController>();
         gridManager = FindFirstObjectByType<GridManager>();
         globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
