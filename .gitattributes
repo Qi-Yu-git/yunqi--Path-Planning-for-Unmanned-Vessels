@@ -1,3 +1,70 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8f6e037d38d09aa7e9fc26ebaaff009ab3425bb5bf8732f8ccf27d836e374da4
-size 383
+# ==============================================================================
+# 通用文本文件 - 统一使用 LF 换行符
+# ==============================================================================
+* text=auto eol=lf
+
+# ==============================================================================
+# 编程语言相关文件
+# ==============================================================================
+# C# 脚本 (ML-Agents 核心代码)
+*.cs text eol=lf diff=csharp
+# Python 脚本 (训练/配置)
+*.py text eol=lf diff=python
+# 配置文件
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+# 脚本文件
+*.sh text eol=lf
+*.bat text eol=crlf  # Windows 批处理文件强制用 CRLF
+*.cmd text eol=crlf
+
+# ==============================================================================
+# Unity 专用文件
+# ==============================================================================
+# Unity 场景/预制体/资源文件 (二进制文件，不做换行符处理)
+*.unity binary
+*.prefab binary
+*.fbx binary
+*.mat binary
+*.asset binary
+*.meta binary
+*.controller binary
+*.anim binary
+*.animator binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.tga binary
+*.psd binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.ttf binary
+*.otf binary
+
+# ==============================================================================
+# Git 相关
+# ==============================================================================
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.gitmodules text eol=lf
+
+# ==============================================================================
+# 排除不需要处理的文件
+# ==============================================================================
+# 二进制文件（不做文本处理）
+*.dll binary
+*.so binary
+*.dylib binary
+*.exe binary
+*.zip binary
+*.7z binary
+*.rar binary
+*.tar.gz binary
+*.pdf binary

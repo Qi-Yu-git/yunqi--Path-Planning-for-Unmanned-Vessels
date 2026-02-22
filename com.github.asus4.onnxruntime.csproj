@@ -100,7 +100,7 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.IO.Abstractions">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@c99f42d6809e\Plugins\System.IO.Abstractions.dll</HintPath>
+      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\System.IO.Abstractions.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Unity.VisualScripting.YamlDotNet">
@@ -123,10 +123,6 @@
       <HintPath>Library\PackageCache\com.unity.collab-proxy@1e5e48aff19d\Lib\Editor\Unity.Plastic.Antlr3.Runtime.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="System.Interactive.Async">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@c99f42d6809e\Plugins\ProtoBuffer\System.Interactive.Async.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
     <Reference Include="Unity.Plastic.Newtonsoft.Json">
       <HintPath>Library\PackageCache\com.unity.collab-proxy@1e5e48aff19d\Lib\Editor\Unity.Plastic.Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
@@ -141,6 +137,10 @@
     </Reference>
     <Reference Include="unityplastic">
       <HintPath>Library\PackageCache\com.unity.collab-proxy@1e5e48aff19d\Lib\Editor\unityplastic.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Google.Protobuf_Packed">
+      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\Google.Protobuf_Packed.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System.IO.Hashing">
@@ -159,12 +159,8 @@
       <HintPath>Library\PackageCache\com.unity.visualscripting@0920df93f957\Runtime\VisualScripting.Flow\Dependencies\NCalc\Unity.VisualScripting.Antlr3.Runtime.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Google.Protobuf">
-      <HintPath>Library\PackageCache\com.unity.barracuda@82bcfb51cf28\Barracuda\Runtime\Plugins\ProtoBuffer\Google.Protobuf.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
     <Reference Include="Grpc.Core">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@c99f42d6809e\Plugins\ProtoBuffer\Grpc.Core.dll</HintPath>
+      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\ProtoBuffer\Grpc.Core.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="NuGetForUnity.PluginAPI">
@@ -184,7 +180,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="System.IO.Abstractions.TestingHelpers">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@c99f42d6809e\Plugins\System.IO.Abstractions.TestingHelpers.dll</HintPath>
+      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\System.IO.Abstractions.TestingHelpers.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System.Runtime.CompilerServices.Unsafe">

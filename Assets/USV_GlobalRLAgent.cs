@@ -72,12 +72,13 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    protected void Awake()
+    protected override void Awake()  // 核心修改：添加 override 关键字
     {
-        
+        base.Awake();  // 新增：调用父类 Agent 的 Awake() 方法，保证 MLAgents 底层逻辑正常执行
+
         boatController = GetComponent<BoatController>();
-        gridManager = FindFirstObjectByType<GridManager>();
-        globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
+        gridManager = UnityEngine.Object.FindFirstObjectByType<GridManager>();  // 顺带修复 Object 歧义（可选）
+        globalPathfinder = UnityEngine.Object.FindFirstObjectByType<ImprovedAStar>();  // 顺带修复 Object 歧义（可选）
         rb = GetComponent<Rigidbody>();
 
         if (gridManager == null)

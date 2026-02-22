@@ -1,0 +1,1 @@
+pkg_resources.py文件：放在你的 Conda 环境的 site-packages 目录下（路径：D:\conda_envs\mlagents-402\Lib\site-packages\），兼容高版本setuptools

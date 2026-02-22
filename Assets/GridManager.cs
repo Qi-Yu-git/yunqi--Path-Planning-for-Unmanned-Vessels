@@ -554,7 +554,8 @@ public class GridManager : MonoBehaviour
         );
 
         // 绘制路径
-        ImprovedAStar pathfinder = FindObjectOfType<ImprovedAStar>(); // 兼容旧版Unity
+        // 绘制路径
+        ImprovedAStar pathfinder = UnityEngine.Object.FindAnyObjectByType<ImprovedAStar>(); // 加命名空间限定，消除歧义+性能最优
         if (pathfinder != null && pathfinder.path != null && pathfinder.path.Count > 1)
         {
             Gizmos.color = Color.cyan;
