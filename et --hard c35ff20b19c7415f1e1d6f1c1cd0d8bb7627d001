@@ -1,0 +1,71 @@
+[33mcommit c35ff20b19c7415f1e1d6f1c1cd0d8bb7627d001[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mPPUV-YOLOv8[m[33m, [m[1;31morigin/PPUV-YOLOv8[m[33m)[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Feb 22 18:07:49 2026 +0800
+
+    2026.2.22重构anaconda训练环境
+
+[33mcommit 28fb4709f5bf97b13e78902cf88ea27e8bc0275f[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Feb 19 23:39:03 2026 +0800
+
+    首次训练成功_调试+优化包
+
+[33mcommit 8601eec6b7004c6577a3ff4b68710ea089b22f74[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Jan 21 16:13:13 2026 +0800
+
+    碰撞函数不行，留档找之前的
+
+[33mcommit d30b79d0a4b497f84ef5a0fc2b779b32d220efae[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Jan 21 15:43:13 2026 +0800
+
+    可DetectionCamera检测，无法投Display1
+
+[33mcommit d75c35732382e4ba82007c64c0b1f7df40c3848f[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Jan 21 14:05:52 2026 +0800
+
+    2026.1.21改前留档
+
+[33mcommit 61ccf054c337544ce8f45c904595b26d3f59050d[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Dec 27 11:54:41 2025 +0800
+
+    2025.12.27改前留档
+
+[33mcommit c5eeb5f2a0f3f15a9ae8828002a565c662a59a8c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Dec 3 11:55:43 2025 +0800
+
+    微调相机参数
+
+[33mcommit a3ade4078ba4d572977bec5cf82f937c5402bf6c[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Nov 30 22:44:53 2025 +0800
+
+    2025.11.30待排查红框绘制与局部避障失效问题
+
+[33mcommit 96d35cb68dd176da92cdaa1f67cb7cc921be0bcd[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 20:44:28 2025 +0800
+
+    局部路径待优化
+
+[33mcommit 92b6f8578c06fc4b6935aee773080e5ea3cdb833[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 17:10:12 2025 +0800
+
+    新增yoloDetector日志控制
+
+[33mcommit 16d9a9499991d10b1428b2e3395c45a93ff0c064[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 15:56:52 2025 +0800
+
+    yolo8成功检测_待增加避障
+
+[33mcommit 0c4781d3ce1ae59b2568c6150f7870d3e4c8691f[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Nov 29 15:34:03 2025 +0800
+
+    YoloV8Engine.cs无报错版本
