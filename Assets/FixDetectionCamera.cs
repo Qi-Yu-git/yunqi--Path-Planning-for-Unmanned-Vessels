@@ -3,8 +3,8 @@
 [RequireComponent(typeof(Camera))]
 public class FixDetectionCamera : MonoBehaviour
 {
-    [Tooltip("检测相机需要渲染的图层名称（用逗号分隔，如Default,水域,陆地,暗礁）")]
-    [SerializeField] private string cullingLayerNames = "Default,水域,陆地,暗礁";
+    [Tooltip("检测相机需要渲染的图层名称（用逗号分隔，如Default,水域,陆地,暗礁,USV,Obstacle）")]
+    [SerializeField] private string cullingLayerNames = "Default,水域,陆地,暗礁,USV,Obstacle";
     [Tooltip("检测相机的深度值（应高于主相机）")]
     [SerializeField] private int cameraDepth = 1;
     [Tooltip("检测相机视野范围（调大以覆盖更多区域）")]

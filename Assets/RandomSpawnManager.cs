@@ -8,8 +8,8 @@ public class RandomSpawnManager : MonoBehaviour
     [SerializeField] private GridManager gridManager;
     [SerializeField] private Transform startPos;
     [SerializeField] private Transform targetPos;
-    [SerializeField] private Vector2 spawnRangeX = new Vector2(-10, 10); // 随机X范围
-    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-10, 10); // 随机Z范围
+    [SerializeField] private Vector2 spawnRangeX = new Vector2(-30, 30); // 随机X范围
+    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-30, 30); // 随机Z范围
     [SerializeField] private float minStartTargetDistance = 8f; // 起点终点最小距离
     [SerializeField] private int maxSinglePosRetries = 5; // 单个位置最大重试次数
 

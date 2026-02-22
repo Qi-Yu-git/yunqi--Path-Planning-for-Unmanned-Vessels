@@ -117,42 +117,51 @@ public class YoloV8Engine : IDisposable
                 {
                     _net.SetInput(blob);
                     string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
-                    Mat output = _net.Forward(outputLayerNames[0]);
 
-                    // 核心修复：低版本兼容的维度转换（适配 (1,84,8400)）
-                    if (_logModelProcessing)
-                        Debug.Log($"原始输出形状: ({output.Size(0)}, {output.Size(1)}, {output.Size(2)})");
-
-                    if (output.Dims == 3 && output.Size(0) == 1)
+                    // ========== 核心修复：拆分using和维度转换 ==========
+                    // 1. using 包裹原始output，保证释放
+                    using (Mat originalOutput = _net.Forward(outputLayerNames[0]))
                     {
-                        int channel = output.Size(1);
-                        int boxCount = output.Size(2);
+                        // 2. 创建临时变量处理维度转换（可赋值）
+                        Mat output = originalOutput.Clone(); // 克隆一份用于修改
 
-                        // 处理 (1,84,8400) 或 (1,85,8400) 格式
-                        if (boxCount == 8400 && (channel == 84 || channel == 85))
+                        // 核心修复：低版本兼容的维度转换（适配 (1,84,8400)）
+                        if (_logModelProcessing)
+                            Debug.Log($"原始输出形状: ({output.Size(0)}, {output.Size(1)}, {output.Size(2)})");
+
+                        if (output.Dims == 3 && output.Size(0) == 1)
                         {
-                            // 低版本兼容方案：先压缩为2维 (channel, 8400) → 转置为 (8400, channel)
-                            output = output.Reshape(1, channel); // (1,84,8400) → (84, 8400)
-                            output = output.T();                // (84,8400) → (8400,84)
+                            int channel = output.Size(1);
+                            int boxCount = output.Size(2);
+
+                            // 处理 (1,84,8400) 或 (1,85,8400) 格式
+                            if (boxCount == 8400 && (channel == 84 || channel == 85))
+                            {
+                                // 低版本兼容方案：先压缩为2维 (channel, 8400) → 转置为 (8400, channel)
+                                output = output.Reshape(1, channel); // (1,84,8400) → (84, 8400)
+                                output = output.T();                // (84,8400) → (8400,84)
+                            }
+                            // 处理 (1,8400,84) 或 (1,8400,85) 格式
+                            else if (channel == 8400 && (output.Size(2) == 84 || output.Size(2) == 85))
+                            {
+                                output = output.Reshape(1, 8400); // 直接压缩为 (8400,84)
+                            }
                         }
-                        // 处理 (1,8400,84) 或 (1,8400,85) 格式
-                        else if (channel == 8400 && (output.Size(2) == 84 || output.Size(2) == 85))
+                        // 处理 (84,8400) 或 (85,8400) 2维格式
+                        else if (output.Dims == 2 && output.Rows != 8400 && output.Cols == 8400)
                         {
-                            output = output.Reshape(1, 8400); // 直接压缩为 (8400,84)
+                            output = output.T(); // 转置为 (8400,84)
                         }
-                    }
-                    // 处理 (84,8400) 或 (85,8400) 2维格式
-                    else if (output.Dims == 2 && output.Rows != 8400 && output.Cols == 8400)
-                    {
-                        output = output.T(); // 转置为 (8400,84)
-                    }
 
-                    if (_logModelProcessing)
-                        Debug.Log($"调整后形状: {output.Rows}行 x {output.Cols}列");
+                        if (_logModelProcessing)
+                            Debug.Log($"调整后形状: {output.Rows}行 x {output.Cols}列");
 
-                    var results = ParseDetectionOutput(output, frameWidth, frameHeight);
-                    output.Release();
-                    return results;
+                        var results = ParseDetectionOutput(output, frameWidth, frameHeight);
+
+                        // 手动释放临时output（克隆的Mat）
+                        output.Release();
+                        return results;
+                    } // originalOutput 自动释放
                 }
             }
             catch (Exception ex)
@@ -175,7 +184,6 @@ public class YoloV8Engine : IDisposable
     /// <returns>Unity纹理对象（null表示转换失败）</returns>
     public Texture2D ConvertMatToTexture(Mat frame)
     {
-        // 空值/无效帧校验（与原代码校验风格一致）
         if (frame == null || frame.Empty())
         {
             Debug.LogError("❌ 无法转换空的Mat对象");
@@ -185,33 +193,31 @@ public class YoloV8Engine : IDisposable
         try
         {
             // 1. 转换颜色空间：BGR → RGB（解决颜色颠倒）
-            Mat rgbMat = new Mat();
-            Cv2.CvtColor(frame, rgbMat, ColorConversionCodes.BGR2RGB);
+            using (Mat rgbMat = new Mat()) // 核心：using 自动释放 rgbMat
+            {
+                Cv2.CvtColor(frame, rgbMat, ColorConversionCodes.BGR2RGB);
 
-            // 2. 获取图像数据
-            int width = rgbMat.Cols;
-            int height = rgbMat.Rows;
-            int channels = rgbMat.Channels();
+                // 2. 获取图像数据
+                int width = rgbMat.Cols;
+                int height = rgbMat.Rows;
+                int channels = rgbMat.Channels();
 
-            // 3. 创建Texture2D（确保格式匹配）
-            Texture2D texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+                // 3. 创建Texture2D（确保格式匹配）
+                Texture2D texture = new Texture2D(width, height, TextureFormat.RGB24, false);
 
-            // 4. 读取Mat数据到字节数组
-            byte[] data = new byte[width * height * channels];
-            Marshal.Copy(rgbMat.Data, data, 0, data.Length);
+                // 4. 读取Mat数据到字节数组
+                byte[] data = new byte[width * height * channels];
+                Marshal.Copy(rgbMat.Data, data, 0, data.Length);
 
-            // 5. 加载数据到Texture2D
-            texture.LoadRawTextureData(data);
-            texture.Apply();
+                // 5. 加载数据到Texture2D
+                texture.LoadRawTextureData(data);
+                texture.Apply();
 
-            // 6. 释放临时Mat
-            rgbMat.Release();
-
-            return texture;
+                return texture;
+            } // rgbMat 自动释放
         }
         catch (Exception ex)
         {
-            // 异常日志风格与原代码保持一致
             Debug.LogError($"🚫 Mat转Texture2D失败: {ex.Message}\n堆栈信息：{ex.StackTrace}");
             return null;
         }
@@ -522,12 +528,16 @@ public class YoloV8Engine : IDisposable
                 ? _classNames[maxClassId]
                 : $"unknown_{maxClassId}";
 
+            // 改为下面这段（新增 TrackId 赋值，其余字段完全保留）：
             results.Add(new YoloResult
             {
                 ClassId = maxClassId,
                 ClassName = className,
                 Confidence = finalConfidence,
-                Rect = new Rect2d(left, top, width, height)
+                Rect = new Rect2d(left, top, width, height),
+                // ======== 新增：为 TrackId 赋值（按类别+位置哈希，简单轨迹追踪）========
+                TrackId = (className + left + top).GetHashCode()  // 用left/top替代rect.X/rect.Y，匹配你的变量名
+                                                                  // ================================================================
             });
         }
 

@@ -39,8 +39,10 @@ public class GridManager : MonoBehaviour
     public int 栅格宽度;
     public int 栅格高度;
 
+
+
     [Header("初始化性能优化")]
-    public int 每帧初始化数量 = 100;
+    public int 每帧初始化数量 = 50;
 
     [Header("障碍物检测配置")]
     public float obstacleCheckRadius = 0.5f;
@@ -420,6 +422,12 @@ public class GridManager : MonoBehaviour
     public Vector3 GridToWorld(Vector2Int gridPos)
     {
         return 栅格转世界(gridPos);
+    }
+
+    // ======== 新增：IsGridPassable 英文方法（解决CS1061错误）========
+    public bool IsGridPassable(Vector2Int gridPos)
+    {
+        return 栅格是否可通行(gridPos);
     }
 
     // 检查栅格是否可通行（中文方法，兼容原代码）

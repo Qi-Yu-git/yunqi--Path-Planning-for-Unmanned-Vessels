@@ -40,6 +40,19 @@ public class ImprovedAStar : MonoBehaviour
 
     private void Start()
     {
+        // ======== 新增：初始化目标世界坐标（加在最开头）========
+        if (targetPos != null) // 先判空，避免空指针
+        {
+            targetWorldPos = targetPos.position;
+        }
+        else
+        {
+            Debug.LogError("ImprovedAStar: 未设置targetPos，路径规划目标为空！");
+            targetWorldPos = Vector3.zero;
+        }
+        // ========================================
+
+        // 你原有所有逻辑完全保留，无需修改
         Debug.Log("A*路径准备计算（等待目标点生成）");
         if (CheckDependencies())
         {
@@ -56,10 +69,12 @@ public class ImprovedAStar : MonoBehaviour
 
     private void CacheGridParameters()
     {
-        gridWidth = gridManager.栅格宽度;
-        gridHeight = gridManager.栅格高度;
-        cellSize = gridManager.栅格尺寸;
-        gridOrigin = gridManager.栅格原点;
+        // ======== 替换中文变量为英文属性 ========
+        gridWidth = gridManager.gridWidth;       // 替换 gridManager.栅格宽度
+        gridHeight = gridManager.gridHeight;     // 替换 gridManager.栅格高度
+        cellSize = gridManager.gridCellSize;     // 替换 gridManager.栅格尺寸
+        gridOrigin = gridManager.gridOrigin;     // 替换 gridManager.栅格原点
+                                                 // =======================================
         cellSizeHeuristic = cellSize * 1.0001f; // 微小偏移确保启发式不高估
     }
 
@@ -112,6 +127,21 @@ public class ImprovedAStar : MonoBehaviour
     // 协程版路径计算（带重试机制）
     private IEnumerator CalculatePathCoroutine()
     {
+        // ======== 新增：更新目标世界坐标（加在方法最开头）========
+        if (targetPos != null)
+        {
+            // 若你没有 ClampPositionToGrid 方法，直接用 targetPos.position 即可
+            targetWorldPos = ClampPositionToGrid(targetPos.position);
+            // 备用方案（无 ClampPositionToGrid 时）：targetWorldPos = targetPos.position;
+        }
+        else
+        {
+            Debug.LogError("A*路径计算失败：targetPos 未赋值！");
+            path = null;
+            yield break;
+        }
+        // ========================================================
+
         int retryCount = 0;
         while (retryCount < 3)
         {
@@ -144,8 +174,9 @@ public class ImprovedAStar : MonoBehaviour
             // 校验并修正起点/终点
             Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
             Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
-            Vector2Int startGrid = gridManager.世界转栅格(startWorldPos);
-            Vector2Int targetGrid = gridManager.世界转栅格(targetWorldPos);
+            // ======== 替换中文方法为英文方法 ========
+            Vector2Int startGrid = gridManager.WorldToGrid(startWorldPos);       // 替换 世界转栅格
+            Vector2Int targetGrid = gridManager.WorldToGrid(targetWorldPos);     // 替换 世界转栅格
 
             // 调用带搜索半径的FindValidGrid
             startGrid = FindValidGrid(startGrid, 5);
@@ -160,10 +191,10 @@ public class ImprovedAStar : MonoBehaviour
             }
 
             // 更新起点/终点世界坐标
-            startWorldPos = gridManager.栅格转世界(startGrid);
+            startWorldPos = gridManager.GridToWorld(startGrid);                 // 替换 栅格转世界
             startWorldPos.y = WATER_Y_HEIGHT;
             startPos.position = startWorldPos;
-            targetWorldPos = gridManager.栅格转世界(targetGrid);
+            targetWorldPos = gridManager.GridToWorld(targetGrid);               // 替换 栅格转世界
             targetWorldPos.y = WATER_Y_HEIGHT;
             targetPos.position = targetWorldPos;
 
@@ -225,7 +256,9 @@ public class ImprovedAStar : MonoBehaviour
     private Vector2Int FindValidGrid(Vector2Int originalGrid, int searchRange = NEIGHBOR_SEARCH_RANGE)
     {
         // 先检查原始栅格是否有效
-        if (IsValidGrid(originalGrid) && gridManager.栅格是否可通行(originalGrid))
+        // ======== 替换中文方法为英文方法 ========
+        if (IsValidGrid(originalGrid) && gridManager.IsGridPassable(originalGrid)) // 替换 栅格是否可通行
+                                                                                   // =======================================
         {
             return originalGrid;
         }
@@ -240,7 +273,9 @@ public class ImprovedAStar : MonoBehaviour
                     if (Mathf.Abs(x) == range || Mathf.Abs(y) == range) // 只检查当前范围的边界
                     {
                         Vector2Int checkGrid = new Vector2Int(originalGrid.x + x, originalGrid.y + y);
-                        if (IsValidGrid(checkGrid) && gridManager.栅格是否可通行(checkGrid))
+                        // ======== 替换中文方法为英文方法 ========
+                        if (IsValidGrid(checkGrid) && gridManager.IsGridPassable(checkGrid)) // 替换 栅格是否可通行
+                                                                                             // =======================================
                         {
                             Debug.Log($"在范围 {range} 找到有效栅格: {checkGrid}");
                             return checkGrid;

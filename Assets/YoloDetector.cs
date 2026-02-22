@@ -24,7 +24,7 @@ public class YoloDetector : MonoBehaviour
     public bool drawBoundingBoxes = true;
     public Color boxColor = Color.red;
     public Color labelColor = Color.green;
-    public float detectInterval = 0.1f;
+    public float detectInterval = 0.2f;
     public int boxLineWidth = 2;
     public int labelFontSize = 12;
 
@@ -213,8 +213,9 @@ public class YoloDetector : MonoBehaviour
         // 屏幕坐标转射线（Z轴在你的场景中是高度，这里固定高度为0）
         Ray ray = sceneCamera.ScreenPointToRay(new Vector3(screenX, screenY, 0));
 
-        // 假设地面在Z=0平面（根据你的场景调整）
-        Plane groundPlane = new Plane(Vector3.forward, 0); // Z轴朝前作为高度轴
+        // 修复后（统一为Y=0.4f，与USV_LocalPlanner一致）
+        Plane groundPlane = new Plane(Vector3.up, 0.4f);
+
         if (groundPlane.Raycast(ray, out float distance))
         {
             Vector3 worldPos = ray.GetPoint(distance);

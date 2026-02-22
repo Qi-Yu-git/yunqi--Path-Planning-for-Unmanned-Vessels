@@ -171,7 +171,7 @@ public class USV_Academy : MonoBehaviour
         if (usvAgent != null && usvAgent.enableTaskLoop)
         {
             usvAgent.ResetAgentState(maxUSVSpeed, maxEpisodeTime);
-            usvAgent.OnEpisodeBegin();
+         
         }
 
         Debug.Log($"环境已重置 - 岩石数量范围: {minRockCount}-{maxRockCount}, 最大速度: {maxUSVSpeed}");

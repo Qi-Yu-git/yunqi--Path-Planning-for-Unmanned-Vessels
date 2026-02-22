@@ -97,6 +97,7 @@ public partial class USV_LocalPlanner : MonoBehaviour
         {
             Debug.LogError("YoloDetector未找到！动态避障功能无法启用");
         }
+        Debug.Log($"collisionThreshold值：{collisionThreshold}"); // 应输出2
     }
 
     public void OnAgentActionReceived(ActionBuffers actions)

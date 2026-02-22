@@ -5,7 +5,7 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
-using System.Reflection;
+
 
 /// <summary>
 /// 无人船全局强化学习智能体
@@ -20,6 +20,8 @@ public class USV_GlobalRLAgent : Agent
     public float maxStepReward = 2f;
     [Tooltip("最小单步惩罚下限")]
     public float minStepPenalty = -1f;
+
+    private const int TOTAL_OBSERVATIONS = 128; // 与YAML中vector_observation_size一致
 
     [Header("任务循环设置")]
     [Tooltip("是否启用任务自动循环")]
@@ -51,26 +53,11 @@ public class USV_GlobalRLAgent : Agent
     private float episodeStartTime;
     private BoatController boatController;
 
+
     /// <summary>
-    /// 检查当前回合是否结束
+    /// 检查当前回合是否结束（自定义标记版，替代原有反射逻辑）
     /// </summary>
-    public bool IsEpisodeDone
-    {
-        get
-        {
-            try
-            {
-                FieldInfo fieldInfo = typeof(Agent).GetField("m_IsDone",
-                    BindingFlags.Instance | BindingFlags.NonPublic);
-                return fieldInfo != null && (bool)fieldInfo.GetValue(this);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"获取回合状态失败: {e.Message}");
-                return false;
-            }
-        }
-    }
+    public bool IsEpisodeDone { get; private set; }
 
     protected override void Awake()  // 核心修改：添加 override 关键字
     {
@@ -139,7 +126,7 @@ public class USV_GlobalRLAgent : Agent
         {
             rb.maxAngularVelocity = 5f;
             rb.useGravity = false;
-            rb.interpolation = RigidbodyInterpolation.None;
+            
         }
         else
         {
@@ -149,6 +136,9 @@ public class USV_GlobalRLAgent : Agent
 
     public override void OnEpisodeBegin()
     {
+        // ======== 新增：重置回合结束标记（加在方法最开头）========
+        IsEpisodeDone = false;
+
         if (gridManager == null)
         {
             Debug.LogWarning("无法重置回合：GridManager未初始化");
@@ -171,7 +161,8 @@ public class USV_GlobalRLAgent : Agent
             else
             {
                 Debug.LogError("未找到RandomSpawnManager，无法重置环境");
-                EndEpisode();
+                // ======== 修改：替换为自定义结束方法 ========
+                EndEpisodeCustom();
                 return;
             }
         }
@@ -198,6 +189,15 @@ public class USV_GlobalRLAgent : Agent
     }
 
     /// <summary>
+    /// 自定义结束回合方法（替代直接调用EndEpisode，标记回合结束状态）
+    /// </summary>
+    private void EndEpisodeCustom()
+    {
+        IsEpisodeDone = true; // 标记回合结束
+        EndEpisode(); // 调用ML-Agents原生方法
+    }
+
+    /// <summary>
     /// 通知船控制器加载新路径
     /// </summary>
     private void NotifyBoatLoadNewPath()
@@ -213,6 +213,7 @@ public class USV_GlobalRLAgent : Agent
             Debug.LogWarning("未找到BoatController，无法通知加载新路径");
         }
     }
+
 
     private void CleanupTensorData()
     {
@@ -237,11 +238,12 @@ public class USV_GlobalRLAgent : Agent
         // 移除保底观测值，避免重复计数
         // sensor.AddObservation(0f);  // 注释掉这行
 
+        // 优化后（替换为常量，和YAML配置联动）
         if (rb == null || target == null || gridManager == null)
         {
             Debug.LogWarning("缺少必要组件，无法收集完整观测值");
-            // 当组件缺失时，添加正确数量的占位观测值
-            for (int i = 0; i < 128; i++)  // 假设配置的大小是128
+            // 动态补全到指定数量，而非硬编码128
+            for (int i = 0; i < TOTAL_OBSERVATIONS; i++)
             {
                 sensor.AddObservation(0f);
             }
@@ -307,11 +309,23 @@ public class USV_GlobalRLAgent : Agent
             sensor.AddObservation(0f);
         }
 
-        // 验证总观测值数量
-        int totalObservations = 1 + 1 + 2 + 1 + 121 + 2;  // 计算总和
-        if (totalObservations != 128)
+        // ======== 新增动态校验+补全逻辑（加在方法最后）========
+        // 计算已添加的观测值总数
+        int addedObsCount = 1 + 1 + 2 + 1 + 121 + 2; // 对应代码中1+1+2+1+121+2的观测值
+        int missingObs = TOTAL_OBSERVATIONS - addedObsCount;
+
+        // 补全剩余观测值（避免数量不匹配）
+        for (int i = 0; i < missingObs; i++)
         {
-            Debug.LogError($"观测值数量不匹配: 实际{totalObservations}个，期望128个");
+            sensor.AddObservation(0f);
+        }
+        // ====================================================
+
+        // 验证总观测值数量
+        // （可选：修改原有验证逻辑，用常量替代硬编码）
+        if (addedObsCount + missingObs != TOTAL_OBSERVATIONS)
+        {
+            Debug.LogError($"观测值数量不匹配: 实际{addedObsCount + missingObs}个，期望{TOTAL_OBSERVATIONS}个");
         }
     }
 
@@ -342,7 +356,8 @@ public class USV_GlobalRLAgent : Agent
         if (!IsPassable(currentGrid))
         {
             AddReward(-50f);
-            EndEpisode();
+            // ======== 修改：替换为自定义结束方法 ========
+            EndEpisodeCustom();
             return;
         }
 
@@ -350,7 +365,8 @@ public class USV_GlobalRLAgent : Agent
         if (distToTarget < 2f)
         {
             AddReward(currentSpeed < MaxSpeed * 0.3f ? 100f : 50f);
-            EndEpisode();
+            // ======== 修改：替换为自定义结束方法 ========
+            EndEpisodeCustom();
             return;
         }
 
@@ -358,13 +374,15 @@ public class USV_GlobalRLAgent : Agent
         if (Time.time - episodeStartTime > currentMaxEpisodeTime)
         {
             AddReward(-20f);
-            EndEpisode();
+            // ======== 修改：替换为自定义结束方法 ========
+            EndEpisodeCustom();
             return;
         }
 
         // 更新状态
         UpdateWaypointIndex();
         lastDistToTarget = distToTarget;
+        GetComponent<USV_LocalPlanner>()?.OnAgentActionReceived(actions);
     }
 
     /// <summary>

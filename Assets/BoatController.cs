@@ -12,7 +12,7 @@ public class BoatController : MonoBehaviour
     [Tooltip("转向速度（建议1）")]
     public float rotationSpeed = 1f;          // 转向平滑系数
     [Tooltip("路径点切换距离（建议1）")]
-    public float waypointDistance = 1.5f;       // 路径点切换阈值
+    [SerializeField] private float waypointDistance = 2.0f;       // 修复：改为2.0f匹配最大速度
     public float endPointSlowRange = 2f;      // 终点前减速范围
     public float minEndSpeed = 0.5f;          // 终点前最小速度
 
@@ -29,6 +29,24 @@ public class BoatController : MonoBehaviour
     public bool isPathLoaded = false;        // 新增：标记路径是否加载完成
     private Vector3 originalTargetPos;       // 新增：存储原始目标点（关键！）
     private bool isReplaningPath = false;     // 新增：标记是否正在重规划路径
+
+    // ======== 新增 Awake 方法（核心修复1：提前初始化目标点）========
+    void Awake()
+    {
+        // 提前初始化原始目标点
+        if (pathfinder != null)
+        {
+            // ======== 修复：去掉??，直接赋值（Vector3是值类型，不会为null）========
+            originalTargetPos = pathfinder.targetWorldPos;
+            Debug.Log($"Awake提前初始化原始目标点：{originalTargetPos}");
+        }
+        else
+        {
+            Debug.LogWarning("BoatController: pathfinder 未赋值，originalTargetPos 初始化为0！");
+            originalTargetPos = Vector3.zero;
+        }
+    }
+    // ================================================================
 
     // 初始化
     void Start()
@@ -51,12 +69,13 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 初始化原始目标点（需确保pathfinder已存储目标点，或从外部传入）
-        if (pathfinder != null && pathfinder.targetWorldPos != Vector3.zero)
-        {
-            originalTargetPos = pathfinder.targetWorldPos;
-            Debug.Log($"初始化原始目标点：{originalTargetPos}");
-        }
+        // ======== 移除原有的originalTargetPos初始化（核心修复2：避免重复）========
+        // 注释掉这一段原有代码，不再重复初始化
+        // if (pathfinder != null && pathfinder.targetWorldPos != Vector3.zero)
+        // {
+        //     originalTargetPos = pathfinder.targetWorldPos;
+        //     Debug.Log($"初始化原始目标点：{originalTargetPos}");
+        // }
 
         // 等待栅格初始化后加载路径（新增协程等待）
         StartCoroutine(WaitForGridInitThenLoadPath());
