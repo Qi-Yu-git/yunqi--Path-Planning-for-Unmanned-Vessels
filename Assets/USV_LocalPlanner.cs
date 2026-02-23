@@ -171,21 +171,22 @@ public partial class USV_LocalPlanner : MonoBehaviour
     }
 
     // 动态障碍物检测与轨迹预测
+    // 动态障碍物检测与轨迹预测
     private void DetectAndPredictDynamicObstacles()
     {
-
         dynamicObstacles.Clear();
         dynamicObstacleVelocities.Clear();
 
         if (yoloDetector == null || yoloDetector.DetectedResults == null)
             return;
 
-        List<YoloResult> obstacleResults = yoloDetector.DetectedResults.FindAll(result =>
+        // 关键修复：指定完整命名空间 YoloV8Detection.YoloResult
+        List<YoloV8Detection.YoloResult> obstacleResults = yoloDetector.DetectedResults.FindAll(result =>
             result.ClassName.ToLower() == "unmanned boat" ||
             result.ClassName == "sports ball" ||
             result.ClassName == "mouse" ||
-    result.ClassName == "rock" || // 新增：YOLO识别的礁石类别名
-    result.ClassName == "obstacle"// 新增：通用障碍物类别
+            result.ClassName == "rock" || // 新增：YOLO识别的礁石类别名
+            result.ClassName == "obstacle"// 新增：通用障碍物类别
         );
 
         Debug.Log($"[LocalPlanner] 筛选出障碍物：{obstacleResults.Count}个（无人船：{obstacleResults.Count(r => r.ClassName.ToLower() == "unmanned boat")}，运动球：{obstacleResults.Count(r => r.ClassName.ToLower() == "sports ball")}）");
@@ -194,7 +195,8 @@ public partial class USV_LocalPlanner : MonoBehaviour
         // 处理每个障碍物
         for (int i = 0; i < obstacleResults.Count; i++)
         {
-            YoloResult result = obstacleResults[i];
+            // 关键修复：使用带命名空间的 YoloResult
+            YoloV8Detection.YoloResult result = obstacleResults[i];
             Vector3 worldPos = ConvertYoloToWorldPosition(result.Rect);
 
             // 修复：水域内的障碍物才参与避障
@@ -214,7 +216,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
             Vector3 predictedPos = PredictObstaclePosition(worldPos, predictedVel, dwaPredictTime);
             dynamicObstacles.Add(predictedPos);
-
 
             // 碰撞风险检测
             bool collisionRisk = IsCollisionImminent(transform.position, rb.linearVelocity, worldPos, predictedVel, dwaPredictTime);

@@ -1707,13 +1707,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8e745064f94b6d2479213637c162c9d8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableInfoLog: 0
+  enableWarningLog: 1
+  enableDetailedDetectionLog: 0
   modelPath: yolov8n.onnx
   confidenceThreshold: 0.5
   iouThreshold: 0.4
   useSceneCamera: 1
   sceneCamera: {fileID: 537956247}
   webCamResolution: {x: 1280, y: 720}
-  logDetectionResults: 1
   drawBoundingBoxes: 1
   boxColor: {r: 1, g: 0, b: 0, a: 1}
   labelColor: {r: 0, g: 1, b: 0, a: 1}

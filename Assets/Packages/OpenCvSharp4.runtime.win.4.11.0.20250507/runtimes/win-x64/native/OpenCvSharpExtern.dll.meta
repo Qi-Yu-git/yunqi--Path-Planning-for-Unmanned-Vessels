@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 4809e87068d44fcebe09ff57500484b4
+guid: 370af4bd1eff4c0ca49406151ec0c7ed
 labels:
 - NuGetForUnity
 PluginImporter:
@@ -41,23 +41,25 @@ PluginImporter:
         Exclude iOS: 1
         Exclude tvOS: 1
     Editor:
-      enabled: 1
+      enabled: 0
       settings:
         CPU: x86_64
         DefaultValueInitialized: true
         OS: Windows
     Linux64:
       enabled: 0
-      settings: {}
+      settings:
+        CPU: None
     OSXUniversal:
       enabled: 0
-      settings: {}
+      settings:
+        CPU: None
     Win:
       enabled: 0
       settings:
         CPU: None
     Win64:
-      enabled: 1
+      enabled: 0
       settings:
         CPU: x86_64
     WindowsStoreApps:

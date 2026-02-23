@@ -6,7 +6,9 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Threading;
 using UnityRect = UnityEngine.Rect;
+using YoloV8Detection;
 
+// 移除别名，全程使用完整命名空间路径
 public class YoloDetector : MonoBehaviour
 {
     [Header("日志配置【精细化控制】")]
@@ -35,7 +37,7 @@ public class YoloDetector : MonoBehaviour
     public int boxLineWidth = 2;
     public int labelFontSize = 12;
 
-    // 私有成员
+    // 私有成员 - 全程使用完整命名空间
     private YoloV8Engine _yoloEngine;
     private Mat _frameMat;
     private Texture2D _sceneCamTexture;
@@ -45,25 +47,26 @@ public class YoloDetector : MonoBehaviour
     private GUIStyle _labelStyle;
     private float _lastDetectTime;
     private readonly object _resultLock = new object();
-    private List<YoloResult> _detectionResults = new List<YoloResult>();
+    private List<YoloV8Detection.YoloResult> _detectionResults = new List<YoloV8Detection.YoloResult>();
     private int _lastFrameWidth;
     private int _lastFrameHeight;
 
-    // 公开线程安全的检测结果
-    public List<YoloResult> DetectedResults
+    // 公开线程安全的检测结果 - 全程使用完整命名空间
+    public List<YoloV8Detection.YoloResult> DetectedResults
     {
         get
         {
             lock (_resultLock)
             {
-                return new List<YoloResult>(_detectionResults);
+                return new List<YoloV8Detection.YoloResult>(_detectionResults);
             }
         }
         private set
         {
             lock (_resultLock)
             {
-                _detectionResults = value ?? new List<YoloResult>();
+                // 修复CS0019：??运算符错误（List是引用类型，先判断null再赋值）
+                _detectionResults = value == null ? new List<YoloV8Detection.YoloResult>() : value;
             }
         }
     }
@@ -103,7 +106,8 @@ public class YoloDetector : MonoBehaviour
     {
         try
         {
-            List<YoloResult> results = new();
+            // 全程使用完整命名空间
+            List<YoloV8Detection.YoloResult> results = new List<YoloV8Detection.YoloResult>();
             int frameWidth = 0;
             int frameHeight = 0;
 
@@ -112,7 +116,8 @@ public class YoloDetector : MonoBehaviour
                 (Mat sceneMat, int w, int h) = await CaptureSceneCameraFrameAsync();
                 if (sceneMat != null && !sceneMat.Empty())
                 {
-                    results = _yoloEngine.Detect(sceneMat);
+                    // 显式指定命名空间，消除所有歧义
+                    results = new List<YoloV8Detection.YoloResult>(_yoloEngine.Detect(sceneMat));
                     frameWidth = w;
                     frameHeight = h;
                     sceneMat.Release();
@@ -123,7 +128,7 @@ public class YoloDetector : MonoBehaviour
                 (Mat webMat, int w, int h) = CaptureWebCameraFrame();
                 if (webMat != null && !webMat.Empty())
                 {
-                    results = _yoloEngine.Detect(webMat);
+                    results = new List<YoloV8Detection.YoloResult>(_yoloEngine.Detect(webMat));
                     frameWidth = w;
                     frameHeight = h;
                     webMat.Release();
@@ -133,10 +138,10 @@ public class YoloDetector : MonoBehaviour
             // 核心修复：同步帧尺寸+检测结果
             lock (_resultLock)
             {
-                _detectionResults = new List<YoloResult>(results);
+                _detectionResults = new List<YoloV8Detection.YoloResult>(results);
                 _lastFrameWidth = frameWidth;
                 _lastFrameHeight = frameHeight;
-                DetectedResults = new List<YoloResult>(results);
+                DetectedResults = new List<YoloV8Detection.YoloResult>(results);
 
                 // 普通日志受开关控制
                 LogInfo($"[Yolo] 检测结果更新：{results.Count}个目标，绘制开关：{drawBoundingBoxes}，帧尺寸：{frameWidth}x{frameHeight}");
@@ -400,7 +405,7 @@ public class YoloDetector : MonoBehaviour
     /// <summary>
     /// 详细检测日志输出（单独开关控制）
     /// </summary>
-    private void ProcessDetailedDetectionLogs(List<YoloResult> results)
+    private void ProcessDetailedDetectionLogs(List<YoloV8Detection.YoloResult> results)
     {
         if (results == null || results.Count == 0)
         {
@@ -469,7 +474,7 @@ public class YoloDetector : MonoBehaviour
     }
 
     // 修复：红框绘制（适配任意分辨率）
-    private void DrawSingleBoundingBox(YoloResult result)
+    private void DrawSingleBoundingBox(YoloV8Detection.YoloResult result)
     {
         if (sceneCamera == null) return;
 
