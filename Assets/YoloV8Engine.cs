@@ -382,18 +382,24 @@ public class YoloV8Engine : IDisposable
         {
             expectedCols = 84;
             _isNoSeparateConfidence = true; // 强制切换为84列模式
-            Debug.LogWarning($"📌 检测到模型输出84列（4坐标+80类别），自动适配COCO80类模式");
-        }
+            if (_logModelProcessing)
+                Debug.Log($"📌 检测到模型输出84列（4坐标+80类别），自动适配COCO80类模式");
+        
+    }
         else if (cols == 85)
         {
             expectedCols = 85;
             _isNoSeparateConfidence = false; // 强制切换为85列模式
-            Debug.LogWarning($"📌 检测到模型输出85列（4坐标+1置信度+80类别），自动适配");
+            if (_logModelProcessing)
+                Debug.Log($"📌 检测到模型输出85列（4坐标+1置信度+80类别），自动适配");
+
         }
         else if (cols == 4)
         {
             expectedCols = 4;
-            Debug.LogWarning($"📌 检测到模型仅输出4列（纯坐标），自动适配无类别模式");
+            if (_logModelProcessing)
+                Debug.Log($"📌 检测到模型仅输出4列（纯坐标），自动适配无类别模式");
+
         }
         else
         {
