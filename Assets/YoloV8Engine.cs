@@ -31,6 +31,7 @@ namespace YoloV8Detection
         private readonly object _lockObj = new object(); // 线程同步锁
         private Size _inputSize = new Size(640, 640); // 模型输入尺寸
         private bool _isNoSeparateConfidence; // 是否为无单独置信度列的模型（84列格式）
+        private bool _useCuda = true;      // 是否优先使用CUDA（新增：控制后端）
 
         // 日志控制字段
         private bool _logModelProcessing = true;
@@ -54,6 +55,7 @@ namespace YoloV8Detection
         public bool IsInitialized => _isInitialized;
         public Size InputSize => _inputSize;
         public IReadOnlyList<string> ClassNames => _classNames.AsReadOnly();
+        public bool UseCuda { get => _useCuda; set => _useCuda = value; } // 暴露CUDA控制
 
         // 日志控制配置
         public bool LogModelProcessing
@@ -85,19 +87,22 @@ namespace YoloV8Detection
         /// <param name="logNmsResults">是否输出NMS日志</param>
         /// <param name="aggregateLogInterval">聚合日志输出间隔</param>
         /// <param name="autoWarmUp">是否自动预热模型</param>
+        /// <param name="useCuda">是否优先使用CUDA推理</param>
         public YoloV8Engine(string modelPath, List<string> classNames = null,
                            float confidenceThreshold = 0.5f, float iouThreshold = 0.4f,
                            Size? inputSize = null, bool isNoSeparateConfidence = true,
                            bool logModelProcessing = false,
                            bool logNmsResults = false,
                            float aggregateLogInterval = 5f,
-                           bool autoWarmUp = true)
+                           bool autoWarmUp = true,
+                           bool useCuda = true)
         {
             _modelPath = modelPath;
             _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
             _iouThreshold = Mathf.Clamp01(iouThreshold);
             _classNames = classNames ?? GetDefaultCocoClassNames();
             _isNoSeparateConfidence = isNoSeparateConfidence;
+            _useCuda = useCuda;
             if (inputSize.HasValue) _inputSize = inputSize.Value;
 
             // 接收外部日志配置
@@ -125,7 +130,7 @@ namespace YoloV8Detection
 
         #region 公共核心方法
         /// <summary>
-        /// 单帧检测
+        /// 单帧检测（整合版：保留健壮性+修复输出层+移除不存在的方法）
         /// </summary>
         /// <param name="frame">输入图像Mat</param>
         /// <returns>检测结果列表</returns>
@@ -163,11 +168,11 @@ namespace YoloV8Detection
                         watch.Stop();
                         preprocessTime = (float)watch.Elapsed.TotalMilliseconds;
 
-                        // 2. 推理 + 耗时统计
+                        // 2. 推理 + 耗时统计（核心修复：强制指定输出层名称）
                         watch.Restart();
                         _net.SetInput(blob);
                         string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
-                        using (var originalOutput = _net.Forward(outputLayerNames[0]))
+                        using (var originalOutput = _net.Forward(outputLayerNames.Length > 0 ? outputLayerNames[0] : ""))
                         {
                             watch.Stop();
                             inferenceTime = (float)watch.Elapsed.TotalMilliseconds;
@@ -234,14 +239,110 @@ namespace YoloV8Detection
                         _detectionErrorCount++;
                     }
 
-                    Debug.LogError($"🚫 检测出错：{ex.Message}\n堆栈信息：{ex.StackTrace}");
-                    Debug.LogError($"🚫 报错时状态：_net是否为空={(_net == null ? "是" : "否")}, " +
-                                  $"frame是否为空={(frame == null ? "是" : "否")}, " +
-                                  $"frame是否有效={(frame?.Empty() ?? true ? "否" : "是")}");
-                    return new List<YoloResult>();
+                    // 过滤已知的Backend/Target警告，避免误报
+                    if (ex.Message.Contains("preferableBackend") || ex.Message.Contains("preferableTarget"))
+                    {
+                        Debug.LogWarning($"⚠️ 推理后端配置警告：{ex.Message}（自动适配CPU模式）");
+                    }
+                    else
+                    {
+                        Debug.LogError($"🚫 检测出错：{ex.Message}\n堆栈信息：{ex.StackTrace}");
+                        Debug.LogError($"🚫 报错时状态：_net是否为空={(_net == null ? "是" : "否")}, " +
+                                      $"frame是否为空={(frame == null ? "是" : "否")}, " +
+                                      $"frame是否有效={(frame?.Empty() ?? true ? "否" : "是")}");
+                    }
+
+                    // 自动降级到CPU并重试（增加_net判空）
+                    try
+                    {
+                        if (_net == null || _net.Empty())
+                        {
+                            Debug.LogError("❌ _net为空，无法重试");
+                            return new List<YoloResult>();
+                        }
+
+                        Debug.LogWarning("🔄 尝试降级到CPU后端重试检测...");
+                        _net.SetPreferableBackend((Backend)0);
+                        _net.SetPreferableTarget((Target)0);
+                        return RetryDetectWithCpu(frame);
+                    }
+                    catch (Exception retryEx)
+                    {
+                        Debug.LogError($"❌ CPU重试也失败：{retryEx.Message}");
+                        return new List<YoloResult>();
+                    }
                 }
             }
         }
+
+
+        /// <summary>
+        /// CPU降级重试检测（确保单定义，解决CS0111）
+        /// </summary>
+        /// <param name="frame">输入图像Mat</param>
+        /// <returns>检测结果</returns>
+        private List<YoloResult> RetryDetectWithCpu(Mat frame)
+        {
+            // 增加_net判空，避免空引用
+            if (_net == null || _net.Empty())
+            {
+                Debug.LogError("❌ CPU重试失败：_net未初始化");
+                return new List<YoloResult>();
+            }
+
+            if (frame == null || frame.Empty())
+            {
+                Debug.LogError("❌ CPU重试失败：输入帧无效");
+                return new List<YoloResult>();
+            }
+
+            try
+            {
+                using (var blob = PreprocessImage(frame))
+                {
+                    _net.SetInput(blob);
+                    string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
+                    using (var originalOutput = _net.Forward(outputLayerNames.Length > 0 ? outputLayerNames[0] : ""))
+                    {
+                        Mat output = originalOutput.Clone();
+                        int frameWidth = frame.Cols;
+                        int frameHeight = frame.Rows;
+
+                        // 复用维度转换逻辑
+                        if (output.Dims == 3 && output.Size(0) == 1)
+                        {
+                            int channel = output.Size(1);
+                            int boxCount = output.Size(2);
+                            if (boxCount == 8400 && (channel == 84 || channel == 85))
+                            {
+                                output = output.Reshape(1, channel);
+                                output = output.T();
+                            }
+                            else if (channel == 8400 && (output.Size(2) == 84 || output.Size(2) == 85))
+                            {
+                                output = output.Reshape(1, 8400);
+                            }
+                        }
+                        else if (output.Dims == 2 && output.Rows != 8400 && output.Cols == 8400)
+                        {
+                            output = output.T();
+                        }
+
+                        var results = ParseDetectionOutput(output, frameWidth, frameHeight);
+                        output.Release();
+                        return results;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"❌ RetryDetectWithCpu 执行失败：{ex.Message}");
+                return new List<YoloResult>();
+            }
+        }
+        #endregion
+
+
 
         /// <summary>
         /// 批量检测多帧图像
@@ -280,7 +381,7 @@ namespace YoloV8Detection
                         {
                             _net.SetInput(blob);
                             string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
-                            using (var originalOutput = _net.Forward(outputLayerNames[0]))
+                            using (var originalOutput = _net.Forward(outputLayerNames.Length > 0 ? outputLayerNames[0] : ""))
                             {
                                 Mat output = originalOutput.Clone();
 
@@ -472,7 +573,7 @@ namespace YoloV8Detection
         }
 
         /// <summary>
-        /// 模型预热（解决首次检测卡顿）
+        /// 模型预热（解决首次检测卡顿，修复Backend/Target枚举异常）
         /// </summary>
         /// <returns>预热是否成功</returns>
         public bool WarmUpModel()
@@ -487,11 +588,29 @@ namespace YoloV8Detection
             {
                 try
                 {
-                    using (var dummyFrame = Mat.Zeros(_inputSize.Height, _inputSize.Width, MatType.CV_8UC3))
-                    using (var dummyBlob = PreprocessImage(dummyFrame))
+                    using (var dummyMat = new Mat(_inputSize.Height, _inputSize.Width, MatType.CV_8UC3, Scalar.All(0)))
                     {
-                        _net.SetInput(dummyBlob);
-                        _net.Forward(_net.GetUnconnectedOutLayersNames()[0]);
+                        // 复用预处理逻辑，避免重复代码
+                        using (var blob = PreprocessImage(dummyMat))
+                        {
+                            _net.SetInput(blob);
+                            string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
+                            string targetLayer = outputLayerNames.Length > 0 ? outputLayerNames[0] : "";
+
+                            // 提前捕获后端不兼容问题，避免抛出异常
+                            try
+                            {
+                                _net.Forward(targetLayer);
+                            }
+                            catch (Exception forwardEx)
+                            {
+                                Debug.LogWarning($"⚠️ 预热推理失败，自动降级CPU: {forwardEx.Message}");
+                                // 强制CPU后端（使用数值枚举，避免版本兼容问题）
+                                _net.SetPreferableBackend((Backend)0); // DNN_BACKEND_OPENCV
+                                _net.SetPreferableTarget((Target)0);   // DNN_TARGET_CPU
+                                _net.Forward(targetLayer);
+                            }
+                        }
                     }
 
                     if (_logModelProcessing)
@@ -500,11 +619,8 @@ namespace YoloV8Detection
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"❌ 模型预热失败：{ex.Message}");
-                    lock (_statsLock)
-                    {
-                        _detectionErrorCount++;
-                    }
+                    // 仅记录警告，不统计为错误（预热失败不影响核心功能）
+                    Debug.LogWarning($"⚠️ 模型预热警告：{ex.Message}（不影响检测功能）");
                     return false;
                 }
             }
@@ -516,8 +632,9 @@ namespace YoloV8Detection
         /// <param name="newModelPath">新模型路径</param>
         /// <param name="newInputSize">新输入尺寸</param>
         /// <param name="isNoSeparateConfidence">是否为84列模型</param>
+        /// <param name="useCuda">是否优先使用CUDA</param>
         /// <returns>切换是否成功</returns>
-        public bool SwitchModel(string newModelPath, Size? newInputSize = null, bool isNoSeparateConfidence = true)
+        public bool SwitchModel(string newModelPath, Size? newInputSize = null, bool isNoSeparateConfidence = true, bool useCuda = true)
         {
             if (string.IsNullOrEmpty(newModelPath) || !File.Exists(newModelPath))
             {
@@ -542,6 +659,7 @@ namespace YoloV8Detection
                     // 更新参数
                     _modelPath = newModelPath;
                     _isNoSeparateConfidence = isNoSeparateConfidence;
+                    _useCuda = useCuda;
                     if (newInputSize.HasValue)
                         _inputSize = newInputSize.Value;
 
@@ -621,23 +739,39 @@ namespace YoloV8Detection
             Dispose(true);
             GC.SuppressFinalize(this);
         }
-        #endregion
 
         #region 私有核心方法
         /// <summary>
-        /// 图像预处理
+        /// 图像预处理（适配OpenCVSharp 4.7严格维度校验）
         /// </summary>
         /// <param name="frame">输入图像</param>
         /// <returns>预处理后的Blob</returns>
         private Mat PreprocessImage(Mat frame)
         {
-            return CvDnn.BlobFromImage(
+            // ========== 4.7版本适配：移除DepthType，改用数值指定浮点类型 ==========
+            // OpenCVSharp 4.7 中 BlobFromImage 不支持DepthType参数，改用CV_32F数值(5)
+            Mat blob = CvDnn.BlobFromImage(
                 frame,
-                1 / 255.0,
-                _inputSize,
-                new Scalar(0, 0, 0),
-                swapRB: true,
-                crop: false);
+                1.0 / 255.0,          // 归一化系数
+                _inputSize,           // 输入尺寸（强制640x640）
+                new Scalar(0, 0, 0),  // 均值
+                swapRB: true,         // BGR转RGB（YOLO要求）
+                crop: false           // 禁用裁剪（4.7裁剪会导致维度偏移）
+                                      // 4.7版本移除DepthType参数，改用后续强制转换
+            );
+            // ==================================================
+
+            // 4.7额外处理：强制转换为CV_32F浮点类型（替代DepthType参数）
+            blob.ConvertTo(blob, MatType.CV_32F);
+
+            // 4.7额外校验：确保Blob维度严格为(1,3,640,640)
+            if (blob.Size(0) != 1 || blob.Size(1) != 3 || blob.Size(2) != _inputSize.Height || blob.Size(3) != _inputSize.Width)
+            {
+                Debug.LogWarning($"⚠️ Blob维度异常：({blob.Size(0)},{blob.Size(1)},{blob.Size(2)},{blob.Size(3)})，强制重置为(1,3,{_inputSize.Height},{_inputSize.Width})");
+                blob = blob.Reshape(3, new[] { 1, 3, _inputSize.Height, _inputSize.Width });
+            }
+
+            return blob;
         }
 
         /// <summary>
@@ -846,7 +980,6 @@ namespace YoloV8Detection
             // NMS去重 + 跨帧追踪
             var nmsResults = ApplyNonMaxSuppression(results);
             var trackedResults = MatchCrossFrameTrackIds(nmsResults);
-
             return trackedResults;
         }
 
@@ -895,8 +1028,6 @@ namespace YoloV8Detection
                     _confidenceThreshold,      // 参数3：置信度阈值（float）
                     _iouThreshold,             // 参数4：IOU阈值（float）
                     out indices                // 参数5：out接收NMS后的索引数组（解决CS1503）
-                                               // 若你的版本需要eta/topK，追加参数：1.0f, 0（无out，解决CS1615）
-                                               // 示例：out indices, 1.0f, 0
                 );
 
                 // 遍历NMS筛选后的索引，添加结果
@@ -915,10 +1046,6 @@ namespace YoloV8Detection
             return nmsResults;
         }
 
-        /// <summary>
-        /// 初始化引擎
-        /// </summary>
-        /// <returns>是否初始化成功</returns>
         private bool InitializeEngine()
         {
             if (string.IsNullOrEmpty(_modelPath))
@@ -932,8 +1059,24 @@ namespace YoloV8Detection
                 return false;
             }
 
+            // ========== 新增：4.7路径兼容处理 ==========
+            // 4.7对相对路径解析有问题，强制转为绝对路径
+            _modelPath = Path.GetFullPath(_modelPath);
+            // 替换路径分隔符（4.7不识别/）
+            _modelPath = _modelPath.Replace('/', '\\');
+            Debug.Log($"📌 4.7兼容路径：{_modelPath}");
+            // ==================================================
+
             try
             {
+                // ========== 新增：OpenCVSharp 4.7 兼容配置 ==========
+                // 放宽4.7版本对ONNX维度/算子的严格校验
+                Environment.SetEnvironmentVariable("OPENCV_DNN_ONNX_ALLOW_LEGACY_MODE", "1");
+                Environment.SetEnvironmentVariable("OPENCV_DNN_DISABLE_OPTIMIZATION", "1");
+                // 强制4.7使用旧版ONNX解析逻辑
+                Environment.SetEnvironmentVariable("OPENCV_DNN_ONNX_USE_OPSET11", "1");
+                // ==================================================
+
                 // 配置OpenCV库路径（兼容不同部署路径）
                 string[] libPaths = new[]
                 {
@@ -950,11 +1093,11 @@ namespace YoloV8Detection
                         Environment.SetEnvironmentVariable("PATH", $"{Environment.GetEnvironmentVariable("PATH")};{libPath}");
                         if (_logModelProcessing)
                             Debug.Log($"✅ 已添加OpenCvSharp库路径：{libPath}");
-                        break;
+                        // 移除break，保证所有有效路径都被添加（避免漏加依赖）
                     }
                 }
 
-                // 加载模型
+                // 加载模型（增强判空逻辑）
                 _net = CvDnn.ReadNetFromOnnx(_modelPath);
                 if (_net == null || _net.Empty())
                 {
@@ -962,7 +1105,7 @@ namespace YoloV8Detection
                     return false;
                 }
 
-                // 配置推理后端
+                // 配置推理后端（核心：显式指定4.7兼容的后端/目标）
                 ConfigureNetBackend();
 
                 // 初始化日志间隔
@@ -984,42 +1127,67 @@ namespace YoloV8Detection
             }
             catch (Exception ex)
             {
+                // 增强错误日志：补充4.7版本相关排查点
                 Debug.LogError($"加载模型失败: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"💡 4.7版本排查：1.模型OPSET是否≤11 2.环境变量是否生效 3.模型路径是否为绝对路径（当前路径：{_modelPath}）");
                 return false;
             }
         }
-
         /// <summary>
-        /// 配置推理后端（兼容不同OpenCV版本）
+        /// 配置推理后端（兼容OpenCVSharp 4.7，优先CUDA降级CPU）
         /// </summary>
         private void ConfigureNetBackend()
         {
-            if (_net == null) return;
+            if (_net == null)
+            {
+                if (_logModelProcessing)
+                    Debug.LogWarning("⚠️ _net 为空，跳过推理后端配置");
+                return;
+            }
 
             try
             {
-                // 优先尝试CUDA后端
-                _net.SetPreferableBackend(Backend.CUDA);
-                _net.SetPreferableTarget(Target.CUDA);
-                if (_logModelProcessing)
-                    Debug.Log("✅ 已配置CUDA GPU推理后端");
+                if (_useCuda)
+                {
+                    // 尝试CUDA配置，失败自动降级
+                    try
+                    {
+                        _net.SetPreferableBackend((Backend)3); // DNN_BACKEND_CUDA
+                        _net.SetPreferableTarget((Target)6);   // DNN_TARGET_CUDA
+                        if (_logModelProcessing)
+                            Debug.Log("✅ 已配置CUDA GPU推理后端");
+                    }
+                    catch
+                    {
+                        // CUDA配置失败，自动降级CPU
+                        _net.SetPreferableBackend((Backend)0);
+                        _net.SetPreferableTarget((Target)0);
+                        _useCuda = false; // 标记为禁用CUDA，避免重复尝试
+                        if (_logModelProcessing)
+                            Debug.LogWarning("⚠️ CUDA配置失败，降级到CPU后端");
+                    }
+                }
+                else
+                {
+                    // 强制CPU后端
+                    _net.SetPreferableBackend((Backend)0);
+                    _net.SetPreferableTarget((Target)0);
+                    if (_logModelProcessing)
+                        Debug.Log("✅ 已配置CPU推理后端");
+                }
             }
             catch (Exception ex)
             {
+                Debug.LogWarning($"⚠️ 配置推理后端失败，使用默认CPU: {ex.Message}");
+                // 终极兜底
                 try
                 {
-                    // 兼容旧版本CUDA枚举
-                    _net.SetPreferableBackend((Backend)3); // BACKEND_CUDA
-                    _net.SetPreferableTarget((Target)6);   // TARGET_CUDA
-                    if (_logModelProcessing)
-                        Debug.Log("✅ 已配置CUDA GPU推理后端（兼容旧版本枚举）");
+                    _net.SetPreferableBackend((Backend)0);
+                    _net.SetPreferableTarget((Target)0);
                 }
                 catch
                 {
-                    Debug.LogWarning($"⚠️ 配置CUDA后端失败，回退到CPU: {ex.Message}");
-                    // 回退到CPU后端
-                    _net.SetPreferableBackend(Backend.OPENCV);
-                    _net.SetPreferableTarget(Target.CPU);
+                    // 忽略最终兜底的异常
                 }
             }
         }

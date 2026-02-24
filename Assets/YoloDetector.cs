@@ -166,18 +166,16 @@ public class YoloDetector : MonoBehaviour
     {
         try
         {
-            if (!Directory.Exists(Application.streamingAssetsPath))
-            {
-                Directory.CreateDirectory(Application.streamingAssetsPath);
-                // 警告日志受开关控制
-                LogWarning("已自动创建StreamingAssets目录，请将模型文件放入该目录");
-            }
+            // 【关键修改】删除StreamingAssets相关判断（无需创建该目录）
+            // 直接拼接Assets/Models目录的模型路径
+            string fullModelPath = Path.Combine(Application.dataPath, "Models/yolov8n.onnx");
+            // 补充：兼容Windows路径分隔符
+            fullModelPath = fullModelPath.Replace('/', '\\');
 
-            string fullModelPath = Path.Combine(Application.streamingAssetsPath, modelPath);
             if (!File.Exists(fullModelPath))
             {
-                // 错误日志始终输出
-                Debug.LogError($"模型文件不存在：{fullModelPath}");
+                // 错误日志始终输出（更新路径提示）
+                Debug.LogError($"模型文件不存在：{fullModelPath}\n请确认模型已放入Assets/Models目录");
                 return;
             }
 
@@ -192,8 +190,9 @@ public class YoloDetector : MonoBehaviour
 
             if (_yoloEngine.IsInitialized)
             {
-                // 普通日志受开关控制
+                // 普通日志受开关控制（新增路径日志）
                 LogInfo($"✅ YOLO引擎初始化成功！类别数：{_yoloEngine.ClassNames.Count}");
+                LogInfo($"📌 4.7兼容路径：{fullModelPath}"); // 新增验证日志
             }
             else
             {
