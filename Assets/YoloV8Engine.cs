@@ -1105,6 +1105,41 @@ namespace YoloV8Detection
                     return false;
                 }
 
+                // 适配OpenCVSharp 4.7.0：移除DnnInvoke依赖，直接验证CUDA可用性
+                try
+                {
+                    // 第一步：尝试配置CUDA后端（用数值枚举避免枚举名不兼容）
+                    _net.SetPreferableBackend((Backend)3); // DNN_BACKEND_CUDA
+                    _net.SetPreferableTarget((Target)6);   // DNN_TARGET_CUDA
+
+                    // 第二步：用空推理验证CUDA是否真的可用（避免配置成功但运行失败）
+                    using (var dummyBlob = CvDnn.BlobFromImage(
+                        new Mat(_inputSize.Height, _inputSize.Width, MatType.CV_8UC3, Scalar.All(0)),
+                        1.0 / 255.0,
+                        _inputSize,
+                        new Scalar(0, 0, 0),
+                        swapRB: true,
+                        crop: false))
+                    {
+                        _net.SetInput(dummyBlob);
+                        string[] outputLayers = _net.GetUnconnectedOutLayersNames();
+                        _net.Forward(outputLayers.Length > 0 ? outputLayers[0] : "");
+
+                        // 能走到这里说明CUDA完全可用
+                        Debug.Log("✅ CUDA配置成功！YOLO将使用GPU推理");
+                        _useCuda = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // CUDA配置/推理失败，自动降级到CPU
+                    Debug.LogWarning($"⚠️ CUDA不可用（原因：{ex.Message}），自动切换到CPU推理");
+                    _net.SetPreferableBackend((Backend)0); // DNN_BACKEND_OPENCV
+                    _net.SetPreferableTarget((Target)0);   // DNN_TARGET_CPU
+                    _useCuda = false;
+                }
+
+
                 // 配置推理后端（核心：显式指定4.7兼容的后端/目标）
                 ConfigureNetBackend();
 
