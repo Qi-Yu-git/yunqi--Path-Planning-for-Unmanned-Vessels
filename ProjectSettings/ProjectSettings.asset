@@ -683,7 +683,8 @@ PlayerSettings:
   webGLWebAssemblyBigInt: 0
   webGLCloseOnQuit: 0
   webWasm2023: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    Standalone: DISABLE_SPEEDTREE_POSTPROCESSOR
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}
