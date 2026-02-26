@@ -5,7 +5,6 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
-using System.Reflection; // 反射必备（兜底方案）
 
 
 /// <summary>
@@ -65,14 +64,8 @@ public class USV_GlobalRLAgent : Agent
         base.Awake();  // 新增：调用父类 Agent 的 Awake() 方法，保证 MLAgents 底层逻辑正常执行
 
         boatController = GetComponent<BoatController>();
-        // 兼容高低版本Unity：自动切换Find API（2021.3+用新API，低版本用旧API）
-#if UNITY_2021_3_OR_NEWER
-        gridManager = UnityEngine.Object.FindAnyObjectByType<GridManager>();
-        globalPathfinder = UnityEngine.Object.FindAnyObjectByType<ImprovedAStar>();
-#else
-    gridManager = UnityEngine.Object.FindObjectOfType<GridManager>();
-    globalPathfinder = UnityEngine.Object.FindObjectOfType<ImprovedAStar>();
-#endif
+        gridManager = UnityEngine.Object.FindFirstObjectByType<GridManager>();  // 顺带修复 Object 歧义（可选）
+        globalPathfinder = UnityEngine.Object.FindFirstObjectByType<ImprovedAStar>();  // 顺带修复 Object 歧义（可选）
         rb = GetComponent<Rigidbody>();
 
         if (gridManager == null)
@@ -81,49 +74,6 @@ public class USV_GlobalRLAgent : Agent
         }
         else
         {
-            StartCoroutine(WaitForGridInit());
-        }
-
-        // 优化点1：给Academy.Instance加空值检查（避免空指针）
-        if (Academy.Instance != null)
-        {
-            Academy.Instance.OnEnvironmentReset += () =>
-            {
-                if (safePositions == null || safePositions.Count == 0)
-                {
-                    Debug.LogWarning("安全位置为空，重新生成");
-                    GenerateSafePositions();
-                }
-            };
-        }
-        else
-        {
-            Debug.LogWarning("Academy.Instance 为空，无法监听环境重置事件");
-        }
-
-        // ========== 核心修复：反射方式访问IsCommunicatorConnected（彻底解决CS1061） ==========
-        bool isConnected = false;
-        if (Academy.Instance != null)
-        {
-            // 反射获取属性（兼容1.1.0所有场景，绕过编译期检查）
-            PropertyInfo prop = typeof(Academy).GetProperty(
-                "IsCommunicatorConnected",
-                BindingFlags.Public | BindingFlags.Instance
-            );
-            if (prop != null)
-            {
-                isConnected = (bool)prop.GetValue(Academy.Instance);
-            }
-            else
-            {
-                Debug.LogWarning("未找到Academy的IsCommunicatorConnected属性，可能MLAgents版本不兼容");
-            }
-        }
-
-        // 兜底：如果训练器未连接，手动初始化安全位置
-        if (!isConnected)
-        {
-            Debug.Log("ML-Agents训练器未连接，预生成安全位置");
             StartCoroutine(WaitForGridInit());
         }
     }
@@ -176,7 +126,7 @@ public class USV_GlobalRLAgent : Agent
         {
             rb.maxAngularVelocity = 5f;
             rb.useGravity = false;
-            
+
         }
         else
         {
