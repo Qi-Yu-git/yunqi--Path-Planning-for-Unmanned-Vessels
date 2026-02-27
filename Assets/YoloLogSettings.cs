@@ -2,6 +2,7 @@
 using YoloV8Detection;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Collections;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -256,7 +257,7 @@ namespace YoloV8Detection
         }
         #endregion
 
-        #region 原有缓存+同步逻辑（兼容原有代码）
+        #region 初始化与生命周期逻辑
         // 缓存当前配置（用于检测面板修改）
         private bool _lastGlobalLogEnabled;
         private LogLevel _lastGlobalLogLevel;
@@ -268,9 +269,8 @@ namespace YoloV8Detection
         private List<string> _lastLogIncludedClasses = new List<string>();
         private List<string> _lastLogExcludedClasses = new List<string>();
 
-        // 日志模块核心引用
-        private YoloDetector _cachedDetector;
-        private YoloV8Engine _cachedEngine;
+        // 编辑器模式标记
+        private bool _editorRetryStarted = false;
 
         private void Awake()
         {
@@ -286,18 +286,13 @@ namespace YoloV8Detection
             DontDestroyOnLoad(gameObject);
             // 初始化模块配置缓存
             InitModuleConfig();
-            // 【核心修改】默认关闭高频检测日志，解决刷屏
+            // 默认关闭高频检测日志，解决刷屏
             logDetectionResults = false;
             logModelProcessing = false;
             enableLogInfo = false; // 关闭普通Info日志，只保留Warn/Error
-                                   // 初始化缓存
+            // 初始化缓存
             CacheCurrentSettings();
-            // 预加载核心引用
-            PreloadCoreReferences();
-            // 启动时强制同步一次配置
-            SyncSettingsToEngineImmediately();
         }
-
 
         /// <summary>
         /// 初始化模块配置默认值
@@ -315,27 +310,53 @@ namespace YoloV8Detection
 
         private void Start()
         {
-            SyncSettingsToEngineImmediately();
             ResetUnityLogFilter();
         }
 
-#if UNITY_EDITOR
+        // 合并的 OnEnable 方法
         private void OnEnable()
         {
+#if UNITY_EDITOR
             EditorApplication.update += SyncSettingsInEditor;
-            SyncSettingsToEngineImmediately();
+            // 编辑器模式下启动配置检测，不执行同步
+            if (!Application.isPlaying && !_editorRetryStarted)
+            {
+                _editorRetryStarted = true;
+            }
+#endif
+            // 触发配置变更事件，通知监听者
+            TriggerSettingsChanged();
         }
 
+        // 合并的 OnDisable 方法
         private void OnDisable()
         {
+#if UNITY_EDITOR
             EditorApplication.update -= SyncSettingsInEditor;
+            _editorRetryStarted = false;
+#endif
         }
 
+        private void OnDestroy()
+        {
+            // 清空单例引用
+            if (_instance == this)
+            {
+                _instance = null;
+            }
+#if UNITY_EDITOR
+            _editorRetryStarted = false;
+#endif
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// 编辑器模式下检测配置变更
+        /// </summary>
         private void SyncSettingsInEditor()
         {
             if (IsSettingsChanged())
             {
-                SyncSettingsToEngineImmediately();
                 CacheCurrentSettings();
                 TriggerSettingsChanged();
             }
@@ -348,22 +369,8 @@ namespace YoloV8Detection
 
             if (IsSettingsChanged())
             {
-                SyncSettingsToEngineImmediately();
                 CacheCurrentSettings();
                 TriggerSettingsChanged();
-            }
-        }
-
-        private void PreloadCoreReferences()
-        {
-            _cachedDetector = UnityEngine.Object.FindFirstObjectByType<YoloDetector>();
-            if (_cachedDetector == null) return;
-
-            var engineField = typeof(YoloDetector).GetField("_yoloEngine",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-            if (engineField != null)
-            {
-                _cachedEngine = engineField.GetValue(_cachedDetector) as YoloV8Engine;
             }
         }
 
@@ -376,48 +383,18 @@ namespace YoloV8Detection
             }
         }
 
+        /// <summary>
+        /// 对外暴露的同步方法（仅触发事件，不执行反射）
+        /// </summary>
         public void SyncSettingsToEngineImmediately()
         {
-            if (_cachedDetector == null)
-            {
-                _cachedDetector = UnityEngine.Object.FindFirstObjectByType<YoloDetector>();
-                if (_cachedDetector == null)
-                {
-                    Debug.LogWarning("⚠️ 未找到YoloDetector组件，无法同步日志配置！");
-                    return;
-                }
-            }
-
-            if (_cachedEngine == null)
-            {
-                var engineField = typeof(YoloDetector).GetField("_yoloEngine",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
-                if (engineField == null)
-                {
-                    Debug.LogError("❌ YoloDetector中未找到私有字段 _yoloEngine！请检查字段名是否匹配");
-                    return;
-                }
-                _cachedEngine = engineField.GetValue(_cachedDetector) as YoloV8Engine;
-            }
-
-            if (_cachedEngine == null)
-            {
-                Debug.LogWarning("⚠️ YoloV8Engine实例为空（模型未加载？），配置将在引擎初始化后自动生效");
-                return;
-            }
-
-            ApplySettingsToEngine(_cachedEngine);
-
-            if (_cachedEngine.IsInitialized)
-            {
-                Debug.Log("🔄 YoloLogSettings配置已同步到YOLO引擎！");
-            }
-            else
-            {
-                Debug.Log("🔄 YoloLogSettings配置已暂存，引擎初始化后自动生效！");
-            }
+            // 仅触发配置变更事件，由YoloV8Engine自行读取配置
+            TriggerSettingsChanged();
         }
 
+        /// <summary>
+        /// 缓存当前配置
+        /// </summary>
         private void CacheCurrentSettings()
         {
             _lastGlobalLogEnabled = globalLogEnabled;
@@ -432,6 +409,9 @@ namespace YoloV8Detection
             _lastLogExcludedClasses = new List<string>(logExcludedClasses);
         }
 
+        /// <summary>
+        /// 检测配置是否变更
+        /// </summary>
         private bool IsSettingsChanged()
         {
             if (_lastGlobalLogEnabled != globalLogEnabled) return true;
@@ -446,6 +426,9 @@ namespace YoloV8Detection
             return false;
         }
 
+        /// <summary>
+        /// 比较两个字符串列表是否相等
+        /// </summary>
         private bool ListEquals(List<string> a, List<string> b)
         {
             if (a == null || b == null) return a == b;
@@ -457,83 +440,6 @@ namespace YoloV8Detection
             }
             return true;
         }
-
-        public void ApplySettingsToEngine(YoloV8Engine engine)
-        {
-            if (engine == null)
-            {
-                Debug.LogWarning("❌ YOLO引擎实例为空，配置应用失败！");
-                return;
-            }
-
-            try
-            {
-                // 同步核心日志开关
-                SetEngineField(engine, "EnableLogInfo", enableLogInfo);
-                SetEngineField(engine, "EnableLogWarning", enableLogWarning);
-                SetEngineField(engine, "EnableLogError", enableLogError);
-
-                // 同步细分日志控制
-                SetEngineField(engine, "LogModelProcessing", logModelProcessing);
-                SetEngineField(engine, "LogNmsResults", logDetectionResults);
-
-                // 同步过滤配置
-                SetEngineListField(engine, "LogIncludedClasses", logIncludedClasses);
-                SetEngineListField(engine, "LogExcludedClasses", logExcludedClasses);
-
-                // 触发引擎配置刷新
-                InvokeEngineMethod(engine, "RefreshLogSettings");
-
-                Debug.Log($"✅ YOLO日志配置应用成功 | Info:{enableLogInfo} | Warning:{enableLogWarning} | Error:{enableLogError}");
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"❌ 应用日志配置时出错：{ex.Message}\n{ex.StackTrace}");
-            }
-        }
-
-        #region 反射辅助方法
-        private void SetEngineField(YoloV8Engine engine, string fieldName, object value)
-        {
-            var field = engine.GetType().GetField(fieldName,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field == null)
-            {
-                Debug.LogWarning($"⚠️ 引擎中未找到字段 {fieldName}，跳过设置");
-                return;
-            }
-            field.SetValue(engine, value);
-        }
-
-        private void SetEngineListField(YoloV8Engine engine, string fieldName, List<string> values)
-        {
-            var field = engine.GetType().GetField(fieldName,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field == null)
-            {
-                Debug.LogWarning($"⚠️ 引擎中未找到列表字段 {fieldName}，跳过设置");
-                return;
-            }
-
-            var list = field.GetValue(engine) as List<string>;
-            if (list == null)
-            {
-                Debug.LogWarning($"⚠️ 列表字段 {fieldName} 类型不匹配，跳过设置");
-                return;
-            }
-
-            list.Clear();
-            list.AddRange(values);
-        }
-
-        private void InvokeEngineMethod(YoloV8Engine engine, string methodName)
-        {
-            var method = engine.GetType().GetMethod(methodName,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (method == null) return;
-            method.Invoke(engine, null);
-        }
-        #endregion
         #endregion
 
         #region 上下文菜单
@@ -554,7 +460,6 @@ namespace YoloV8Detection
             InitModuleConfig();
 
             CacheCurrentSettings();
-            SyncSettingsToEngineImmediately();
             TriggerSettingsChanged();
             Debug.Log("🔄 YOLO日志配置已重置为默认值");
         }
@@ -570,7 +475,6 @@ namespace YoloV8Detection
             logDetectionResults = false;
 
             CacheCurrentSettings();
-            SyncSettingsToEngineImmediately();
             TriggerSettingsChanged();
             Debug.Log("🚫 所有YOLO日志已禁用");
         }
@@ -587,7 +491,6 @@ namespace YoloV8Detection
             logDetectionResults = true;
 
             CacheCurrentSettings();
-            SyncSettingsToEngineImmediately();
             TriggerSettingsChanged();
             Debug.Log("✅ 所有YOLO日志已启用");
         }
@@ -595,10 +498,8 @@ namespace YoloV8Detection
         [ContextMenu("强制同步配置到引擎")]
         public void ForceSyncSettings()
         {
-            _cachedDetector = null;
-            _cachedEngine = null;
-            SyncSettingsToEngineImmediately();
             TriggerSettingsChanged();
+            Debug.Log("🔄 已触发YOLO日志配置变更事件，引擎将自动读取最新配置");
         }
 
         [ContextMenu("打印当前配置")]

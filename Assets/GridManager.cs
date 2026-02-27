@@ -39,10 +39,8 @@ public class GridManager : MonoBehaviour
     public int 栅格宽度;
     public int 栅格高度;
 
-
-
     [Header("初始化性能优化")]
-    public int 每帧初始化数量 = 50;
+    public int 每帧初始化数量 = 50; // 保留但不使用，如需彻底清理也可删除
 
     [Header("障碍物检测配置")]
     public float obstacleCheckRadius = 0.5f;
@@ -55,21 +53,18 @@ public class GridManager : MonoBehaviour
     public Color 障碍物颜色 = new Color(1f, 0f, 0f, 0.7f);
 
     [Header("初始化超时保护")]
-    public float initTimeout = 10f;
+    public float initTimeout = 10f; // 保留但不使用，如需彻底清理也可删除
 
     // 公开的栅格尺寸/原点（兼容原代码的英文命名）
     public float gridCellSize = 1f;
     public Vector3 gridOrigin = Vector3.zero;
 
-    // 私有字段
+    // 私有字段（删除了3个未使用的字段：初始化索引、isInitializing、initTimer）
     private Node[,] 栅格地图;
-    private int 初始化索引 = 0;
-    private bool isInitializing = false;
     private bool isGridReady = false; // 唯一的栅格就绪标记
     private Collider[] 碰撞检测结果 = new Collider[1];
     private Vector2 水域大小缓存;
     private float 栅格半尺寸;
-    private float initTimer = 0f;
 
     // 水域边界缓存
     private float waterMinX;
@@ -97,12 +92,14 @@ public class GridManager : MonoBehaviour
 
     void Start()
     {
+        // 1. 基础校验（保留原有逻辑）
         if (水域平面 == null)
         {
             Debug.LogError("GridManager：未赋值水域平面！");
             return;
         }
 
+        // 2. 计算栅格基础参数（保留原有逻辑）
         栅格半尺寸 = 栅格尺寸 / 2f;
         计算水域大小();
 
@@ -120,59 +117,46 @@ public class GridManager : MonoBehaviour
         gridOrigin = 栅格原点; // 同步英文命名的原点
         gridCellSize = 栅格尺寸; // 同步英文命名的单元格大小
 
+        // 3. 初始化栅格地图数组（保留）
         栅格地图 = new Node[栅格宽度, 栅格高度];
-        isInitializing = true;
-        初始化索引 = 0;
-        initTimer = 0f;
-        Debug.Log($"GridManager：开始分帧初始化，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}，每帧处理{每帧初始化数量}个节点");
+
+        // ================ 关键修改：关闭分帧，启用同步初始化 ================
+        // 直接同步初始化栅格
+        同步初始化栅格();
+
+        // 4. 标记障碍物（修复参数问题：原方法不需要Camera参数）
+        标记障碍物();
+
+        // 标记栅格就绪
+        isGridReady = true;
+
+        // 日志更新：提示同步初始化完成
+        Debug.Log($"GridManager：核心栅格同步初始化完成，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}");
     }
 
-    void Update()
+    // 同步初始化栅格方法（替代分帧）
+    void 同步初始化栅格()
     {
-        if (isInitializing)
+        // 双层循环遍历所有栅格，直接创建节点（无分帧延迟）
+        for (int x = 0; x < 栅格宽度; x++)
         {
-            initTimer += Time.deltaTime;
-            if (initTimer > initTimeout)
+            for (int z = 0; z < 栅格高度; z++)
             {
-                isInitializing = false;
-                isGridReady = true;
-                标记障碍物();
-                Debug.LogError($"GridManager：初始化超时（{initTimeout}秒），强制标记为就绪！");
-                initTimer = 0f;
-                return;
-            }
-        }
-
-        if (isInitializing)
-        {
-            int 总节点数 = 栅格宽度 * 栅格高度;
-            int 本次结束索引 = Mathf.Min(初始化索引 + 每帧初始化数量, 总节点数);
-
-            while (初始化索引 < 本次结束索引)
-            {
-                int x = 初始化索引 / 栅格高度;
-                int z = 初始化索引 % 栅格高度;
-
+                // 原分帧处理的节点创建逻辑（直接写在这里，替代不存在的“创建栅格节点”方法）
                 Vector3 节点位置 = 栅格原点 + new Vector3(
                     x * 栅格尺寸 + 栅格半尺寸,
                     水域平面.position.y,
                     z * 栅格尺寸 + 栅格半尺寸
                 );
 
+                // 初始化节点为可行走状态（障碍物后续标记）
                 栅格地图[x, z] = new Node(true, 节点位置, x, z);
-                初始化索引++;
-            }
-
-            if (初始化索引 >= 总节点数)
-            {
-                isInitializing = false;
-                isGridReady = true;
-                标记障碍物();
-                Debug.Log($"GridManager：分帧初始化完成，共{总节点数}个节点，已自动标记障碍物");
-                initTimer = 0f;
             }
         }
     }
+
+    // 彻底删除无用的Update方法（因为分帧逻辑已关闭，留着无意义）
+    // void Update() {}
 
     // 检查栅格坐标有效性（核心方法）
     public bool IsValidGridPosition(Vector2Int gridPos)
@@ -291,7 +275,6 @@ public class GridManager : MonoBehaviour
         }
 
         isGridReady = true;
-        initTimer = 0f;
         Debug.Log($"GridManager：重新初始化完成，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}");
     }
 
@@ -561,7 +544,6 @@ public class GridManager : MonoBehaviour
             new Vector3(栅格宽度 * 栅格尺寸, 0.1f, 栅格高度 * 栅格尺寸)
         );
 
-        // 绘制路径
         // 绘制路径
         ImprovedAStar pathfinder = UnityEngine.Object.FindAnyObjectByType<ImprovedAStar>(); // 加命名空间限定，消除歧义+性能最优
         if (pathfinder != null && pathfinder.path != null && pathfinder.path.Count > 1)

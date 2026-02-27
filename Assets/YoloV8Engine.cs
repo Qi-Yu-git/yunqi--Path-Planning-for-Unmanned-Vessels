@@ -640,48 +640,42 @@ namespace YoloV8Detection
         /// <returns>预热是否成功</returns>
         public bool WarmUpModel()
         {
+            // 保留原有的初始化校验逻辑，避免空指针
             if (!_isInitialized || _net == null || _net.Empty())
             {
                 LogError("❌ 模型未初始化，无法预热");
                 return false;
             }
 
-            lock (_lockObj)
+            lock (_lockObj) // 保留线程安全锁，避免多线程调用冲突
             {
                 try
                 {
-                    using (var dummyMat = new Mat(_inputSize.Height, _inputSize.Width, MatType.CV_8UC3, Scalar.All(0)))
+                    // 步骤1：强制指定CPU后端（使用数值枚举，兼容Unity下的OpenCV版本）
+                    _net.SetPreferableBackend((Backend)0); // 0 = DNN_BACKEND_OPENCV
+                    _net.SetPreferableTarget((Target)0);   // 0 = DNN_TARGET_CPU
+
+                    // 步骤2：创建虚拟输入矩阵（匹配模型输入尺寸，float类型）
+                    using (Mat dummyInput = Mat.Zeros(_inputSize.Height, _inputSize.Width, MatType.CV_32FC3))
                     {
-                        // 复用预处理逻辑，避免重复代码
-                        using (var blob = PreprocessImage(dummyMat))
+                        // 步骤3：复用预处理逻辑（保持和实际推理一致的输入格式）
+                        using (var blob = PreprocessImage(dummyInput))
                         {
                             _net.SetInput(blob);
                             string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
                             string targetLayer = outputLayerNames.Length > 0 ? outputLayerNames[0] : "";
 
-                            // 提前捕获后端不兼容问题，避免抛出异常
-                            try
-                            {
-                                _net.Forward(targetLayer);
-                            }
-                            catch (Exception forwardEx)
-                            {
-                                LogWarn($"⚠️ 预热推理失败，自动降级CPU: {forwardEx.Message}");
-                                // 强制CPU后端（使用数值枚举，避免版本兼容问题）
-                                _net.SetPreferableBackend((Backend)0); // DNN_BACKEND_OPENCV
-                                _net.SetPreferableTarget((Target)0);   // DNN_TARGET_CPU
-                                _net.Forward(targetLayer);
-                            }
+                            // 步骤4：执行预热推理
+                            _net.Forward(targetLayer);
+                            LogInfo("✅ 预热推理成功（CPU模式）");
                         }
                     }
 
-                    LogDebug("✅ 模型预热完成，首次检测无卡顿");
                     return true;
                 }
-                catch (Exception ex)
+                catch (Exception e)
                 {
-                    // 仅记录警告，不统计为错误（预热失败不影响核心功能）
-                    LogWarn($"⚠️ 模型预热警告：{ex.Message}（不影响检测功能）");
+                    LogWarn($"⚠️ 预热推理失败，自动降级CPU: {e.Message}");
                     return false;
                 }
             }
