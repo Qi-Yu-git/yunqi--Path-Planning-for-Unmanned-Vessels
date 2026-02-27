@@ -11,14 +11,6 @@ using YoloV8Detection;
 // 移除别名，全程使用完整命名空间路径
 public class YoloDetector : MonoBehaviour
 {
-    [Header("日志配置【精细化控制】")]
-    [Tooltip("是否输出普通通知日志（检测结果、初始化完成等）")]
-    public bool enableInfoLog = true;          // 普通通知开关
-    [Tooltip("是否输出警告日志（未初始化、坐标转换失败等）")]
-    public bool enableWarningLog = true;       // 警告日志开关
-    [Tooltip("是否输出详细的目标检测日志（类别/置信度/边界框）")]
-    public bool enableDetailedDetectionLog = false; // 详细检测日志开关
-
     [Header("模型核心配置")]
     public string modelPath = "yolov8n.onnx";
     public float confidenceThreshold = 0.5f;
@@ -82,8 +74,12 @@ public class YoloDetector : MonoBehaviour
         }
         catch (Exception e)
         {
-            // 错误日志始终输出
-            Debug.LogError($"初始化失败：{e.Message}\n{e.StackTrace}");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                $"初始化失败：{e.Message}\n{e.StackTrace}"
+            );
         }
     }
 
@@ -94,8 +90,12 @@ public class YoloDetector : MonoBehaviour
 
         if (_yoloEngine == null || !_yoloEngine.IsInitialized)
         {
-            // 警告日志受开关控制
-            LogWarning("YOLO引擎未初始化，跳过检测");
+            // 警告日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Warn,
+                "YOLO引擎未初始化，跳过检测"
+            );
             return;
         }
 
@@ -143,22 +143,28 @@ public class YoloDetector : MonoBehaviour
                 _lastFrameHeight = frameHeight;
                 DetectedResults = new List<YoloV8Detection.YoloResult>(results);
 
-                // 普通日志受开关控制
-                LogInfo($"[Yolo] 检测结果更新：{results.Count}个目标，绘制开关：{drawBoundingBoxes}，帧尺寸：{frameWidth}x{frameHeight}");
+                // 普通日志通过统一日志入口输出（指定模块+级别）
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                    $"[Yolo] 检测结果更新：{results.Count}个目标，绘制开关：{drawBoundingBoxes}，帧尺寸：{frameWidth}x{frameHeight}"
+                );
             }
 
-            if (enableDetailedDetectionLog)
+            // 移除enableDetailedDetectionLog开关，直接执行日志输出（由YoloLogSettings控制）
+            UnityMainThreadDispatcher.Enqueue(() =>
             {
-                UnityMainThreadDispatcher.Enqueue(() =>
-                {
-                    ProcessDetailedDetectionLogs(results);
-                });
-            }
+                ProcessDetailedDetectionLogs(results);
+            });
         }
         catch (Exception e)
         {
-            // 错误日志始终输出
-            Debug.LogError($"检测异常：{e.Message}\n{e.StackTrace}");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                $"检测异常：{e.Message}\n{e.StackTrace}"
+            );
         }
     }
 
@@ -174,41 +180,69 @@ public class YoloDetector : MonoBehaviour
 
             if (!File.Exists(fullModelPath))
             {
-                // 错误日志始终输出（更新路径提示）
-                Debug.LogError($"模型文件不存在：{fullModelPath}\n请确认模型已放入Assets/Models目录");
+                // 错误日志通过统一日志入口输出（指定模块+级别）
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                    $"模型文件不存在：{fullModelPath}\n请确认模型已放入Assets/Models目录"
+                );
                 return;
             }
 
-            _yoloEngine = new YoloV8Engine(
-                fullModelPath,
+            // ========== 核心修复：移除不存在的aggregateLogInterval参数 ==========
+            // 替换原错误的构造函数调用
+            _yoloEngine = new YoloV8Detection.YoloV8Engine(
+                modelPath: fullModelPath,
                 confidenceThreshold: confidenceThreshold,
                 iouThreshold: iouThreshold,
-                logModelProcessing: true,
-                logNmsResults: false,
-                aggregateLogInterval: 10f
+                logSettings: new YoloV8Detection.YoloLogSettings(),
+                useCuda: true
             );
+            // 替代原logModelProcessing/logNmsResults参数
+            _yoloEngine.LogModelProcessing = true;
+            _yoloEngine.LogNmsResults = false;
 
             if (_yoloEngine.IsInitialized)
             {
-                // 普通日志受开关控制（新增路径日志）
-                LogInfo($"✅ YOLO引擎初始化成功！类别数：{_yoloEngine.ClassNames.Count}");
-                LogInfo($"📌 4.7兼容路径：{fullModelPath}"); // 新增验证日志
+                // 普通日志通过统一日志入口输出（指定模块+级别）
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                    $"✅ YOLO引擎初始化成功！类别数：{_yoloEngine.ClassNames.Count}"
+                );
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                    $"📌 4.7兼容路径：{fullModelPath}"
+                ); // 新增验证日志
             }
             else
             {
-                // 错误日志始终输出
-                Debug.LogError("❌ YOLO引擎初始化失败");
+                // 错误日志通过统一日志入口输出（指定模块+级别）
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                    "❌ YOLO引擎初始化失败"
+                );
             }
         }
         catch (DllNotFoundException e)
         {
-            // 错误日志始终输出
-            Debug.LogError($"❌ 缺少OpenCvSharp依赖库：{e.Message}");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                $"❌ 缺少OpenCvSharp依赖库：{e.Message}"
+            );
         }
         catch (Exception e)
         {
-            // 错误日志始终输出
-            Debug.LogError($"❌ 引擎初始化异常：{e.Message}\n{e.StackTrace}");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                $"❌ 引擎初始化异常：{e.Message}\n{e.StackTrace}"
+            );
         }
     }
 
@@ -219,8 +253,12 @@ public class YoloDetector : MonoBehaviour
     {
         if (sceneCamera == null)
         {
-            // 错误日志始终输出
-            Debug.LogError("[YoloDetector] 场景相机未初始化，无法转换坐标");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                "[YoloDetector] 场景相机未初始化，无法转换坐标"
+            );
             return Vector3.zero;
         }
 
@@ -245,8 +283,12 @@ public class YoloDetector : MonoBehaviour
             return new Vector3(worldPos.x, worldPos.y, 0); // 忽略Z轴（高度）
         }
 
-        // 警告日志受开关控制
-        LogWarning("[YoloDetector] 坐标转换失败");
+        // 警告日志通过统一日志入口输出（指定模块+级别）
+        YoloV8Detection.YoloLogSettings.Log(
+            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+            YoloV8Detection.YoloLogSettings.LogLevel.Warn,
+            "[YoloDetector] 坐标转换失败"
+        );
         return Vector3.zero;
     }
 
@@ -270,8 +312,12 @@ public class YoloDetector : MonoBehaviour
             if (sceneCamera == null)
             {
                 sceneCamera = Camera.main;
-                // 警告日志受开关控制
-                LogWarning("未指定场景相机，自动使用主相机");
+                // 警告日志通过统一日志入口输出（指定模块+级别）
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Warn,
+                    "未指定场景相机，自动使用主相机"
+                );
             }
         }
 
@@ -290,8 +336,12 @@ public class YoloDetector : MonoBehaviour
             false
         );
 
-        // 普通日志受开关控制
-        LogInfo($"✅ 场景相机初始化完成：分辨率({_tempRenderTexture.width}x{_tempRenderTexture.height})");
+        // 普通日志通过统一日志入口输出（指定模块+级别）
+        YoloV8Detection.YoloLogSettings.Log(
+            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+            YoloV8Detection.YoloLogSettings.LogLevel.Info,
+            $"✅ 场景相机初始化完成：分辨率({_tempRenderTexture.width}x{_tempRenderTexture.height})"
+        );
     }
 
     private void InitWebCamera()
@@ -299,8 +349,12 @@ public class YoloDetector : MonoBehaviour
         WebCamDevice[] devices = WebCamTexture.devices;
         if (devices.Length == 0)
         {
-            // 错误日志始终输出
-            Debug.LogError("❌ 未检测到可用的USB摄像头");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                "❌ 未检测到可用的USB摄像头"
+            );
             return;
         }
 
@@ -314,13 +368,21 @@ public class YoloDetector : MonoBehaviour
         _webCamTexture.Play();
         if (_webCamTexture.isPlaying)
         {
-            // 普通日志受开关控制
-            LogInfo($"✅ USB摄像头启动成功：{devices[0].name}，分辨率({_webCamTexture.width}x{_webCamTexture.height})");
+            // 普通日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                $"✅ USB摄像头启动成功：{devices[0].name}，分辨率({_webCamTexture.width}x{_webCamTexture.height})"
+            );
         }
         else
         {
-            // 错误日志始终输出
-            Debug.LogError("❌ USB摄像头启动失败");
+            // 错误日志通过统一日志入口输出（指定模块+级别）
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                "❌ USB摄像头启动失败"
+            );
         }
     }
 
@@ -402,20 +464,33 @@ public class YoloDetector : MonoBehaviour
     }
 
     /// <summary>
-    /// 详细检测日志输出（单独开关控制）
+    /// 详细检测日志输出（由YoloLogSettings统一控制）
     /// </summary>
     private void ProcessDetailedDetectionLogs(List<YoloV8Detection.YoloResult> results)
     {
         if (results == null || results.Count == 0)
         {
-            LogInfo("📌 未检测到任何目标");
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                "📌 未检测到任何目标"
+            );
             return;
         }
 
-        LogInfo($"📌 检测到 {results.Count} 个目标：");
+        YoloV8Detection.YoloLogSettings.Log(
+            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+            YoloV8Detection.YoloLogSettings.LogLevel.Info,
+            $"📌 检测到 {results.Count} 个目标："
+        );
         foreach (var result in results)
         {
-            LogInfo($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 边界框：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})");
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                $"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 边界框：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1})",
+                result.ClassName
+            );
         }
     }
 
@@ -446,14 +521,22 @@ public class YoloDetector : MonoBehaviour
     {
         if (!drawBoundingBoxes || _boxStyle == null || _labelStyle == null)
         {
-            LogWarning($"[Yolo] 绘制跳过：drawBoundingBoxes={drawBoundingBoxes}，样式={(_boxStyle == null ? "空" : "正常")}");
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Warn,
+                $"[Yolo] 绘制跳过：drawBoundingBoxes={drawBoundingBoxes}，样式={(_boxStyle == null ? "空" : "正常")}"
+            );
             return;
         }
 
         var results = DetectedResults;
         if (results == null || results.Count == 0)
         {
-            LogInfo("[Yolo] 无检测结果可绘制");
+            YoloV8Detection.YoloLogSettings.Log(
+                YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                YoloV8Detection.YoloLogSettings.LogLevel.Info,
+                "[Yolo] 无检测结果可绘制"
+            );
             return;
         }
 
@@ -464,7 +547,11 @@ public class YoloDetector : MonoBehaviour
             _lastFrameHeight = sceneCamera != null ? sceneCamera.pixelHeight : Screen.height;
         }
 
-        LogInfo($"[Yolo] 开始绘制{results.Count}个检测框，帧尺寸：{_lastFrameWidth}x{_lastFrameHeight}，屏幕尺寸：{Screen.width}x{Screen.height}");
+        YoloV8Detection.YoloLogSettings.Log(
+            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+            YoloV8Detection.YoloLogSettings.LogLevel.Info,
+            $"[Yolo] 开始绘制{results.Count}个检测框，帧尺寸：{_lastFrameWidth}x{_lastFrameHeight}，屏幕尺寸：{Screen.width}x{Screen.height}"
+        );
 
         foreach (var result in results)
         {
@@ -494,7 +581,12 @@ public class YoloDetector : MonoBehaviour
         float x = Mathf.Clamp(screenPos.x - boxWidth / 2, 0, screenWidth - boxWidth);
         float y = Mathf.Clamp(screenPos.y - boxHeight / 2, 0, screenHeight - boxHeight);
 
-        LogInfo($"[Yolo] 绘制目标：{result.ClassName}，屏幕坐标：({x:F1},{y:F1}) 尺寸：{boxWidth:F1}x{boxHeight:F1}");
+        YoloV8Detection.YoloLogSettings.Log(
+            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+            YoloV8Detection.YoloLogSettings.LogLevel.Info,
+            $"[Yolo] 绘制目标：{result.ClassName}，屏幕坐标：({x:F1},{y:F1}) 尺寸：{boxWidth:F1}x{boxHeight:F1}",
+            result.ClassName
+        );
 
         // 5. 绘制红框和标签
         _boxStyle.normal.textColor = boxColor;
@@ -539,8 +631,12 @@ public class YoloDetector : MonoBehaviour
         _frameMat?.Release();
         UnityMainThreadDispatcher.Cleanup();
 
-        // 普通日志受开关控制
-        LogInfo("🔌 检测资源已成功释放");
+        // 普通日志通过统一日志入口输出（指定模块+级别）
+        YoloV8Detection.YoloLogSettings.Log(
+            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+            YoloV8Detection.YoloLogSettings.LogLevel.Info,
+            "🔌 检测资源已成功释放"
+        );
     }
 
     private void OnValidate()
@@ -552,30 +648,6 @@ public class YoloDetector : MonoBehaviour
             _labelStyle.fontSize = labelFontSize;
         }
     }
-
-    #region 日志封装方法
-    /// <summary>
-    /// 封装普通日志输出（受enableInfoLog开关控制）
-    /// </summary>
-    private void LogInfo(string message)
-    {
-        if (enableInfoLog)
-        {
-            Debug.Log(message);
-        }
-    }
-
-    /// <summary>
-    /// 封装警告日志输出（受enableWarningLog开关控制）
-    /// </summary>
-    private void LogWarning(string message)
-    {
-        if (enableWarningLog)
-        {
-            Debug.LogWarning(message);
-        }
-    }
-    #endregion
 }
 
 // 主线程调度器（完整实现）
@@ -614,8 +686,12 @@ public static class UnityMainThreadDispatcher
             }
             catch (Exception ex)
             {
-                // 错误日志始终输出
-                Debug.LogError($"主线程调度器执行失败：{ex.Message}");
+                // 错误日志通过统一日志入口输出（指定模块+级别）
+                YoloV8Detection.YoloLogSettings.Log(
+                    YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                    YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                    $"主线程调度器执行失败：{ex.Message}"
+                );
                 tcs.SetException(ex);
             }
         });
@@ -659,8 +735,12 @@ public static class UnityMainThreadDispatcher
                     }
                     catch (Exception e)
                     {
-                        // 错误日志始终输出
-                        Debug.LogError($"主线程调度器执行失败：{e.Message}");
+                        // 错误日志通过统一日志入口输出（指定模块+级别）
+                        YoloV8Detection.YoloLogSettings.Log(
+                            YoloV8Detection.YoloLogSettings.LogModule.YoloDetector,
+                            YoloV8Detection.YoloLogSettings.LogLevel.Error,
+                            $"主线程调度器执行失败：{e.Message}"
+                        );
                     }
                 }
             }

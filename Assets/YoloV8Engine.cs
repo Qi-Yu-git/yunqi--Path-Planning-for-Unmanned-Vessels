@@ -33,9 +33,9 @@ namespace YoloV8Detection
         private bool _isNoSeparateConfidence; // 是否为无单独置信度列的模型（84列格式）
         private bool _useCuda = true;      // 是否优先使用CUDA（新增：控制后端）
 
-        // 日志控制字段
-        private bool _logModelProcessing = true;
-        private bool _logNmsResults = true;
+        // 日志相关字段（替换原有日志控制，接入统一配置）
+        private readonly YoloLogSettings _logSettings;
+        private readonly YoloLogSettings.LogModule _currentModule = YoloLogSettings.LogModule.YoloV8Engine;
         private float _lastAggregateLogTime;
         private Dictionary<string, int> _classCountAggregate = new Dictionary<string, int>();
 
@@ -57,16 +57,18 @@ namespace YoloV8Detection
         public IReadOnlyList<string> ClassNames => _classNames.AsReadOnly();
         public bool UseCuda { get => _useCuda; set => _useCuda = value; } // 暴露CUDA控制
 
-        // 日志控制配置
+        // 保留原有日志配置兼容（内部映射到统一日志配置）
         public bool LogModelProcessing
         {
-            get => _logModelProcessing;
-            set => _logModelProcessing = value;
+            get => _logSettings.IsModuleEnabled(_currentModule) &&
+                  _logSettings.GetModuleLogLevel(_currentModule) <= YoloLogSettings.LogLevel.Debug;
+            set => _logSettings.SetModuleLogLevel(_currentModule, value ? YoloLogSettings.LogLevel.Debug : YoloLogSettings.LogLevel.None);
         }
         public bool LogNmsResults
         {
-            get => _logNmsResults;
-            set => _logNmsResults = value;
+            get => _logSettings.IsModuleEnabled(_currentModule) &&
+                  _logSettings.GetModuleLogLevel(_currentModule) <= YoloLogSettings.LogLevel.Info;
+            set => _logSettings.SetModuleLogLevel(_currentModule, value ? YoloLogSettings.LogLevel.Info : YoloLogSettings.LogLevel.None);
         }
         public float AggregateLogInterval { get; set; } = 1f; // 聚合日志输出间隔（秒）
         public List<string> LogIncludedClasses { get; set; } = new List<string>();
@@ -75,7 +77,7 @@ namespace YoloV8Detection
 
         #region 构造函数
         /// <summary>
-        /// 构造函数
+        /// 构造函数（新增统一日志配置参数）
         /// </summary>
         /// <param name="modelPath">模型文件路径</param>
         /// <param name="classNames">类别名称列表（默认COCO80类）</param>
@@ -83,16 +85,14 @@ namespace YoloV8Detection
         /// <param name="iouThreshold">IOU阈值</param>
         /// <param name="inputSize">模型输入尺寸</param>
         /// <param name="isNoSeparateConfidence">是否为84列模型（无单独置信度列）</param>
-        /// <param name="logModelProcessing">是否输出模型处理日志</param>
-        /// <param name="logNmsResults">是否输出NMS日志</param>
+        /// <param name="logSettings">统一日志配置（不传则创建默认配置）</param>
         /// <param name="aggregateLogInterval">聚合日志输出间隔</param>
         /// <param name="autoWarmUp">是否自动预热模型</param>
         /// <param name="useCuda">是否优先使用CUDA推理</param>
         public YoloV8Engine(string modelPath, List<string> classNames = null,
                            float confidenceThreshold = 0.5f, float iouThreshold = 0.4f,
                            Size? inputSize = null, bool isNoSeparateConfidence = true,
-                           bool logModelProcessing = false,
-                           bool logNmsResults = false,
+                           YoloLogSettings logSettings = null,
                            float aggregateLogInterval = 5f,
                            bool autoWarmUp = true,
                            bool useCuda = true)
@@ -105,10 +105,12 @@ namespace YoloV8Detection
             _useCuda = useCuda;
             if (inputSize.HasValue) _inputSize = inputSize.Value;
 
-            // 接收外部日志配置
-            _logModelProcessing = logModelProcessing;
-            _logNmsResults = logNmsResults;
+            // 初始化统一日志配置
+            _logSettings = logSettings ?? new YoloLogSettings();
             AggregateLogInterval = aggregateLogInterval;
+
+            // 监听日志配置变更
+            _logSettings.OnSettingsChanged += RefreshLogConfig;
 
             try
             {
@@ -122,9 +124,74 @@ namespace YoloV8Detection
             }
             catch (Exception ex)
             {
-                Debug.LogError($"引擎初始化失败: {ex.Message}\n{ex.StackTrace}");
+                LogError($"引擎初始化失败: {ex.Message}\n{ex.StackTrace}");
                 _isInitialized = false;
             }
+        }
+        #endregion
+
+        #region 私有日志方法（接入统一配置）
+        /// <summary>
+        /// 刷新日志配置（监听配置变更）
+        /// </summary>
+        private void RefreshLogConfig()
+        {
+            LogDebug("YoloV8Engine日志配置已更新");
+        }
+
+        /// <summary>
+        /// 调试日志输出（统一控制）
+        /// </summary>
+        private void LogDebug(string message)
+        {
+            if (!_logSettings.IsModuleEnabled(_currentModule)) return;
+            if (_logSettings.GetModuleLogLevel(_currentModule) > YoloLogSettings.LogLevel.Debug) return;
+
+            YoloLogSettings.Log(YoloLogSettings.LogLevel.Info,$"[YoloV8Engine][Debug] {message}");
+        }
+
+        /// <summary>
+        /// 信息日志输出（统一控制）
+        /// </summary>
+        private void LogInfo(string message)
+        {
+            if (!_logSettings.IsModuleEnabled(_currentModule)) return;
+            if (_logSettings.GetModuleLogLevel(_currentModule) > YoloLogSettings.LogLevel.Info) return;
+
+            YoloLogSettings.Log(YoloLogSettings.LogLevel.Info,$"[YoloV8Engine][Info] {message}");
+        }
+
+        /// <summary>
+        /// 警告日志输出（统一控制）
+        /// </summary>
+        private void LogWarn(string message)
+        {
+            if (!_logSettings.IsModuleEnabled(_currentModule)) return;
+            if (_logSettings.GetModuleLogLevel(_currentModule) > YoloLogSettings.LogLevel.Warn) return;
+
+            YoloLogSettings.Log(YoloLogSettings.LogLevel.Warn,$"[YoloV8Engine][Warn] {message}");
+        }
+
+        /// <summary>
+        /// 错误日志输出（统一控制）
+        /// </summary>
+        private void LogError(string message)
+        {
+            if (!_logSettings.IsModuleEnabled(_currentModule)) return;
+            if (_logSettings.GetModuleLogLevel(_currentModule) > YoloLogSettings.LogLevel.Error) return;
+
+            YoloLogSettings.Log(YoloLogSettings.LogLevel.Error,$"[YoloV8Engine][Error] {message}");
+        }
+
+        /// <summary>
+        /// 致命错误日志输出（统一控制）
+        /// </summary>
+        private void LogFatal(string message)
+        {
+            if (!_logSettings.IsModuleEnabled(_currentModule)) return;
+            if (_logSettings.GetModuleLogLevel(_currentModule) > YoloLogSettings.LogLevel.Fatal) return;
+
+            YoloLogSettings.Log(YoloLogSettings.LogLevel.Error,$"[YoloV8Engine][Fatal] {message}");
         }
         #endregion
 
@@ -139,17 +206,17 @@ namespace YoloV8Detection
             // 增强空值校验
             if (_net == null || (_net != null && _net.Empty()))
             {
-                Debug.LogError($"❌ 检测前校验失败：YOLO模型未初始化！_net状态：{(_net == null ? "null" : "Empty")}");
+                LogError($"❌ 检测前校验失败：YOLO模型未初始化！_net状态：{(_net == null ? "null" : "Empty")}");
                 return new List<YoloResult>();
             }
             if (!_isInitialized)
             {
-                Debug.LogError("❌ 检测前校验失败：引擎未初始化完成");
+                LogError("❌ 检测前校验失败：引擎未初始化完成");
                 return new List<YoloResult>();
             }
             if (frame == null || frame.Empty())
             {
-                Debug.LogError("❌ 检测前校验失败：输入帧为空或无效");
+                LogError("❌ 检测前校验失败：输入帧为空或无效");
                 return new List<YoloResult>();
             }
 
@@ -181,8 +248,7 @@ namespace YoloV8Detection
                             watch.Restart();
                             Mat output = originalOutput.Clone();
 
-                            if (_logModelProcessing)
-                                Debug.Log($"原始输出形状: ({output.Size(0)}, {output.Size(1)}, {output.Size(2)})");
+                            LogDebug($"原始输出形状: ({output.Size(0)}, {output.Size(1)}, {output.Size(2)})");
 
                             // 维度转换适配
                             if (output.Dims == 3 && output.Size(0) == 1)
@@ -205,8 +271,7 @@ namespace YoloV8Detection
                                 output = output.T();
                             }
 
-                            if (_logModelProcessing)
-                                Debug.Log($"调整后形状: {output.Rows}行 x {output.Cols}列");
+                            LogDebug($"调整后形状: {output.Rows}行 x {output.Cols}列");
 
                             var results = ParseDetectionOutput(output, frameWidth, frameHeight);
                             watch.Stop();
@@ -242,12 +307,12 @@ namespace YoloV8Detection
                     // 过滤已知的Backend/Target警告，避免误报
                     if (ex.Message.Contains("preferableBackend") || ex.Message.Contains("preferableTarget"))
                     {
-                        Debug.LogWarning($"⚠️ 推理后端配置警告：{ex.Message}（自动适配CPU模式）");
+                        LogWarn($"⚠️ 推理后端配置警告：{ex.Message}（自动适配CPU模式）");
                     }
                     else
                     {
-                        Debug.LogError($"🚫 检测出错：{ex.Message}\n堆栈信息：{ex.StackTrace}");
-                        Debug.LogError($"🚫 报错时状态：_net是否为空={(_net == null ? "是" : "否")}, " +
+                        LogError($"🚫 检测出错：{ex.Message}\n堆栈信息：{ex.StackTrace}");
+                        LogError($"🚫 报错时状态：_net是否为空={(_net == null ? "是" : "否")}, " +
                                       $"frame是否为空={(frame == null ? "是" : "否")}, " +
                                       $"frame是否有效={(frame?.Empty() ?? true ? "否" : "是")}");
                     }
@@ -257,24 +322,23 @@ namespace YoloV8Detection
                     {
                         if (_net == null || _net.Empty())
                         {
-                            Debug.LogError("❌ _net为空，无法重试");
+                            LogError("❌ _net为空，无法重试");
                             return new List<YoloResult>();
                         }
 
-                        Debug.LogWarning("🔄 尝试降级到CPU后端重试检测...");
+                        LogWarn("🔄 尝试降级到CPU后端重试检测...");
                         _net.SetPreferableBackend((Backend)0);
                         _net.SetPreferableTarget((Target)0);
                         return RetryDetectWithCpu(frame);
                     }
                     catch (Exception retryEx)
                     {
-                        Debug.LogError($"❌ CPU重试也失败：{retryEx.Message}");
+                        LogError($"❌ CPU重试也失败：{retryEx.Message}");
                         return new List<YoloResult>();
                     }
                 }
             }
         }
-
 
         /// <summary>
         /// CPU降级重试检测（确保单定义，解决CS0111）
@@ -286,13 +350,13 @@ namespace YoloV8Detection
             // 增加_net判空，避免空引用
             if (_net == null || _net.Empty())
             {
-                Debug.LogError("❌ CPU重试失败：_net未初始化");
+                LogError("❌ CPU重试失败：_net未初始化");
                 return new List<YoloResult>();
             }
 
             if (frame == null || frame.Empty())
             {
-                Debug.LogError("❌ CPU重试失败：输入帧无效");
+                LogError("❌ CPU重试失败：输入帧无效");
                 return new List<YoloResult>();
             }
 
@@ -336,13 +400,11 @@ namespace YoloV8Detection
             }
             catch (Exception ex)
             {
-                Debug.LogError($"❌ RetryDetectWithCpu 执行失败：{ex.Message}");
+                LogError($"❌ RetryDetectWithCpu 执行失败：{ex.Message}");
                 return new List<YoloResult>();
             }
         }
         #endregion
-
-
 
         /// <summary>
         /// 批量检测多帧图像
@@ -354,7 +416,7 @@ namespace YoloV8Detection
             var batchResults = new List<List<YoloResult>>();
             if (frames == null || frames.Count == 0 || !_isInitialized || _net == null)
             {
-                Debug.LogError("❌ 批量检测失败：输入无效或引擎未初始化");
+                LogError("❌ 批量检测失败：输入无效或引擎未初始化");
                 return batchResults;
             }
 
@@ -422,7 +484,7 @@ namespace YoloV8Detection
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"❌ 批量检测失败：{ex.Message}\n{ex.StackTrace}");
+                    LogError($"❌ 批量检测失败：{ex.Message}\n{ex.StackTrace}");
                     lock (_statsLock)
                     {
                         _detectionErrorCount++;
@@ -441,7 +503,7 @@ namespace YoloV8Detection
         {
             if (frame == null || frame.Empty())
             {
-                Debug.LogError("❌ 无法转换空的Mat对象");
+                LogError("❌ 无法转换空的Mat对象");
                 return null;
             }
 
@@ -467,7 +529,7 @@ namespace YoloV8Detection
             }
             catch (Exception ex)
             {
-                Debug.LogError($"🚫 Mat转Texture2D失败: {ex.Message}\n堆栈信息：{ex.StackTrace}");
+                LogError($"🚫 Mat转Texture2D失败: {ex.Message}\n堆栈信息：{ex.StackTrace}");
                 lock (_statsLock)
                 {
                     _detectionErrorCount++;
@@ -507,16 +569,16 @@ namespace YoloV8Detection
         public void SetModelFormat(bool isNoSeparateConfidence)
         {
             _isNoSeparateConfidence = isNoSeparateConfidence;
-            if (_logModelProcessing)
-                Debug.Log($"🔄 模型格式已切换：{(isNoSeparateConfidence ? "84列（4坐标+80类别）" : "85列（4坐标+1置信度+80类别）")}");
+            LogDebug($"🔄 模型格式已切换：{(isNoSeparateConfidence ? "84列（4坐标+80类别）" : "85列（4坐标+1置信度+80类别）")}");
         }
 
         /// <summary>
-        /// 处理检测日志（聚合+过滤）
+        /// 处理检测日志（聚合+过滤，接入统一日志控制）
         /// </summary>
         /// <param name="results">检测结果</param>
         public void ProcessDetectionLogs(List<YoloResult> results)
         {
+            if (!_logSettings.IsModuleEnabled(_currentModule)) return;
             if (results == null) return;
 
             // 聚合统计
@@ -534,7 +596,7 @@ namespace YoloV8Detection
                 if (_classCountAggregate.Count == 0)
                 {
                     if (Time.frameCount % 30 == 0)
-                        Debug.Log("📌 聚合统计：未检测到任何目标");
+                        LogInfo("📌 聚合统计：未检测到任何目标");
                 }
                 else
                 {
@@ -543,20 +605,20 @@ namespace YoloV8Detection
                     {
                         aggregateLog += $"{kvp.Key}({kvp.Value}) ";
                     }
-                    Debug.Log(aggregateLog);
+                    LogInfo(aggregateLog);
 
                     int total = _classCountAggregate.Values.Sum();
                     if (total > 50)
-                        Debug.LogWarning($"⚠️ 检测到大量目标（{total}个），可能影响性能");
+                        LogWarn($"⚠️ 检测到大量目标（{total}个），可能影响性能");
                 }
                 _classCountAggregate.Clear();
                 _lastAggregateLogTime = Time.time;
             }
 
-            // 输出详细日志
-            if (results.Count == 0 || !_logNmsResults) return;
+            // 输出详细日志（按级别控制）
+            if (results.Count == 0) return;
 
-            Debug.Log($"📌 检测到 {results.Count} 个目标");
+            LogInfo($"📌 检测到 {results.Count} 个目标");
             foreach (var result in results)
             {
                 bool shouldLog = true;
@@ -567,7 +629,7 @@ namespace YoloV8Detection
 
                 if (shouldLog && result.Confidence > 0.8f)
                 {
-                    Debug.Log($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 位置：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1}) | TrackId：{result.TrackId}");
+                    LogDebug($"  - 类别：{result.ClassName} | 置信度：{result.Confidence:F2} | 位置：({result.Rect.X:F1}, {result.Rect.Y:F1}, {result.Rect.Width:F1}, {result.Rect.Height:F1}) | TrackId：{result.TrackId}");
                 }
             }
         }
@@ -580,7 +642,7 @@ namespace YoloV8Detection
         {
             if (!_isInitialized || _net == null || _net.Empty())
             {
-                Debug.LogError("❌ 模型未初始化，无法预热");
+                LogError("❌ 模型未初始化，无法预热");
                 return false;
             }
 
@@ -604,7 +666,7 @@ namespace YoloV8Detection
                             }
                             catch (Exception forwardEx)
                             {
-                                Debug.LogWarning($"⚠️ 预热推理失败，自动降级CPU: {forwardEx.Message}");
+                                LogWarn($"⚠️ 预热推理失败，自动降级CPU: {forwardEx.Message}");
                                 // 强制CPU后端（使用数值枚举，避免版本兼容问题）
                                 _net.SetPreferableBackend((Backend)0); // DNN_BACKEND_OPENCV
                                 _net.SetPreferableTarget((Target)0);   // DNN_TARGET_CPU
@@ -613,14 +675,13 @@ namespace YoloV8Detection
                         }
                     }
 
-                    if (_logModelProcessing)
-                        Debug.Log("✅ 模型预热完成，首次检测无卡顿");
+                    LogDebug("✅ 模型预热完成，首次检测无卡顿");
                     return true;
                 }
                 catch (Exception ex)
                 {
                     // 仅记录警告，不统计为错误（预热失败不影响核心功能）
-                    Debug.LogWarning($"⚠️ 模型预热警告：{ex.Message}（不影响检测功能）");
+                    LogWarn($"⚠️ 模型预热警告：{ex.Message}（不影响检测功能）");
                     return false;
                 }
             }
@@ -638,7 +699,7 @@ namespace YoloV8Detection
         {
             if (string.IsNullOrEmpty(newModelPath) || !File.Exists(newModelPath))
             {
-                Debug.LogError($"❌ 新模型文件不存在：{newModelPath}");
+                LogError($"❌ 新模型文件不存在：{newModelPath}");
                 return false;
             }
 
@@ -667,7 +728,7 @@ namespace YoloV8Detection
                     _net = CvDnn.ReadNetFromOnnx(_modelPath);
                     if (_net == null || _net.Empty())
                     {
-                        Debug.LogError("❌ 新模型加载失败");
+                        LogError("❌ 新模型加载失败");
                         _isInitialized = false;
                         return false;
                     }
@@ -679,13 +740,12 @@ namespace YoloV8Detection
                     // 预热新模型
                     WarmUpModel();
 
-                    if (_logModelProcessing)
-                        Debug.Log($"✅ 模型切换成功：{newModelPath}");
+                    LogDebug($"✅ 模型切换成功：{newModelPath}");
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"❌ 模型切换失败：{ex.Message}\n{ex.StackTrace}");
+                    LogError($"❌ 模型切换失败：{ex.Message}\n{ex.StackTrace}");
                     _isInitialized = false;
                     lock (_statsLock)
                     {
@@ -767,7 +827,7 @@ namespace YoloV8Detection
             // 4.7额外校验：确保Blob维度严格为(1,3,640,640)
             if (blob.Size(0) != 1 || blob.Size(1) != 3 || blob.Size(2) != _inputSize.Height || blob.Size(3) != _inputSize.Width)
             {
-                Debug.LogWarning($"⚠️ Blob维度异常：({blob.Size(0)},{blob.Size(1)},{blob.Size(2)},{blob.Size(3)})，强制重置为(1,3,{_inputSize.Height},{_inputSize.Width})");
+                LogWarn($"⚠️ Blob维度异常：({blob.Size(0)},{blob.Size(1)},{blob.Size(2)},{blob.Size(3)})，强制重置为(1,3,{_inputSize.Height},{_inputSize.Width})");
                 blob = blob.Reshape(3, new[] { 1, 3, _inputSize.Height, _inputSize.Width });
             }
 
@@ -785,12 +845,11 @@ namespace YoloV8Detection
         {
             var results = new List<YoloResult>();
 
-            if (_logModelProcessing)
-                Debug.Log($"输出矩阵信息: 维度={output.Dims}, 形状=({output.Size(0)},{output.Size(1)})");
+            LogDebug($"输出矩阵信息: 维度={output.Dims}, 形状=({output.Size(0)},{output.Size(1)})");
 
             if (output == null || output.Empty())
             {
-                Debug.LogError("❌ 解析失败：输入输出矩阵为空");
+                LogError("❌ 解析失败：输入输出矩阵为空");
                 return results;
             }
 
@@ -800,16 +859,16 @@ namespace YoloV8Detection
             // 修复列数异常
             if (cols <= 0)
             {
-                Debug.LogError($"❌ 解析失败：无效列数={cols}，尝试从矩阵形状重新获取");
+                LogError($"❌ 解析失败：无效列数={cols}，尝试从矩阵形状重新获取");
                 if (output.Dims >= 2)
                 {
                     rows = output.Size(0);
                     cols = output.Size(1);
-                    Debug.LogWarning($"🔄 重新获取维度：rows={rows}, cols={cols}");
+                    LogWarn($"🔄 重新获取维度：rows={rows}, cols={cols}");
                 }
                 if (cols <= 0)
                 {
-                    Debug.LogError("❌ 无法获取有效维度，解析终止");
+                    LogError("❌ 无法获取有效维度，解析终止");
                     return results;
                 }
             }
@@ -820,21 +879,18 @@ namespace YoloV8Detection
             {
                 expectedCols = 84;
                 _isNoSeparateConfidence = true;
-                if (_logModelProcessing)
-                    Debug.Log($"📌 检测到模型输出84列（4坐标+80类别），自动适配COCO80类模式");
+                LogDebug($"📌 检测到模型输出84列（4坐标+80类别），自动适配COCO80类模式");
             }
             else if (cols == 85)
             {
                 expectedCols = 85;
                 _isNoSeparateConfidence = false;
-                if (_logModelProcessing)
-                    Debug.Log($"📌 检测到模型输出85列（4坐标+1置信度+80类别），自动适配");
+                LogDebug($"📌 检测到模型输出85列（4坐标+1置信度+80类别），自动适配");
             }
             else if (cols == 4)
             {
                 expectedCols = 4;
-                if (_logModelProcessing)
-                    Debug.Log($"📌 检测到模型仅输出4列（纯坐标），自动适配无类别模式");
+                LogDebug($"📌 检测到模型仅输出4列（纯坐标），自动适配无类别模式");
             }
             else
             {
@@ -843,14 +899,13 @@ namespace YoloV8Detection
                     : 5 + _classNames.Count;
             }
 
-            if (_logModelProcessing)
-                Debug.Log($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
+            LogDebug($"📌 解析输出：行数={rows}, 列数={cols}, 预期列数={expectedCols}（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
 
             // 列数校验
             if (cols != expectedCols)
             {
-                Debug.LogError($"❌ 输出维度不匹配：实际{cols}列，预期{expectedCols}列");
-                Debug.LogError($"💡 可能原因：1.模型类别数与配置不匹配 2.模型格式设置错误（当前设置：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
+                LogError($"❌ 输出维度不匹配：实际{cols}列，预期{expectedCols}列");
+                LogError($"💡 可能原因：1.模型类别数与配置不匹配 2.模型格式设置错误（当前设置：{(_isNoSeparateConfidence ? "84列" : "85列")}）");
                 return results;
             }
 
@@ -877,7 +932,7 @@ namespace YoloV8Detection
             }
             catch (Exception ex)
             {
-                Debug.LogError($"❌ 提取输出数据失败：{ex.Message}\n{ex.StackTrace}");
+                LogError($"❌ 提取输出数据失败：{ex.Message}\n{ex.StackTrace}");
                 lock (_statsLock)
                 {
                     _detectionErrorCount++;
@@ -967,12 +1022,19 @@ namespace YoloV8Detection
                     ? _classNames[maxClassId]
                     : $"unknown_{maxClassId}";
 
+                // 修复 Rect 冲突：明确使用 OpenCvSharp.Rect
+                OpenCvSharp.Rect rect = new OpenCvSharp.Rect(
+                    (int)left,
+                    (int)top,
+                    (int)width,
+                    (int)height);
+
                 results.Add(new YoloResult
                 {
                     ClassId = maxClassId,
                     ClassName = className,
                     Confidence = finalConfidence,
-                    Rect = new Rect2d(left, top, width, height),
+                    Rect = rect,
                     TrackId = GenerateUniqueTrackId(className)
                 });
             }
@@ -992,8 +1054,7 @@ namespace YoloV8Detection
         {
             if (results.Count == 0)
             {
-                if (_logNmsResults)
-                    Debug.Log("📌 NMS：无有效检测框");
+                LogInfo("📌 NMS：无有效检测框");
                 return results;
             }
 
@@ -1005,12 +1066,14 @@ namespace YoloV8Detection
                 var groupResults = group.ToList();
                 int groupCount = groupResults.Count;
 
+                // 修复 Rect 冲突：明确使用 OpenCvSharp.Rect
                 OpenCvSharp.Rect[] boxesArray = new OpenCvSharp.Rect[groupCount];
                 float[] confidencesArray = new float[groupCount];
 
                 for (int i = 0; i < groupCount; i++)
                 {
                     var result = groupResults[i];
+                    // 修复 Rect 冲突：明确使用 OpenCvSharp.Rect
                     boxesArray[i] = new OpenCvSharp.Rect(
                         (int)result.Rect.X,
                         (int)result.Rect.Y,
@@ -1038,24 +1101,84 @@ namespace YoloV8Detection
                 }
             }
 
-            if (_logNmsResults && results.Count != nmsResults.Count)
+            if (results.Count != nmsResults.Count)
             {
-                Debug.Log($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）");
+                LogInfo($"📌 NMS前：{results.Count}个框，NMS后：{nmsResults.Count}个框（按类别分组去重）");
             }
 
             return nmsResults;
         }
 
+        /// <summary>
+        /// 配置网络后端（CUDA/CPU）- 兼容所有OpenCvSharp版本
+        /// </summary>
+        private void ConfigureNetBackend()
+        {
+            if (_net == null)
+            {
+                LogWarn("⚠️ _net 为空，跳过推理后端配置");
+                return;
+            }
+
+            try
+            {
+                // 兼容所有版本：使用数值枚举而非命名枚举
+                if (_useCuda)
+                {
+                    try
+                    {
+                        // DNN_BACKEND_CUDA = 3, DNN_TARGET_CUDA = 6
+                        _net.SetPreferableBackend((Backend)3);
+                        _net.SetPreferableTarget((Target)6);
+                        LogInfo("✅ 启用CUDA后端推理");
+                    }
+                    catch
+                    {
+                        // 降级到CPU：DNN_BACKEND_OPENCV = 0, DNN_TARGET_CPU = 0
+                        _net.SetPreferableBackend((Backend)0);
+                        _net.SetPreferableTarget((Target)0);
+                        _useCuda = false; // 标记为禁用CUDA，避免重复尝试
+                        LogWarn("⚠️ CUDA配置失败，降级到CPU后端");
+                    }
+                }
+                else
+                {
+                    // 强制CPU后端
+                    _net.SetPreferableBackend((Backend)0);
+                    _net.SetPreferableTarget((Target)0);
+                    LogInfo("✅ 已配置CPU推理后端");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"⚠️ 后端配置失败：{ex.Message}，使用默认CPU后端");
+                // 终极兜底：强制使用数值枚举
+                try
+                {
+                    _net.SetPreferableBackend((Backend)0);
+                    _net.SetPreferableTarget((Target)0);
+                }
+                catch
+                {
+                    // 忽略最终兜底的异常
+                }
+            }
+        }
+
+        /// <summary>
+        /// 初始化引擎
+        /// </summary>
+        /// <returns>是否初始化成功</returns>
         private bool InitializeEngine()
         {
             if (string.IsNullOrEmpty(_modelPath))
             {
-                Debug.LogWarning("⚠️ 模型路径为空，引擎未初始化");
+                LogWarn("⚠️ 模型路径为空，引擎未初始化");
                 return false;
             }
             if (!File.Exists(_modelPath))
             {
-                Debug.LogError($"❌ 模型文件不存在: {_modelPath}");
+                LogError($"❌ 模型文件不存在: {_modelPath}");
                 return false;
             }
 
@@ -1064,7 +1187,7 @@ namespace YoloV8Detection
             _modelPath = Path.GetFullPath(_modelPath);
             // 替换路径分隔符（4.7不识别/）
             _modelPath = _modelPath.Replace('/', '\\');
-            Debug.Log($"📌 4.7兼容路径：{_modelPath}");
+            LogInfo($"📌 4.7兼容路径：{_modelPath}");
             // ==================================================
 
             try
@@ -1091,8 +1214,7 @@ namespace YoloV8Detection
                     if (Directory.Exists(libPath))
                     {
                         Environment.SetEnvironmentVariable("PATH", $"{Environment.GetEnvironmentVariable("PATH")};{libPath}");
-                        if (_logModelProcessing)
-                            Debug.Log($"✅ 已添加OpenCvSharp库路径：{libPath}");
+                        LogInfo($"✅ 已添加OpenCvSharp库路径：{libPath}");
                         // 移除break，保证所有有效路径都被添加（避免漏加依赖）
                     }
                 }
@@ -1101,46 +1223,11 @@ namespace YoloV8Detection
                 _net = CvDnn.ReadNetFromOnnx(_modelPath);
                 if (_net == null || _net.Empty())
                 {
-                    Debug.LogError("❌ 模型加载失败，返回的网络为空或无效");
+                    LogError("❌ 模型加载失败，返回的网络为空或无效");
                     return false;
                 }
 
-                // 适配OpenCVSharp 4.7.0：移除DnnInvoke依赖，直接验证CUDA可用性
-                try
-                {
-                    // 第一步：尝试配置CUDA后端（用数值枚举避免枚举名不兼容）
-                    _net.SetPreferableBackend((Backend)3); // DNN_BACKEND_CUDA
-                    _net.SetPreferableTarget((Target)6);   // DNN_TARGET_CUDA
-
-                    // 第二步：用空推理验证CUDA是否真的可用（避免配置成功但运行失败）
-                    using (var dummyBlob = CvDnn.BlobFromImage(
-                        new Mat(_inputSize.Height, _inputSize.Width, MatType.CV_8UC3, Scalar.All(0)),
-                        1.0 / 255.0,
-                        _inputSize,
-                        new Scalar(0, 0, 0),
-                        swapRB: true,
-                        crop: false))
-                    {
-                        _net.SetInput(dummyBlob);
-                        string[] outputLayers = _net.GetUnconnectedOutLayersNames();
-                        _net.Forward(outputLayers.Length > 0 ? outputLayers[0] : "");
-
-                        // 能走到这里说明CUDA完全可用
-                        Debug.Log("✅ CUDA配置成功！YOLO将使用GPU推理");
-                        _useCuda = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // CUDA配置/推理失败，自动降级到CPU
-                    Debug.LogWarning($"⚠️ CUDA不可用（原因：{ex.Message}），自动切换到CPU推理");
-                    _net.SetPreferableBackend((Backend)0); // DNN_BACKEND_OPENCV
-                    _net.SetPreferableTarget((Target)0);   // DNN_TARGET_CPU
-                    _useCuda = false;
-                }
-
-
-                // 配置推理后端（核心：显式指定4.7兼容的后端/目标）
+                // 配置推理后端（核心：修复后的后端配置逻辑）
                 ConfigureNetBackend();
 
                 // 初始化日志间隔
@@ -1149,81 +1236,22 @@ namespace YoloV8Detection
                     AggregateLogInterval = 5f;
                 }
 
-                if (_logModelProcessing)
-                    Debug.Log($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count}）");
+                LogInfo($"✅ YOLOv8引擎初始化成功（模型格式：{(_isNoSeparateConfidence ? "84列" : "85列")}，类别数：{_classNames.Count}）");
 
                 return true;
             }
             catch (DllNotFoundException ex)
             {
-                Debug.LogError($"找不到OpenCvSharp原生库: {ex.Message}");
-                Debug.LogError("💡 解决方案：1.检查OpenCvSharpExtern.dll是否存在 2.确认库版本与Unity架构匹配（x64） 3.将库文件放到Plugins/x86_64目录");
+                LogError($"找不到OpenCvSharp原生库: {ex.Message}");
+                LogError("💡 解决方案：1.检查OpenCvSharpExtern.dll是否存在 2.确认库版本与Unity架构匹配（x64） 3.将库文件放到Plugins/x86_64目录");
                 return false;
             }
             catch (Exception ex)
             {
                 // 增强错误日志：补充4.7版本相关排查点
-                Debug.LogError($"加载模型失败: {ex.Message}\n{ex.StackTrace}");
-                Debug.LogError($"💡 4.7版本排查：1.模型OPSET是否≤11 2.环境变量是否生效 3.模型路径是否为绝对路径（当前路径：{_modelPath}）");
+                LogError($"加载模型失败: {ex.Message}\n{ex.StackTrace}");
+                LogError($"💡 4.7版本排查：1.模型OPSET是否≤11 2.环境变量是否生效 3.模型路径是否为绝对路径（当前路径：{_modelPath}）");
                 return false;
-            }
-        }
-        /// <summary>
-        /// 配置推理后端（兼容OpenCVSharp 4.7，优先CUDA降级CPU）
-        /// </summary>
-        private void ConfigureNetBackend()
-        {
-            if (_net == null)
-            {
-                if (_logModelProcessing)
-                    Debug.LogWarning("⚠️ _net 为空，跳过推理后端配置");
-                return;
-            }
-
-            try
-            {
-                if (_useCuda)
-                {
-                    // 尝试CUDA配置，失败自动降级
-                    try
-                    {
-                        _net.SetPreferableBackend((Backend)3); // DNN_BACKEND_CUDA
-                        _net.SetPreferableTarget((Target)6);   // DNN_TARGET_CUDA
-                        if (_logModelProcessing)
-                            Debug.Log("✅ 已配置CUDA GPU推理后端");
-                    }
-                    catch
-                    {
-                        // CUDA配置失败，自动降级CPU
-                        _net.SetPreferableBackend((Backend)0);
-                        _net.SetPreferableTarget((Target)0);
-                        _useCuda = false; // 标记为禁用CUDA，避免重复尝试
-                        if (_logModelProcessing)
-                            Debug.LogWarning("⚠️ CUDA配置失败，降级到CPU后端");
-                    }
-                }
-                else
-                {
-                    // 强制CPU后端
-                    _net.SetPreferableBackend((Backend)0);
-                    _net.SetPreferableTarget((Target)0);
-                    if (_logModelProcessing)
-                        Debug.Log("✅ 已配置CPU推理后端");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"⚠️ 配置推理后端失败，使用默认CPU: {ex.Message}");
-                // 终极兜底
-                try
-                {
-                    _net.SetPreferableBackend((Backend)0);
-                    _net.SetPreferableTarget((Target)0);
-                }
-                catch
-                {
-                    // 忽略最终兜底的异常
-                }
             }
         }
 
@@ -1307,19 +1335,19 @@ namespace YoloV8Detection
         /// <param name="rectA">矩形A</param>
         /// <param name="rectB">矩形B</param>
         /// <returns>IOU值</returns>
-        private float CalculateIOU(Rect2d rectA, Rect2d rectB)
+        private float CalculateIOU(OpenCvSharp.Rect rectA, OpenCvSharp.Rect rectB)
         {
-            float x1 = Mathf.Max((float)rectA.X, (float)rectB.X);
-            float y1 = Mathf.Max((float)rectA.Y, (float)rectB.Y);
-            float x2 = Mathf.Min((float)rectA.X + (float)rectA.Width, (float)rectB.X + (float)rectB.Width);
-            float y2 = Mathf.Min((float)rectA.Y + (float)rectA.Height, (float)rectB.Y + (float)rectB.Height);
+            float x1 = Mathf.Max(rectA.X, rectB.X);
+            float y1 = Mathf.Max(rectA.Y, rectB.Y);
+            float x2 = Mathf.Min(rectA.X + rectA.Width, rectB.X + rectB.Width);
+            float y2 = Mathf.Min(rectA.Y + rectA.Height, rectB.Y + rectB.Height);
 
             if (x2 < x1 || y2 < y1)
                 return 0;
 
             float intersectionArea = (x2 - x1) * (y2 - y1);
-            float areaA = (float)(rectA.Width * rectA.Height);
-            float areaB = (float)(rectB.Width * rectB.Height);
+            float areaA = rectA.Width * rectA.Height;
+            float areaB = rectB.Width * rectB.Height;
 
             // 避免除零错误
             if (areaA + areaB - intersectionArea <= 0)
@@ -1340,6 +1368,7 @@ namespace YoloV8Detection
 
             foreach (var result in results)
             {
+                // 修复 Rect 冲突：明确使用 OpenCvSharp.Rect
                 OpenCvSharp.Rect rect = new OpenCvSharp.Rect(
                     (int)result.Rect.X,
                     (int)result.Rect.Y,
@@ -1355,6 +1384,7 @@ namespace YoloV8Detection
                 int baseLine; // 修复CS1620：out参数显式声明
                 Size labelSize = Cv2.GetTextSize(label, HersheyFonts.HersheySimplex, 0.5, 1, out baseLine);
 
+                // 修复 Rect 冲突：明确使用 OpenCvSharp.Rect
                 OpenCvSharp.Rect labelRect = new OpenCvSharp.Rect(
                     (int)result.Rect.X,
                     (int)result.Rect.Y - labelSize.Height - 2,
@@ -1392,7 +1422,7 @@ namespace YoloV8Detection
         }
 
         /// <summary>
-        /// 获取默认COCO80类名称
+        /// 获取默认COCO80类别名称
         /// </summary>
         /// <returns>类别列表</returns>
         private List<string> GetDefaultCocoClassNames()
@@ -1414,34 +1444,29 @@ namespace YoloV8Detection
         }
 
         /// <summary>
-        /// 添加性能统计数据
+        /// 添加性能统计
         /// </summary>
-        /// <param name="stage">统计阶段</param>
-        /// <param name="time">耗时（毫秒）</param>
         private void AddStat(string stage, float time)
         {
-            if (!_inferenceTimeStats.ContainsKey(stage))
-                _inferenceTimeStats[stage] = new List<float>();
+            lock (_statsLock)
+            {
+                if (!_inferenceTimeStats.ContainsKey(stage))
+                {
+                    _inferenceTimeStats[stage] = new List<float>();
+                }
+                _inferenceTimeStats[stage].Add(time);
 
-            // 仅保留最近100条数据，防止内存溢出
-            if (_inferenceTimeStats[stage].Count >= 100)
-                _inferenceTimeStats[stage].RemoveAt(0);
-
-            _inferenceTimeStats[stage].Add(time);
+                // 限制统计数据量，避免内存溢出
+                if (_inferenceTimeStats[stage].Count > 1000)
+                {
+                    _inferenceTimeStats[stage].RemoveRange(0, _inferenceTimeStats[stage].Count - 1000);
+                }
+            }
         }
 
         /// <summary>
-        /// 析构函数（兜底释放）
+        /// 释放资源
         /// </summary>
-        ~YoloV8Engine()
-        {
-            Dispose(false);
-        }
-
-        /// <summary>
-        /// 释放资源（完善版）
-        /// </summary>
-        /// <param name="disposing">是否释放托管资源</param>
         protected virtual void Dispose(bool disposing)
         {
             if (disposing)
@@ -1454,6 +1479,9 @@ namespace YoloV8Detection
                 _inferenceTimeStats?.Clear();
                 LogIncludedClasses?.Clear();
                 LogExcludedClasses?.Clear();
+
+                // 取消日志配置监听
+                _logSettings.OnSettingsChanged -= RefreshLogConfig;
             }
 
             // 释放非托管资源（修复Net无Release方法）
@@ -1479,11 +1507,19 @@ namespace YoloV8Detection
             _lastAggregateLogTime = 0;
             _detectionErrorCount = 0;
         }
+
+        /// <summary>
+        /// 析构函数
+        /// </summary>
+        ~YoloV8Engine()
+        {
+            Dispose(false);
+        }
         #endregion
     }
 
     /// <summary>
-    /// YOLO检测结果类（确保全局唯一定义，解决二义性）
+    /// YOLO检测结果类
     /// </summary>
     [Serializable]
     public class YoloResult
@@ -1491,7 +1527,8 @@ namespace YoloV8Detection
         public int ClassId { get; set; }          // 类别ID
         public string ClassName { get; set; }     // 类别名称
         public float Confidence { get; set; }     // 置信度
-        public Rect2d Rect { get; set; }          // 检测框
+        // 修复 Rect 冲突：明确使用 OpenCvSharp.Rect
+        public OpenCvSharp.Rect Rect { get; set; }          // 检测框
         public int TrackId { get; set; }          // 追踪ID
     }
 }

@@ -235,10 +235,10 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
         CleanupObstacleHistory();
     }
-
-    // YOLO坐标转世界坐标（修复：适配检测相机）
-    // YOLO坐标转世界坐标（适配X-Y平面坐标系）
-    private Vector3 ConvertYoloToWorldPosition(Rect2d rect)
+    // YOLO坐标转世界坐标（修复：适配检测相机 + 解决Rect命名冲突 + 类型转换问题）
+    // 适配X-Y平面坐标系
+    // 关键修改：显式指定OpenCvSharp.Rect，消除与UnityEngine.Rect的命名冲突
+    private Vector3 ConvertYoloToWorldPosition(OpenCvSharp.Rect rect)
     {
         // 优先使用YoloDetector的DetectionCamera
         Camera detectCamera = yoloDetector != null ? yoloDetector.sceneCamera : Camera.main;

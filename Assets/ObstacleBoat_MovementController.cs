@@ -1,8 +1,12 @@
 using UnityEngine;
+using System;
+// 新增：解决Dictionary未找到的命名空间
+using System.Collections.Generic;
 
 /// <summary>
 /// 无人船自主移动控制（手动优先+自动随机移动）- 适配GridManager栅格系统
-/// 修复点：1. 替换过时的FindObjectOfType → FindFirstObjectByType 2. 强化栅格坐标转换健壮性
+/// 修复点：1. 替换过时的FindObjectOfType → FindFirstObjectByType 2. 强化栅格坐标转换健壮性 3. 日志接入YoloLogSettings统一控制
+/// 额外修复：1. 添加System.Collections.Generic命名空间 2. 解决Random/Object命名空间冲突
 /// </summary>
 [RequireComponent(typeof(Collider))] // 确保有碰撞体（栅格检测辅助）
 public class USV_AutoMovement : MonoBehaviour
@@ -34,19 +38,28 @@ public class USV_AutoMovement : MonoBehaviour
     private float _dirUpdateTimer; // 随机方向更新计时器
     private GridManager _gridManager; // 栅格管理器引用
     private bool _isGridReady; // 栅格就绪标记
+    // 新增：日志配置与日志实例（USV模块日志）
+    private YoloLogSettings _yoloLogSettings;
+    private readonly YoloLogSettings.LogModule _currentModule = YoloLogSettings.LogModule.Main; // 假设该脚本归属Main模块，可根据实际调整
 
     void Start()
     {
         // 初始化随机方向（避免初始帧无方向）
-        _randomMoveDir = new Vector3(Random.Range(-1f, 1f), 0, Random.Range(-1f, 1f)).normalized;
+        // 修复：明确指定UnityEngine命名空间，解决Random冲突
+        _randomMoveDir = new Vector3(UnityEngine.Random.Range(-1f, 1f), 0, UnityEngine.Random.Range(-1f, 1f)).normalized;
 
         // 修复：替换过时的FindObjectOfType → FindFirstObjectByType（兼容Unity新版本）
+        // 修复：明确指定UnityEngine命名空间，解决Object冲突
         // 如需包含非激活对象，添加参数：FindObjectsInactive.Include
-        _gridManager = Object.FindFirstObjectByType<GridManager>();
+        _gridManager = UnityEngine.Object.FindFirstObjectByType<GridManager>();
 
+        // 新增：初始化日志配置（优先从全局单例获取，无则新建）
+        InitLogSettings();
+
+        // 原有日志替换为统一日志接口
         if (_gridManager == null && (enableObstacleAvoid || enableWaterBoundaryLimit))
         {
-            Debug.LogWarning($"[{name}] 未找到GridManager，障碍躲避/边界限制功能将失效！");
+            LogWarn($"未找到GridManager，障碍躲避/边界限制功能将失效！");
         }
 
         // 校验参数合法性
@@ -88,23 +101,110 @@ public class USV_AutoMovement : MonoBehaviour
     }
 
     /// <summary>
+    /// 新增：初始化日志配置
+    /// </summary>
+    private void InitLogSettings()
+    {
+        // 方式1：从全局单例获取（推荐，保证全局配置统一）
+        _yoloLogSettings = YoloLogSettingsGlobal.Instance?.LogSettings;
+
+        // 方式2：无全局单例则新建（兜底）
+        if (_yoloLogSettings == null)
+        {
+            _yoloLogSettings = new YoloLogSettings();
+            LogWarn("未找到全局YoloLogSettings，使用本地临时配置");
+        }
+    }
+
+    /// <summary>
+    /// 新增：统一日志输出方法（适配YoloLogSettings）
+    /// </summary>
+    #region 统一日志接口
+    private void LogDebug(string message)
+    {
+        WriteLog(YoloLogSettings.LogLevel.Debug, message);
+    }
+
+    private void LogInfo(string message)
+    {
+        WriteLog(YoloLogSettings.LogLevel.Info, message);
+    }
+
+    private void LogWarn(string message)
+    {
+        WriteLog(YoloLogSettings.LogLevel.Warn, message);
+    }
+
+    private void LogError(string message, Exception ex = null)
+    {
+        var fullMessage = ex == null ? message : $"{message}\n{ex}";
+        WriteLog(YoloLogSettings.LogLevel.Error, fullMessage);
+    }
+
+    private void LogFatal(string message, Exception ex = null)
+    {
+        var fullMessage = ex == null ? message : $"{message}\n{ex}";
+        WriteLog(YoloLogSettings.LogLevel.Fatal, fullMessage);
+    }
+
+    /// <summary>
+    /// 底层日志输出逻辑（对接YoloLogSettings校验）
+    /// </summary>
+    private void WriteLog(YoloLogSettings.LogLevel level, string message)
+    {
+        // 1. 校验模块是否启用
+        if (!_yoloLogSettings.IsModuleEnabled(_currentModule)) return;
+
+        // 2. 校验日志级别（当前级别 >= 配置级别才输出）
+        var configLevel = _yoloLogSettings.GetModuleLogLevel(_currentModule);
+        if (level < configLevel) return;
+
+        // 3. 执行实际日志输出（保留原有Unity Debug输出逻辑）
+        string logContent = $"[{name}] {message}";
+        switch (level)
+        {
+            case YoloLogSettings.LogLevel.Debug:
+                Debug.Log(logContent, this);
+                break;
+            case YoloLogSettings.LogLevel.Info:
+                Debug.Log(logContent, this);
+                break;
+            case YoloLogSettings.LogLevel.Warn:
+                Debug.LogWarning(logContent, this);
+                break;
+            case YoloLogSettings.LogLevel.Error:
+                Debug.LogError(logContent, this);
+                break;
+            case YoloLogSettings.LogLevel.Fatal:
+                Debug.LogError($"[FATAL] {logContent}", this);
+                break;
+            case YoloLogSettings.LogLevel.None:
+                break;
+        }
+    }
+    #endregion
+
+    /// <summary>
     /// 校验参数合法性，避免运行时异常
     /// </summary>
     private void ValidateParameters()
     {
         if (usvMoveSpeed < 0)
         {
-            Debug.LogWarning($"[{name}] 手动移动速度不能为负，已重置为5", this);
+            // 替换原有日志为统一接口
+            LogWarn($"手动移动速度不能为负，已重置为5");
             usvMoveSpeed = 5f;
         }
         if (autoMoveSpeed < 0)
         {
-            Debug.LogWarning($"[{name}] 自动移动速度不能为负，已重置为3", this);
+            // 替换原有日志为统一接口
+            LogWarn($"自动移动速度不能为负，已重置为3");
             autoMoveSpeed = 3f;
         }
         if (randomDirUpdateInterval <= 0)
         {
-            Debug.LogWarning($"[{name}] 方向更新间隔必须大于0，已重置为1.5", this);
+            // 替换原有日志为统一接口
+            LogWarn($"方向更新间隔必须大于0，已重置为1.5");
             randomDirUpdateInterval = 1.5f;
         }
     }
@@ -175,7 +275,8 @@ public class USV_AutoMovement : MonoBehaviour
     /// </summary>
     private void UpdateRandomMoveDir()
     {
-        Vector3 newDir = new Vector3(Random.Range(-1f, 1f), 0, Random.Range(-1f, 1f));
+        // 修复：明确指定UnityEngine命名空间，解决Random冲突
+        Vector3 newDir = new Vector3(UnityEngine.Random.Range(-1f, 1f), 0, UnityEngine.Random.Range(-1f, 1f));
         // 避免零向量（防止无移动）
         _randomMoveDir = newDir.magnitude < 0.1f ? Vector3.forward : newDir.normalized;
     }
@@ -203,7 +304,8 @@ public class USV_AutoMovement : MonoBehaviour
 
         if (isCurrentDirBlocked)
         {
-            Debug.LogWarning($"[{name}] 尝试{maxRetry}次仍检测到栅格障碍，停止自动移动", this);
+            // 替换原有日志为统一接口
+            LogWarn($"尝试{maxRetry}次仍检测到栅格障碍，停止自动移动");
             _randomMoveDir = Vector3.zero; // 停止移动，避免撞墙
         }
     }
@@ -226,7 +328,8 @@ public class USV_AutoMovement : MonoBehaviour
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[{name}] 世界坐标转栅格坐标失败：{e.Message}", this);
+            // 替换原有日志为统一接口
+            LogError($"世界坐标转栅格坐标失败：{e.Message}", e);
             return false;
         }
 
@@ -339,6 +442,106 @@ public class USV_AutoMovement : MonoBehaviour
             Gizmos.color = Color.blue;
             Gizmos.DrawRay(transform.position, _randomMoveDir * 2f);
             Gizmos.DrawWireSphere(transform.position + _randomMoveDir * 2f, 0.2f);
+        }
+    }
+}
+
+/// <summary>
+/// 新增：全局YoloLogSettings单例（可选，用于全局统一配置）
+/// </summary>
+public class YoloLogSettingsGlobal : MonoBehaviour
+{
+    public static YoloLogSettingsGlobal Instance { get; private set; }
+    public YoloLogSettings LogSettings { get; private set; }
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+
+        // 初始化全局日志配置
+        LogSettings = new YoloLogSettings();
+    }
+}
+
+/// <summary>
+/// 日志配置核心类（需确保该类在项目中存在，此处为适配所需的最小定义）
+/// </summary>
+public class YoloLogSettings
+{
+    // 日志级别定义
+    public enum LogLevel
+    {
+        None,    // 不输出任何日志
+        Fatal,   // 致命错误
+        Error,   // 普通错误
+        Warn,    // 警告
+        Info,    // 信息
+        Debug    // 调试
+    }
+
+    // 模块定义（可根据项目扩展）
+    public enum LogModule
+    {
+        Main,    // 主模块（示例）
+        USV,     // 无人船模块
+        Grid,    // 栅格模块
+        Other    // 其他模块
+    }
+
+    // 模块启用状态（默认全部启用）
+    private Dictionary<LogModule, bool> _moduleEnabled = new Dictionary<LogModule, bool>()
+    {
+        { LogModule.Main, true },
+        { LogModule.USV, true },
+        { LogModule.Grid, true },
+        { LogModule.Other, true }
+    };
+
+    // 模块日志级别（默认全部为Debug）
+    private Dictionary<LogModule, LogLevel> _moduleLogLevel = new Dictionary<LogModule, LogLevel>()
+    {
+        { LogModule.Main, LogLevel.Debug },
+        { LogModule.USV, LogLevel.Debug },
+        { LogModule.Grid, LogLevel.Debug },
+        { LogModule.Other, LogLevel.Debug }
+    };
+
+    /// <summary>
+    /// 检查模块是否启用日志
+    /// </summary>
+    public bool IsModuleEnabled(LogModule module)
+    {
+        return _moduleEnabled.TryGetValue(module, out bool enabled) && enabled;
+    }
+
+    /// <summary>
+    /// 获取模块的日志级别
+    /// </summary>
+    public LogLevel GetModuleLogLevel(LogModule module)
+    {
+        return _moduleLogLevel.TryGetValue(module, out LogLevel level) ? level : LogLevel.None;
+    }
+
+    // 可选：提供配置修改接口（用于外部控制日志开关/级别）
+    public void SetModuleEnabled(LogModule module, bool enabled)
+    {
+        if (_moduleEnabled.ContainsKey(module))
+        {
+            _moduleEnabled[module] = enabled;
+        }
+    }
+
+    public void SetModuleLogLevel(LogModule module, LogLevel level)
+    {
+        if (_moduleLogLevel.ContainsKey(module))
+        {
+            _moduleLogLevel[module] = level;
         }
     }
 }
