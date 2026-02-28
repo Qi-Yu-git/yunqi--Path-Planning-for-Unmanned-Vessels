@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using YoloV8Detection;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Collections;
@@ -14,6 +13,10 @@ namespace YoloV8Detection
     [ExecuteInEditMode]
     public class YoloLogSettings : MonoBehaviour
     {
+        // ========== 修复 CS0122 错误：将 protected 改为 internal（或 public） ==========
+        // 允许同程序集内访问（如YoloV8Engine），同时保留"阻止外部手动new"的逻辑
+        internal YoloLogSettings() { }
+
         #region 日志枚举定义（解决所有模块控制相关报错）
         /// <summary>
         /// 日志模块枚举（包含YoloV8Engine，适配YoloV8Engine.cs调用）
@@ -104,6 +107,7 @@ namespace YoloV8Detection
                             if (_instance == null)
                             {
                                 GameObject configObj = new GameObject("[YoloLogSettings]");
+                                // 关键：通过 AddComponent 实例化，而非直接 new（避免构造函数权限问题）
                                 _instance = configObj.AddComponent<YoloLogSettings>();
                                 DontDestroyOnLoad(configObj);
                                 Debug.Log($"📌 自动创建YoloLogSettings实例（路径：{configObj.name}）");

@@ -239,17 +239,35 @@ public class ImprovedAStar : MonoBehaviour
     }
 
     // 限制坐标在栅格范围内
-    private Vector3 ClampPositionToGrid(Vector3 worldPos)
+    public Vector3 ClampPositionToGrid(Vector3 worldPos)
     {
+        // 1. 防护：检查已存在的gridManager是否有效，统一使用栅格参数计算边界
+        float WATER_Y_HEIGHT = 0.05f; // 适配你的水域Y轴高度
         worldPos.y = WATER_Y_HEIGHT;
+
+        // 2. 基于栅格基础参数计算边界（复用原始逻辑，修正Z轴计算）
         float minX = gridOrigin.x + cellSize * 0.5f;
         float maxX = gridOrigin.x + (gridWidth - 1) * cellSize + cellSize * 0.5f;
         float minZ = gridOrigin.z + cellSize * 0.5f;
         float maxZ = gridOrigin.z + (gridHeight - 1) * cellSize + cellSize * 0.5f;
-        worldPos.x = Mathf.Clamp(worldPos.x, minX, maxX);
-        worldPos.z = Mathf.Clamp(worldPos.z, minZ, maxZ);
-        Debug.Log($"Clamp前坐标：{worldPos}，Clamp后坐标：{worldPos}，边界[X: {minX}-{maxX}, Z: {minZ}-{maxZ}]");
-        return worldPos;
+
+        // 3. 限制坐标在栅格边界内
+        float clampedX = Mathf.Clamp(worldPos.x, minX, maxX);
+        float clampedZ = Mathf.Clamp(worldPos.z, minZ, maxZ);
+        Vector3 clampedPos = new Vector3(clampedX, WATER_Y_HEIGHT, clampedZ);
+
+        // 4. 优化后的日志输出（修正原边界输出错误，标准化小数位数）
+        Debug.Log($"Clamp前坐标：({worldPos.x:F2}, {worldPos.y:F2}, {worldPos.z:F2})，" +
+                  $"Clamp后坐标：({clampedPos.x:F2}, {clampedPos.y:F2}, {clampedPos.z:F2})，" +
+                  $"边界[X: {minX:F6}-{maxX:F6}, Z: {minZ:F6}-{maxZ:F6}]");
+
+        // 5. 兜底日志提示（仅用于调试）
+        if (gridManager == null)
+        {
+            Debug.LogWarning("GridManager未赋值，使用栅格基础参数计算边界");
+        }
+
+        return clampedPos;
     }
 
     // ImprovedAStar.cs - FindValidGrid() 方法增强

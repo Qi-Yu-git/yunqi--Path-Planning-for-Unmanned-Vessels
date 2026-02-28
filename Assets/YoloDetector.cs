@@ -189,13 +189,23 @@ public class YoloDetector : MonoBehaviour
                 return;
             }
 
-            // ========== 核心修复：移除不存在的aggregateLogInterval参数 ==========
+            // ========== 核心修复：移除不存在的aggregateLogInterval参数 + 修复MonoBehaviour实例化 ==========
+            // 修复CS0618警告：替换废弃的FindObjectOfType为FindAnyObjectByType
+            YoloV8Detection.YoloLogSettings logSettings = FindAnyObjectByType<YoloV8Detection.YoloLogSettings>();
+            if (logSettings == null)
+            {
+                GameObject logObj = new GameObject("[YoloLogSettings]");
+                logSettings = logObj.AddComponent<YoloV8Detection.YoloLogSettings>();
+                // 避免场景销毁时的断言错误：标记为DontDestroyOnLoad（按需）
+                DontDestroyOnLoad(logObj);
+            }
+
             // 替换原错误的构造函数调用
             _yoloEngine = new YoloV8Detection.YoloV8Engine(
                 modelPath: fullModelPath,
                 confidenceThreshold: confidenceThreshold,
                 iouThreshold: iouThreshold,
-                logSettings: new YoloV8Detection.YoloLogSettings(),
+                logSettings: logSettings, // 使用修复后的实例
                 useCuda: true
             );
             // 替代原logModelProcessing/logNmsResults参数

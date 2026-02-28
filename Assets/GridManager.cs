@@ -82,6 +82,24 @@ public class GridManager : MonoBehaviour
     private float lastWaterMinY;
     private float lastWaterMaxY;
 
+    // ========== 新增：初始化完成标识（时序校验核心） ==========
+    public bool IsInitialized { get; private set; }
+
+    // ========== 新增：默认起始位置（解决CS1061错误） ==========
+    public Vector3 DefaultStartPosition
+    {
+        get
+        {
+            if (!IsInitialized)
+            {
+                Debug.LogWarning("GridManager：默认起始位置获取失败，栅格未初始化！");
+                return Vector3.zero;
+            }
+            // 返回水域中心作为默认起始位置（可根据需求调整）
+            return 水域平面.position + new Vector3(0, 0.05f, 0);
+        }
+    }
+
     // 公开属性（兼容英文命名）
     public int gridWidth => 栅格宽度;
     public int gridHeight => 栅格高度;
@@ -96,6 +114,7 @@ public class GridManager : MonoBehaviour
         if (水域平面 == null)
         {
             Debug.LogError("GridManager：未赋值水域平面！");
+            IsInitialized = false; // 标记初始化失败
             return;
         }
 
@@ -129,6 +148,8 @@ public class GridManager : MonoBehaviour
 
         // 标记栅格就绪
         isGridReady = true;
+        // ========== 关键修改：标记初始化完成 ==========
+        IsInitialized = true;
 
         // 日志更新：提示同步初始化完成
         Debug.Log($"GridManager：核心栅格同步初始化完成，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}");
@@ -167,7 +188,7 @@ public class GridManager : MonoBehaviour
     // 栅格是否就绪（核心方法）
     public bool IsGridReady()
     {
-        return isGridReady;
+        return isGridReady && IsInitialized; // 关联初始化完成标识
     }
 
     // 标记障碍物（核心方法）
@@ -221,6 +242,7 @@ public class GridManager : MonoBehaviour
     {
         重新初始化栅格数据();
         标记障碍物();
+        IsInitialized = true; // 重置后重新标记初始化完成
         Debug.Log("GridManager：栅格已重置并重新标记障碍物");
     }
 
@@ -229,6 +251,7 @@ public class GridManager : MonoBehaviour
     {
         重新初始化栅格数据();
         标记障碍物();
+        IsInitialized = true; // 初始化后标记完成
         Debug.Log("GridManager：栅格初始化完成（适配SpawnManager调用）");
     }
 
@@ -238,6 +261,7 @@ public class GridManager : MonoBehaviour
         if (水域平面 == null)
         {
             Debug.LogError("GridManager：重新初始化失败，未赋值水域平面！");
+            IsInitialized = false;
             return;
         }
 
@@ -429,12 +453,92 @@ public class GridManager : MonoBehaviour
         return 栅格地图[栅格坐标.x, 栅格坐标.y].walkable;
     }
 
+    // ========== 新增：IsWalkable 方法（随机点核心） ==========
+    /// <summary>
+    /// 判断栅格是否可通行（英文命名，兼容随机点方法）
+    /// </summary>
+    public bool IsWalkable(Vector2Int gridPos)
+    {
+        return 栅格是否可通行(gridPos);
+    }
+
+    // ========== 新增：GetRandomWalkablePosition 方法（解决目标点全0 + Random二义性） ==========
+    /// <summary>
+    /// 获取栅格通行区域内的随机有效位置
+    /// </summary>
+    public Vector3 GetRandomWalkablePosition()
+    {
+        if (!IsInitialized)
+        {
+            Debug.LogError("GridManager：获取随机通行点失败，栅格未初始化完成！");
+            return Vector3.zero;
+        }
+
+        List<Vector2Int> walkableGrids = new List<Vector2Int>();
+
+        // 遍历所有栅格，收集通行节点
+        for (int x = 0; x < 栅格宽度; x++)
+        {
+            for (int y = 0; y < 栅格高度; y++)
+            {
+                Vector2Int gridPos = new Vector2Int(x, y);
+                if (IsWalkable(gridPos))
+                {
+                    walkableGrids.Add(gridPos);
+                }
+            }
+        }
+
+        // 无有效通行区时返回零向量
+        if (walkableGrids.Count == 0)
+        {
+            Debug.LogError("GridManager：无可用的通行栅格！");
+            return Vector3.zero;
+        }
+
+        // 关键修复：明确指定UnityEngine.Random，消除二义性
+        Vector2Int randomGrid = walkableGrids[UnityEngine.Random.Range(0, walkableGrids.Count)];
+        Vector3 worldPos = GridToWorld(randomGrid);
+        worldPos.y = 0.05f; // 匹配无人船Y轴高度
+        return worldPos;
+    }
+
+    // ========== 新增：GetAllSafePositions 方法（解决CS1061错误） ==========
+    /// <summary>
+    /// 获取所有安全通行的栅格位置（世界坐标）
+    /// </summary>
+    public List<Vector3> GetAllSafePositions()
+    {
+        if (!IsInitialized)
+        {
+            Debug.LogError("GridManager：获取安全位置失败，栅格未初始化完成！");
+            return new List<Vector3>();
+        }
+
+        List<Vector3> safePositions = new List<Vector3>();
+        for (int x = 0; x < 栅格宽度; x++)
+        {
+            for (int y = 0; y < 栅格高度; y++)
+            {
+                Vector2Int gridPos = new Vector2Int(x, y);
+                if (IsWalkable(gridPos))
+                {
+                    Vector3 worldPos = GridToWorld(gridPos);
+                    worldPos.y = 0.05f;
+                    safePositions.Add(worldPos);
+                }
+            }
+        }
+        return safePositions;
+    }
+
     // 强制刷新栅格（上下文菜单）
     [ContextMenu("强制刷新栅格和障碍物")]
     public void 强制刷新栅格()
     {
         重新初始化栅格数据();
         标记障碍物();
+        IsInitialized = true; // 刷新后重新标记
         Debug.Log("GridManager：已强制刷新栅格和障碍物标记");
     }
 

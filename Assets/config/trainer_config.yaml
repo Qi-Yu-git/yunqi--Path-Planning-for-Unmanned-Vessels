@@ -2,11 +2,11 @@ behaviors:
   USV_GlobalRLAgent:  
     trainer_type: ppo
     hyperparameters:
-      batch_size: 1024
-      buffer_size: 20480
+      batch_size: 64
+      buffer_size: 1024
       learning_rate: 3e-4 
       learning_rate_schedule: constant
-      beta: 0.05
+      beta: 5e-4
       epsilon: 0.2
       lambd: 0.95
 
@@ -30,5 +30,5 @@ behaviors:
     keep_checkpoints: 5
     checkpoint_interval: 50000
     threaded: true
-    time_horizon: 64
+    time_horizon: 16
     

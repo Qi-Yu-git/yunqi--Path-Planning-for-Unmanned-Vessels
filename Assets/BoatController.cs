@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
-using System.Collections; // 必须导入这个命名空间！
+using System.Collections;
 
 public class BoatController : MonoBehaviour
 {
@@ -30,23 +30,54 @@ public class BoatController : MonoBehaviour
     private Vector3 originalTargetPos;       // 新增：存储原始目标点（关键！）
     private bool isReplaningPath = false;     // 新增：标记是否正在重规划路径
 
-    // ======== 新增 Awake 方法（核心修复1：提前初始化目标点）========
+    // ======== 核心修复：重构Awake，优先从栅格生成有效目标点 ========
     void Awake()
     {
-        // 提前初始化原始目标点
-        if (pathfinder != null)
+        // 启动协程初始化有效目标点（优先从GridManager获取通行区随机点）
+        StartCoroutine(InitValidOriginalTarget());
+    }
+
+    // 新增：初始化有效原始目标点（解决全0问题）
+    private IEnumerator InitValidOriginalTarget()
+    {
+        // 等待GridManager初始化完成
+        while (gridManager == null || !gridManager.IsGridReady())
         {
-            // ======== 修复：去掉??，直接赋值（Vector3是值类型，不会为null）========
-            originalTargetPos = pathfinder.targetWorldPos;
-            Debug.Log($"Awake提前初始化原始目标点：{originalTargetPos}");
+            Debug.Log("等待GridManager初始化以生成有效目标点...");
+            yield return new WaitForSeconds(0.1f);
         }
+
+        // 优先级1：使用pathfinder的目标点（如果有效）
+        if (pathfinder != null && pathfinder.targetWorldPos != Vector3.zero)
+        {
+            originalTargetPos = pathfinder.targetWorldPos;
+            originalTargetPos.y = 0.05f; // 固定Y轴
+            Debug.Log($"从Pathfinder初始化有效原始目标点：{originalTargetPos}");
+        }
+        // 优先级2：从GridManager获取通行区随机点
+        else if (gridManager != null)
+        {
+            originalTargetPos = gridManager.GetRandomWalkablePosition();
+            if (originalTargetPos == Vector3.zero)
+            {
+                Debug.LogError("目标点生成失败！GridManager通行区域无有效坐标");
+                originalTargetPos = transform.position + new Vector3(10, 0.05f, 10); // 兜底：默认前方向10米
+            }
+            Debug.Log($"从GridManager通行区初始化原始目标点：{originalTargetPos}");
+
+            // 同步更新pathfinder的目标点（保持一致性）
+            if (pathfinder != null)
+            {
+                pathfinder.targetWorldPos = originalTargetPos;
+            }
+        }
+        // 兜底：防止全0
         else
         {
-            Debug.LogWarning("BoatController: pathfinder 未赋值，originalTargetPos 初始化为0！");
-            originalTargetPos = Vector3.zero;
+            Debug.LogWarning("GridManager未赋值，目标点兜底初始化");
+            originalTargetPos = transform.position + new Vector3(10, 0.05f, 10);
         }
     }
-    // ================================================================
 
     // 初始化
     void Start()
@@ -69,15 +100,7 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // ======== 移除原有的originalTargetPos初始化（核心修复2：避免重复）========
-        // 注释掉这一段原有代码，不再重复初始化
-        // if (pathfinder != null && pathfinder.targetWorldPos != Vector3.zero)
-        // {
-        //     originalTargetPos = pathfinder.targetWorldPos;
-        //     Debug.Log($"初始化原始目标点：{originalTargetPos}");
-        // }
-
-        // 等待栅格初始化后加载路径（新增协程等待）
+        // 等待栅格初始化后加载路径
         StartCoroutine(WaitForGridInitThenLoadPath());
     }
 
@@ -177,7 +200,7 @@ public class BoatController : MonoBehaviour
                     isPathLoaded = true;
                     replanSuccess = true;
                     Debug.Log($"路径重规划成功！新路径包含{worldPath.Count}个点");
-                    // 修正朝向第一个路径点
+                    // 修正朝向第一个路径点（增加零向量防护）
                     FaceFirstWaypoint();
                 }
                 else
@@ -280,7 +303,7 @@ public class BoatController : MonoBehaviour
                 Debug.LogError("路径重试次数达到上限，强制刷新A*后重试");
                 pathfinder = FindFirstObjectByType<ImprovedAStar>(); // 重新获取A*引用
                 // 重新赋值原始目标点
-                if (pathfinder.targetWorldPos != Vector3.zero)
+                if (pathfinder != null && pathfinder.targetWorldPos != Vector3.zero)
                 {
                     originalTargetPos = pathfinder.targetWorldPos;
                 }
@@ -337,21 +360,35 @@ public class BoatController : MonoBehaviour
         isReachedEnd = false;
         currentWaypointIndex = 0;
         路径重试次数 = 0;
-        // 关键：强制朝向第一个路径点（新增）
+        // 关键：强制朝向第一个路径点（增加零向量防护）
         FaceFirstWaypoint();
     }
 
-    // 新增：朝向第一个路径点
+    // 核心修复：朝向第一个路径点（增加零向量防护，解决LookRotation报错）
     private void FaceFirstWaypoint()
     {
-        if (worldPath.Count < 1) return;
+        // 防护1：路径点为空直接返回
+        if (worldPath == null || worldPath.Count < 1)
+        {
+            Debug.LogError("路径点数组为空，无法朝向目标");
+            return;
+        }
 
-        // 计算朝向第一个路径点的方向
-        Vector3 targetDir = (worldPath[0] - transform.position).normalized;
-        targetDir.y = 0; // 忽略Y轴
-        // 直接设置朝向（跳过平滑转向，快速修正）
-        transform.rotation = Quaternion.LookRotation(targetDir, Vector3.up);
-        Debug.Log($"无人船朝向已修正：{transform.forward}");
+        // 防护2：计算方向向量并校验是否为零
+        Vector3 firstWaypoint = worldPath[0];
+        Vector3 direction = firstWaypoint - transform.position;
+        direction.y = 0; // 忽略Y轴
+
+        // 校验方向向量是否为零（使用sqrMagnitude避免开方，性能更优）
+        if (direction.sqrMagnitude < 0.001f)
+        {
+            Debug.LogWarning("朝向目标的方向向量为零，跳过LookRotation");
+            return;
+        }
+
+        // 安全执行朝向设置
+        transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+        Debug.Log($"无人船朝向已修正：{transform.forward}，目标路径点：{firstWaypoint}");
     }
 
     // 移动逻辑（补充完整的FixedUpdate，确保碰撞后能沿新路径移动）
@@ -418,9 +455,12 @@ public class BoatController : MonoBehaviour
         }
         currentSpeed = Mathf.Lerp(currentSpeed, moveSpeed * speedFactor, Time.fixedDeltaTime * rotationSpeed);
 
-        // 平滑转向目标方向
-        Quaternion targetRotation = Quaternion.LookRotation(direction);
-        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.fixedDeltaTime * rotationSpeed);
+        // 平滑转向目标方向（增加零向量防护）
+        if (direction.sqrMagnitude > 0.001f)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(direction);
+            transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.fixedDeltaTime * rotationSpeed);
+        }
 
         // 移动刚体
         rb.linearVelocity = transform.forward * currentSpeed;

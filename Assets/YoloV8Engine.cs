@@ -105,8 +105,8 @@ namespace YoloV8Detection
             _useCuda = useCuda;
             if (inputSize.HasValue) _inputSize = inputSize.Value;
 
-            // 初始化统一日志配置
-            _logSettings = logSettings ?? new YoloLogSettings();
+            // 初始化统一日志配置（修复CS0136：复用类级别字段，不重复声明局部变量）
+            _logSettings = YoloLogSettings.Instance;
             AggregateLogInterval = aggregateLogInterval;
 
             // 监听日志配置变更

@@ -106,7 +106,7 @@ public class USV_GlobalRLAgent : Agent
         gridWidth = gridManager.gridWidth;
         gridHeight = gridManager.gridHeight;
         CachePassableGrid();
-        GenerateSafePositions();
+        GenerateSafePositions(); // 调用无参方法，无歧义
         Debug.Log("GridManager初始化完成，已缓存通行性数据");
     }
 
@@ -123,16 +123,94 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
+    // ========== 核心修复：重写OnEpisodeBegin方法 ==========
     public override void OnEpisodeBegin()
     {
         IsEpisodeDone = false;
+        // 启动协程等待GridManager初始化并确保安全位置非空
+        StartCoroutine(WaitForGridInitThenReset());
+    }
 
-        if (gridManager == null || safePositions == null || safePositions.Count == 0)
+    /// <summary>
+    /// 等待GridManager初始化完成后执行重置逻辑
+    /// </summary>
+    private IEnumerator WaitForGridInitThenReset()
+    {
+        // 1. 等待GridManager就绪
+        while (gridManager == null || !gridManager.IsGridReady())
         {
-            Debug.LogWarning("回合重置失败：GridManager未初始化或安全位置为空");
-            return;
+            Debug.LogWarning("等待 GridManager 初始化...");
+            yield return new WaitForSeconds(0.1f);
         }
 
+        // 2. 重新生成安全位置（增加重试机制 + 宽松阈值）
+        Vector3 safePos = Vector3.zero;
+        int retryCount = 0;
+        int maxRetries = 5; // 最大重试次数
+        float initialMinDistance = 1.0f; // 初始最小安全距离阈值
+        float minDistanceStep = 0.2f; // 每次重试降低的阈值步长
+        float currentMinDistance = initialMinDistance;
+
+        // 重试生成安全位置，逐步降低阈值
+        while (safePos == Vector3.zero && retryCount < maxRetries)
+        {
+            // 生成安全位置（使用当前的宽松阈值）
+            GenerateSafePositions(currentMinDistance);
+
+            // 从生成的安全位置列表中随机选一个（明确指定UnityEngine.Random）
+            if (safePositions.Count > 0)
+            {
+                safePos = safePositions[UnityEngine.Random.Range(0, safePositions.Count)];
+            }
+            else
+            {
+                // 本次生成失败，降低阈值并重试
+                retryCount++;
+                currentMinDistance = Mathf.Max(0.1f, initialMinDistance - (retryCount * minDistanceStep)); // 最低阈值0.1f
+                Debug.LogWarning($"安全位置生成失败（第{retryCount}次重试），放宽阈值到: {currentMinDistance}");
+
+                // 额外兜底：重新缓存栅格数据
+                if (retryCount >= 2)
+                {
+                    CachePassableGrid();
+                    Debug.LogWarning("重试2次失败，重新缓存栅格数据后再次尝试");
+                }
+            }
+
+            // 每次重试间隔短时间，避免高频操作
+            if (safePos == Vector3.zero)
+            {
+                yield return new WaitForSeconds(0.05f);
+            }
+        }
+
+        // 3. 最终兜底：如果仍无安全位置
+        if (safePos == Vector3.zero || safePositions.Count == 0)
+        {
+            Debug.LogError("安全位置为空，使用GridManager默认起始点兜底");
+            // 使用GridManager默认起始点作为最后兜底
+            if (gridManager != null)
+            {
+                safePos = gridManager.DefaultStartPosition;
+
+                // 如果默认起始点也为空，终止重置
+                if (safePos == Vector3.zero)
+                {
+                    Debug.LogError("无法生成安全位置（默认起始点也为空），终止回合重置");
+                    yield break;
+                }
+                // 手动添加默认点到安全位置列表，保证后续逻辑可用
+                safePositions.Clear();
+                safePositions.Add(safePos);
+            }
+            else
+            {
+                Debug.LogError("GridManager为空，无法获取默认起始点，终止回合重置");
+                yield break;
+            }
+        }
+
+        // 4. 执行原有重置逻辑
         if (enableTaskLoop)
         {
             spawnManager?.Regenerate();
@@ -149,6 +227,66 @@ public class USV_GlobalRLAgent : Agent
         Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);
 
         ResetAgentState(MaxSpeed, 60f);
+
+        Debug.Log($"智能体重置到安全位置：{safePos}（重试次数：{retryCount}，最终阈值：{currentMinDistance}）");
+    }
+
+    /// <summary>
+    /// 生成安全位置列表（支持动态距离阈值）
+    /// </summary>
+    /// <param name="minDistance">与障碍物的最小安全距离</param>
+    private void GenerateSafePositions(float minDistance)
+    {
+        // 清空原有安全位置列表
+        safePositions = new List<Vector3>();
+
+        if (gridManager == null || passableGrid == null) return;
+
+        // 遍历所有栅格，筛选满足安全距离的位置
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int z = 0; z < gridHeight; z++)
+            {
+                if (passableGrid[x, z])
+                {
+                    Vector3 worldPos = gridManager.GridToWorld(new Vector2Int(x, z));
+                    // 检查该位置与周围障碍物的距离是否满足阈值
+                    if (IsPositionSafe(worldPos, minDistance))
+                    {
+                        safePositions.Add(worldPos);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成安全位置列表（默认阈值，无参版本）
+    /// </summary>
+    private void GenerateSafePositions()
+    {
+        GenerateSafePositions(1.0f); // 默认使用初始阈值
+    }
+
+    /// <summary>
+    /// 检查指定位置是否安全（与障碍物距离满足阈值）
+    /// </summary>
+    /// <param name="position">世界坐标位置</param>
+    /// <param name="minDistance">最小安全距离</param>
+    /// <returns>是否安全</returns>
+    private bool IsPositionSafe(Vector3 position, float minDistance)
+    {
+        // 简单碰撞检测：检查位置周围是否有障碍物
+        Collider[] colliders = Physics.OverlapSphere(position, minDistance);
+        foreach (var collider in colliders)
+        {
+            // 排除自身碰撞体
+            if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>
@@ -429,7 +567,10 @@ public class USV_GlobalRLAgent : Agent
     {
         if (gridManager == null) return;
 
+        gridWidth = gridManager.gridWidth;
+        gridHeight = gridManager.gridHeight;
         passableGrid = new bool[gridWidth, gridHeight];
+
         for (int x = 0; x < gridWidth; x++)
         {
             for (int z = 0; z < gridHeight; z++)
@@ -437,26 +578,5 @@ public class USV_GlobalRLAgent : Agent
                 passableGrid[x, z] = gridManager.IsGridPassable(new Vector2Int(x, z));
             }
         }
-    }
-
-    /// <summary>
-    /// 生成安全位置列表
-    /// </summary>
-    private void GenerateSafePositions()
-    {
-        safePositions = new List<Vector3>();
-        if (gridManager == null || passableGrid == null) return;
-
-        for (int x = 0; x < gridWidth; x++)
-        {
-            for (int z = 0; z < gridHeight; z++)
-            {
-                if (passableGrid[x, z])
-                {
-                    safePositions.Add(gridManager.GridToWorld(new Vector2Int(x, z)));
-                }
-            }
-        }
-        Debug.Log($"生成 {safePositions.Count} 个安全位置");
     }
 }
