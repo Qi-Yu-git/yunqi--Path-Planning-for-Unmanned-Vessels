@@ -49,6 +49,13 @@ namespace YoloV8Detection
         private readonly Dictionary<string, List<float>> _inferenceTimeStats = new Dictionary<string, List<float>>();
         private int _detectionErrorCount = 0;
         private readonly object _statsLock = new object();
+
+        // 启停控制 + 动态频率调节字段
+        private bool _isDetectionEnabled = true ;          // 检测总开关 false
+        private float _targetDetectionFrequency = 30f;    // 目标检测帧率（帧/秒）
+        private float _detectionInterval => 1f / _targetDetectionFrequency; // 检测间隔（秒）
+        private float _lastDetectionTime;                 // 上次检测时间戳
+        private readonly object _frequencyLock = new object(); // 频率控制锁
         #endregion
 
         #region 公共属性
@@ -73,6 +80,49 @@ namespace YoloV8Detection
         public float AggregateLogInterval { get; set; } = 1f; // 聚合日志输出间隔（秒）
         public List<string> LogIncludedClasses { get; set; } = new List<string>();
         public List<string> LogExcludedClasses { get; set; } = new List<string>();
+
+        /// <summary>
+        /// 检测总开关（启停控制）
+        /// </summary>
+        public bool IsDetectionEnabled
+        {
+            get => _isDetectionEnabled;
+            set
+            {
+                _isDetectionEnabled = value;
+                LogInfo(value ? "✅ 检测功能已启用" : "❌ 检测功能已禁用");
+            }
+        }
+
+        /// <summary>
+        /// 目标检测帧率（动态调节，范围1-60帧/秒）
+        /// </summary>
+        public float TargetDetectionFrequency
+        {
+            get => _targetDetectionFrequency;
+            set
+            {
+                lock (_frequencyLock)
+                {
+                    _targetDetectionFrequency = Mathf.Clamp(value, 1f, 60f);
+                    LogInfo($"🔄 检测频率已调整为：{_targetDetectionFrequency:F1} 帧/秒（间隔：{_detectionInterval:F3} 秒）");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 当前是否达到检测频率要求（用于外部判断是否执行检测）
+        /// </summary>
+        public bool CanDetectNow
+        {
+            get
+            {
+                lock (_frequencyLock)
+                {
+                    return _isDetectionEnabled && (Time.time - _lastDetectionTime >= _detectionInterval);
+                }
+            }
+        }
         #endregion
 
         #region 构造函数
@@ -203,6 +253,41 @@ namespace YoloV8Detection
         /// <returns>检测结果列表</returns>
         public List<YoloResult> Detect(Mat frame)
         {
+            // 1. 启停控制 + 频率控制校验
+            if (!_isDetectionEnabled)
+            {
+                LogDebug("❌ 检测已禁用，跳过本次推理");
+                return new List<YoloResult>();
+            }
+
+            lock (_frequencyLock)
+            {
+                if (Time.time - _lastDetectionTime < _detectionInterval)
+                {
+                    LogDebug($"⏱️ 未达到检测频率要求（间隔：{_detectionInterval:F3}s，上次检测：{Time.time - _lastDetectionTime:F3}s前），跳过本次推理");
+                    return new List<YoloResult>();
+                }
+                _lastDetectionTime = Time.time; // 更新上次检测时间
+            }
+
+            // 2. 原有空值校验逻辑（保留）
+            if (_net == null || (_net != null && _net.Empty()))
+            {
+                LogError($"❌ 检测前校验失败：YOLO模型未初始化！_net状态：{(_net == null ? "null" : "Empty")}");
+                return new List<YoloResult>();
+            }
+            if (!_isInitialized)
+            {
+                LogError("❌ 检测前校验失败：引擎未初始化完成");
+                return new List<YoloResult>();
+            }
+            if (frame == null || frame.Empty())
+            {
+                LogError("❌ 检测前校验失败：输入帧为空或无效");
+                return new List<YoloResult>();
+            }
+
+
             // 增强空值校验
             if (_net == null || (_net != null && _net.Empty()))
             {
@@ -402,6 +487,36 @@ namespace YoloV8Detection
             {
                 LogError($"❌ RetryDetectWithCpu 执行失败：{ex.Message}");
                 return new List<YoloResult>();
+            }
+        }
+        /// <summary>
+        /// 强制触发一次检测（忽略频率限制）
+        /// </summary>
+        /// <param name="frame">输入图像Mat</param>
+        /// <returns>检测结果列表</returns>
+        public List<YoloResult> ForceDetect(Mat frame)
+        {
+            if (!_isDetectionEnabled)
+            {
+                LogWarn("⚠️ 检测已禁用，强制检测仍执行");
+            }
+
+            lock (_frequencyLock)
+            {
+                _lastDetectionTime = 0; // 重置时间戳，强制触发
+            }
+            return Detect(frame);
+        }
+
+        /// <summary>
+        /// 重置检测频率计时（用于场景切换等特殊场景）
+        /// </summary>
+        public void ResetDetectionTimer()
+        {
+            lock (_frequencyLock)
+            {
+                _lastDetectionTime = 0;
+                LogInfo("⏱️ 检测频率计时已重置");
             }
         }
         #endregion

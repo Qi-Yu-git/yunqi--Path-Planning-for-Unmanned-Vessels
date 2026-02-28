@@ -71,8 +71,10 @@ public class GridManager : MonoBehaviour
     private float waterMaxX;
     private float waterMinZ;
     private float waterMaxZ;
+    public float WaterHeight => 水域平面.position.y; // 直接返回水域平面的Y轴高度（即水域高度）
     public float WaterMinY { get; private set; }
     public float WaterMaxY { get; private set; }
+    
 
     // 缓存上次边界值（防抖用）
     private float lastWaterMinX;
@@ -81,6 +83,9 @@ public class GridManager : MonoBehaviour
     private float lastWaterMaxZ;
     private float lastWaterMinY;
     private float lastWaterMaxY;
+
+    // 加到 GridManager 类的最上方（类作用域内）
+    private static GridManager _instance;
 
     // ========== 新增：初始化完成标识（时序校验核心） ==========
     public bool IsInitialized { get; private set; }
@@ -452,6 +457,27 @@ public class GridManager : MonoBehaviour
         }
         return 栅格地图[栅格坐标.x, 栅格坐标.y].walkable;
     }
+
+    public static GridManager Instance
+    {
+        get
+        {
+            // 方式1：自动创建（若GridManager是场景内的组件，推荐先检查场景内实例）
+            if (_instance == null)
+            {
+                // 替换过时的 FindObjectOfType 为 FindAnyObjectByType（Unity官方推荐）
+                _instance = UnityEngine.Object.FindAnyObjectByType<GridManager>();
+                // 可选：确保场景内唯一
+                if (_instance == null)
+                {
+                    GameObject go = new GameObject("GridManager");
+                    _instance = go.AddComponent<GridManager>();
+                }
+            }
+            return _instance;
+        }
+    }
+
 
     // ========== 新增：IsWalkable 方法（随机点核心） ==========
     /// <summary>

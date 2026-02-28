@@ -287,7 +287,13 @@ namespace YoloV8Detection
                 return;
             }
             _instance = this;
-            DontDestroyOnLoad(gameObject);
+
+            // 仅在运行时设置DontDestroyOnLoad，编辑模式不设置
+            if (Application.isPlaying)
+            {
+                DontDestroyOnLoad(gameObject);
+            }
+
             // 初始化模块配置缓存
             InitModuleConfig();
             // 默认关闭高频检测日志，解决刷屏
@@ -352,6 +358,32 @@ namespace YoloV8Detection
             _editorRetryStarted = false;
 #endif
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// 编辑器停止播放时自动清理空物体
+        /// </summary>
+        [InitializeOnLoadMethod]
+        private static void EditorPlayModeCleanup()
+        {
+            // 监听编辑器播放模式变化
+            EditorApplication.playModeStateChanged += (state) =>
+            {
+                // 当停止运行（从播放模式切换到编辑模式）时执行清理
+                if (state == PlayModeStateChange.ExitingPlayMode || state == PlayModeStateChange.EnteredEditMode)
+                {
+                    // 查找并销毁自动创建的YoloLogSettings物体
+                    GameObject logObj = GameObject.Find("[YoloLogSettings]");
+                    if (logObj != null)
+                    {
+                        Object.DestroyImmediate(logObj);
+                    }
+                    // 重置单例引用
+                    _instance = null;
+                }
+            };
+        }
+#endif
 
 #if UNITY_EDITOR
         /// <summary>
