@@ -556,7 +556,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="System.IO.Abstractions">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\System.IO.Abstractions.dll</HintPath>
+      <HintPath>ml-agents-release_23_tag\com.unity.ml-agents\Plugins\System.IO.Abstractions.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Unity.VisualScripting.YamlDotNet">
@@ -600,7 +600,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Google.Protobuf_Packed">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\Google.Protobuf_Packed.dll</HintPath>
+      <HintPath>ml-agents-release_23_tag\com.unity.ml-agents\Plugins\Google.Protobuf_Packed.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System.IO.Hashing">
@@ -612,7 +612,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Grpc.Core">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\ProtoBuffer\Grpc.Core.dll</HintPath>
+      <HintPath>ml-agents-release_23_tag\com.unity.ml-agents\Plugins\ProtoBuffer\Grpc.Core.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="NuGetForUnity.PluginAPI">
@@ -632,7 +632,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="System.IO.Abstractions.TestingHelpers">
-      <HintPath>Library\PackageCache\com.unity.ml-agents@0f918b8a6271\Plugins\System.IO.Abstractions.TestingHelpers.dll</HintPath>
+      <HintPath>ml-agents-release_23_tag\com.unity.ml-agents\Plugins\System.IO.Abstractions.TestingHelpers.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System.Runtime.CompilerServices.Unsafe">

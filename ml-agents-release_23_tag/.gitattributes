@@ -1,3 +1,7 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:195e998a0e60b2b1dafb35f7e4d20ea18a1e792181502362d2fc7fd4c7e51913
-size 133
+*.asset binary
+*.unity binary
+*.prefab binary
+*.meta binary
+*/CommunicatorObjects/* binary
+*/communicator_objects/* binary
+*.md text

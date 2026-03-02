@@ -3,7 +3,7 @@
     "com.github-glitchenzo.nugetforunity": "https://github.com/GlitchEnzo/NuGetForUnity.git?path=src/NuGetForUnity",
     "com.unity.collab-proxy": "2.10.0",
     "com.unity.feature.development": "1.0.1",
-    "com.unity.ml-agents": "4.0.2",
+    "com.unity.ml-agents": "file:../ml-agents-release_23_tag/com.unity.ml-agents",
     "com.unity.nuget.newtonsoft-json": "3.2.2",
     "com.unity.render-pipelines.high-definition": "14.0.12",
     "com.unity.sentis": "1.1.0",
