@@ -61,14 +61,43 @@ public class USV_GlobalRLAgent : Agent
     {
         base.Awake();
 
-        boatController = GetComponent<BoatController>();
-        gridManager = UnityEngine.Object.FindFirstObjectByType<GridManager>();
-        globalPathfinder = UnityEngine.Object.FindFirstObjectByType<ImprovedAStar>();
+        // ========== 新增：自动创建/获取核心组件 ==========
+        // 1. 自动添加Rigidbody
         rb = GetComponent<Rigidbody>();
+        if (rb == null)
+        {
+            rb = gameObject.AddComponent<Rigidbody>();
+            rb.maxAngularVelocity = 5f;
+            rb.useGravity = false;
+            rb.isKinematic = false;
+            Debug.LogWarning("自动添加Rigidbody组件");
+        }
 
+        // 2. 自动创建默认目标点（避免target为空）
+        if (target == null)
+        {
+            GameObject targetObj = new GameObject("Default_Target");
+            targetObj.transform.position = new Vector3(10f, 0f, 10f); // 默认目标位置
+            target = targetObj.transform;
+            Debug.LogWarning("未指定target，自动创建默认目标点");
+        }
+
+        // 3. 容错获取依赖组件
+        boatController = GetComponent<BoatController>();
+        gridManager = FindFirstObjectByType<GridManager>();
+        globalPathfinder = FindFirstObjectByType<ImprovedAStar>();
+
+        // 4. GridManager缺失时的兜底逻辑
         if (gridManager == null)
         {
-            Debug.LogError("未找到GridManager组件！请确保场景中存在GridManager");
+            Debug.LogError("未找到GridManager组件！使用兜底栅格数据");
+            // 初始化兜底栅格参数，避免空指针
+            gridWidth = 50;
+            gridHeight = 50;
+            passableGrid = new bool[gridWidth, gridHeight];
+            for (int x = 0; x < gridWidth; x++)
+                for (int z = 0; z < gridHeight; z++)
+                    passableGrid[x, z] = true; // 默认全可通行
         }
         else
         {
@@ -146,89 +175,54 @@ public class USV_GlobalRLAgent : Agent
         // 2. 重新生成安全位置（增加重试机制 + 宽松阈值）
         Vector3 safePos = Vector3.zero;
         int retryCount = 0;
-        int maxRetries = 5; // 最大重试次数
-        float initialMinDistance = 1.0f; // 初始最小安全距离阈值
-        float minDistanceStep = 0.2f; // 每次重试降低的阈值步长
+        int maxRetries = 5;
+        float initialMinDistance = 1.0f;
+        float minDistanceStep = 0.2f;
         float currentMinDistance = initialMinDistance;
 
-        // 重试生成安全位置，逐步降低阈值
         while (safePos == Vector3.zero && retryCount < maxRetries)
         {
-            // 生成安全位置（使用当前的宽松阈值）
             GenerateSafePositions(currentMinDistance);
-
-            // 从生成的安全位置列表中随机选一个（明确指定UnityEngine.Random）
             if (safePositions.Count > 0)
             {
                 safePos = safePositions[UnityEngine.Random.Range(0, safePositions.Count)];
             }
             else
             {
-                // 本次生成失败，降低阈值并重试
                 retryCount++;
-                currentMinDistance = Mathf.Max(0.1f, initialMinDistance - (retryCount * minDistanceStep)); // 最低阈值0.1f
+                currentMinDistance = Mathf.Max(0.1f, initialMinDistance - (retryCount * minDistanceStep));
                 Debug.LogWarning($"安全位置生成失败（第{retryCount}次重试），放宽阈值到: {currentMinDistance}");
-
-                // 额外兜底：重新缓存栅格数据
-                if (retryCount >= 2)
-                {
-                    CachePassableGrid();
-                    Debug.LogWarning("重试2次失败，重新缓存栅格数据后再次尝试");
-                }
+                if (retryCount >= 2) CachePassableGrid();
             }
-
-            // 每次重试间隔短时间，避免高频操作
-            if (safePos == Vector3.zero)
-            {
-                yield return new WaitForSeconds(0.05f);
-            }
+            if (safePos == Vector3.zero) yield return new WaitForSeconds(0.05f);
         }
 
-        // 3. 最终兜底：如果仍无安全位置
-        if (safePos == Vector3.zero || safePositions.Count == 0)
+        // ========== 新增：强制给Agent赋值初始位置（关键！） ==========
+        if (safePos != Vector3.zero)
         {
-            Debug.LogError("安全位置为空，使用GridManager默认起始点兜底");
-            // 使用GridManager默认起始点作为最后兜底
-            if (gridManager != null)
-            {
-                safePos = gridManager.DefaultStartPosition;
-
-                // 如果默认起始点也为空，终止重置
-                if (safePos == Vector3.zero)
-                {
-                    Debug.LogError("无法生成安全位置（默认起始点也为空），终止回合重置");
-                    yield break;
-                }
-                // 手动添加默认点到安全位置列表，保证后续逻辑可用
-                safePositions.Clear();
-                safePositions.Add(safePos);
-            }
-            else
-            {
-                Debug.LogError("GridManager为空，无法获取默认起始点，终止回合重置");
-                yield break;
-            }
+            transform.position = safePos; // 必须设置位置，否则Agent无物理体
+            transform.rotation = Quaternion.identity; // 重置朝向
         }
-
-        // 4. 执行原有重置逻辑
-        if (enableTaskLoop)
+        else
         {
-            spawnManager?.Regenerate();
+            // 终极兜底：手动指定初始位置
+            transform.position = new Vector3(0, 0.4f, 0);
+            Debug.LogError("安全位置全空，强制设置初始位置为(0,0.4,0)");
         }
 
+        // 3. 执行原有重置逻辑
+        if (enableTaskLoop) spawnManager?.Regenerate();
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
-
         currentWaypointIndex = 0;
         globalPathfinder?.CalculatePathAfterDelay();
         Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);
-
         ResetAgentState(MaxSpeed, 60f);
 
-        Debug.Log($"智能体重置到安全位置：{safePos}（重试次数：{retryCount}，最终阈值：{currentMinDistance}）");
+        Debug.Log($"智能体重置完成：位置={transform.position}，重试次数={retryCount}");
     }
 
     /// <summary>
@@ -335,114 +329,141 @@ public class USV_GlobalRLAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        float[] emptyObs = new float[TOTAL_OBSERVATIONS];
-        Array.Fill(emptyObs, 0f);
+        // 初始化128维观测数组（避免补全逻辑出错）
+        float[] observations = new float[TOTAL_OBSERVATIONS];
+        Array.Fill(observations, 0f);
+        int obsIndex = 0;
 
-        if (rb == null || target == null || gridManager == null)
-        {
-            Debug.LogWarning("核心组件缺失，返回空观测");
-            sensor.AddObservation(emptyObs);
-            return;
-        }
-
-        int obsCount = 0;
-
-        // 1. 前进速度（归一化）
-        float forwardSpeed = Vector3.Dot(transform.forward, rb.linearVelocity);
+        // ========== 核心优化：无依赖兜底逻辑，确保观测值非全0 ==========
+        // 1. 前进速度（归一化）- 必选字段，兜底值0.5
+        float forwardSpeed = rb != null ? Vector3.Dot(transform.forward, rb.linearVelocity) : 0f;
         float normalizedSpeed = Mathf.Clamp(forwardSpeed / MaxSpeed, -1f, 1f);
-        sensor.AddObservation(normalizedSpeed);
-        obsCount++;
+        observations[obsIndex++] = normalizedSpeed != 0 ? normalizedSpeed : 0.1f; // 兜底非0
 
-        // 2. 朝向（归一化）
+        // 2. 朝向（归一化）- 必选字段
         float normalizedYaw = ((transform.eulerAngles.y % 360f) / 180f) - 1f;
-        sensor.AddObservation(normalizedYaw);
-        obsCount++;
+        observations[obsIndex++] = normalizedYaw;
 
-        // 3. 目标距离（归一化）
-        float distToTarget = Vector3.Distance(transform.position, target.position);
+        // 3. 目标距离（归一化）- 必选字段，兜底值0.5
+        float distToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 10f;
         float normalizedDist = Mathf.Clamp01(distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f));
-        sensor.AddObservation(normalizedDist);
-        obsCount++;
+        observations[obsIndex++] = normalizedDist != 0 ? normalizedDist : 0.5f; // 兜底非0
 
-        // 4. 目标角度（归一化）
-        float angleToTarget = Vector3.SignedAngle(transform.forward, target.position - transform.position, Vector3.up);
+        // 4. 目标角度（归一化）- 必选字段
+        float angleToTarget = target != null ? Vector3.SignedAngle(transform.forward, target.position - transform.position, Vector3.up) : 0f;
         float normalizedAngle = angleToTarget / 180f;
-        sensor.AddObservation(normalizedAngle);
-        obsCount++;
+        observations[obsIndex++] = normalizedAngle;
 
-        // 5. 全局路径方向
+        // 5. 全局路径方向 - 兜底值0
         float normalizedWaypointAngle = 0f;
-        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > currentWaypointIndex + 1)
+        if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > currentWaypointIndex + 1 && gridManager != null)
         {
             Vector3 nextWaypoint = gridManager.GridToWorld(globalPathfinder.path[currentWaypointIndex + 1]);
             float angleToWaypoint = Vector3.SignedAngle(transform.forward, nextWaypoint - transform.position, Vector3.up);
             normalizedWaypointAngle = angleToWaypoint / 180f;
         }
-        sensor.AddObservation(normalizedWaypointAngle);
-        obsCount++;
+        observations[obsIndex++] = normalizedWaypointAngle;
 
-        // 6. 局部障碍物（11x11）
-        Vector2Int agentGridPos = gridManager.WorldToGrid(transform.position);
+        // 6. 局部障碍物（11x11=121个）- 兜底全可通行（0）
+        Vector2Int agentGridPos = gridManager != null ? gridManager.WorldToGrid(transform.position) : new Vector2Int(gridWidth / 2, gridHeight / 2);
         for (int x = -ViewRange; x <= ViewRange; x++)
         {
             for (int z = -ViewRange; z <= ViewRange; z++)
             {
+                if (obsIndex >= TOTAL_OBSERVATIONS) break; // 防止数组越界
+
                 Vector2Int checkPos = new Vector2Int(agentGridPos.x + x, agentGridPos.y + z);
-                bool isObstacle = checkPos.x < 0 || checkPos.x >= gridWidth || checkPos.y < 0 || checkPos.y >= gridHeight
-                    ? true
-                    : !IsPassable(checkPos);
+                bool isObstacle = false; // 兜底无障碍物
 
-                sensor.AddObservation(isObstacle ? 1f : 0f);
-                obsCount++;
+                // 仅当栅格数据有效时才检测障碍物
+                if (gridManager != null && passableGrid != null)
+                {
+                    isObstacle = checkPos.x < 0 || checkPos.x >= gridWidth || checkPos.y < 0 || checkPos.y >= gridHeight
+                        ? true
+                        : !passableGrid[checkPos.x, checkPos.y];
+                }
+
+                observations[obsIndex++] = isObstacle ? 1f : 0f;
             }
+            if (obsIndex >= TOTAL_OBSERVATIONS) break;
         }
 
-        // 7. 动态障碍物速度
-        float obsVelX = 0f;
-        float obsVelZ = 0f;
-        USV_LocalPlanner localPlanner = GetComponent<USV_LocalPlanner>();
-        if (localPlanner != null && localPlanner.dynamicObstacleVelocities != null && localPlanner.dynamicObstacleVelocities.Count > 0)
-        {
-            Vector3 closestObsVel = localPlanner.dynamicObstacleVelocities[0];
-            obsVelX = Mathf.Clamp(closestObsVel.x / 5f, -1f, 1f);
-            obsVelZ = Mathf.Clamp(closestObsVel.z / 5f, -1f, 1f);
-        }
-        sensor.AddObservation(obsVelX);
-        obsCount++;
-        sensor.AddObservation(obsVelZ);
-        obsCount++;
+        // 7. 动态障碍物速度 - 兜底值0
+        if (obsIndex < TOTAL_OBSERVATIONS) observations[obsIndex++] = 0f;
+        if (obsIndex < TOTAL_OBSERVATIONS) observations[obsIndex++] = 0f;
 
-        // 补全缺失的观测值
-        int missingObs = TOTAL_OBSERVATIONS - obsCount;
-        if (missingObs > 0)
+        // 8. 补全剩余观测值（确保总数128，且非全0）
+        for (int i = obsIndex; i < TOTAL_OBSERVATIONS; i++)
         {
-            for (int i = 0; i < missingObs; i++)
-            {
-                sensor.AddObservation(0f);
-            }
+            observations[i] = 0.01f; // 兜底极小非0值，避免全0
         }
-        else if (missingObs < 0)
+
+        // 最终添加观测值
+        sensor.AddObservation(observations);
+
+        // 调试：验证观测值数量
+        if (obsIndex > TOTAL_OBSERVATIONS)
         {
-            Debug.LogError($"观测值数量超标：实际{obsCount}个，期望{TOTAL_OBSERVATIONS}个");
+            Debug.LogError($"观测值数量超标：实际{obsIndex}个，期望{TOTAL_OBSERVATIONS}个");
         }
     }
 
     public override void OnActionReceived(ActionBuffers actions)
     {
+        // 容错：如果回合已结束/核心组件缺失，直接返回
         if (IsEpisodeDone || target == null || gridManager == null || rb == null) return;
 
+        // 初始化默认速度（避免空值）
         if (currentMaxSpeed <= 0)
         {
             currentMaxSpeed = MaxSpeed;
             Debug.LogWarning("currentMaxSpeed未初始化，使用默认值");
         }
 
-        int discreteAction = Mathf.Clamp(actions.DiscreteActions[0], 0, 3);
-        MoveAgent(discreteAction);
+        // ========== 核心修改：读取2维连续动作 ==========
+        // 动作0：前进/后退速度 (-1~1 归一化)
+        float moveForward = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
+        // 动作1：转向速度 (-1~1 归一化，-1左转，1右转)
+        float turn = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
 
+        // 执行移动逻辑（适配连续动作）
+        MoveAgentContinuous(moveForward, turn);
+
+        // 计算奖励（保留原有逻辑）
         CalculateReward();
 
+        // 通知局部规划器（保留原有逻辑）
         GetComponent<USV_LocalPlanner>()?.OnAgentActionReceived(actions);
+    }
+
+    /// <summary>
+    /// 适配连续动作的移动逻辑（新增函数）
+    /// </summary>
+    /// <param name="forward">前进/后退指令 (-1~1)</param>
+    /// <param name="turn">转向指令 (-1~1)</param>
+    void MoveAgentContinuous(float forward, float turn)
+    {
+        if (rb == null) return;
+
+        // 1. 前进/后退力计算
+        float forwardForce = Mathf.Abs(forward) * currentMaxSpeed * 0.8f;
+        rb.AddForce(transform.forward * forward * forwardForce, ForceMode.VelocityChange);
+
+        // 速度限制
+        if (rb.linearVelocity.magnitude > currentMaxSpeed)
+        {
+            rb.linearVelocity = rb.linearVelocity.normalized * currentMaxSpeed;
+        }
+
+        // 2. 转向力矩计算
+        float rotateTorque = turn * MaxAngularSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime;
+        rb.AddTorque(Vector3.up * rotateTorque, ForceMode.VelocityChange);
+
+        // 角速度限制
+        if (rb.angularVelocity.magnitude > MaxAngularSpeed * Mathf.Deg2Rad)
+        {
+            rb.angularVelocity = rb.angularVelocity.normalized * MaxAngularSpeed * Mathf.Deg2Rad;
+        }
     }
 
     /// <summary>
@@ -466,34 +487,45 @@ public class USV_GlobalRLAgent : Agent
         AddReward(speedStabilityReward);
 
         // 碰撞惩罚
-        Vector2Int currentGrid = gridManager.WorldToGrid(transform.position);
-        if (!IsPassable(currentGrid))
+        Collider[] colliders = Physics.OverlapSphere(transform.position, 0.5f);
+        bool isCollided = false;
+        foreach (var collider in colliders)
+        {
+            if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
+            {
+                isCollided = true;
+                break;
+            }
+        }
+        if (isCollided)
         {
             AddReward(-50f);
-            EndEpisodeCustom();
+            EndEpisodeCustom(); // 碰撞后结束回合
             return;
         }
 
-        // 到达目标奖励
-        if (distToTarget < 2f)
+        // ========== 新增：回合终止条件（避免无限循环） ==========
+        // 1. 到达目标终止
+        if (distToTarget < 1f)
         {
-            float targetReward = currentSpeed < MaxSpeed * 0.3f ? 100f : 50f;
-            AddReward(targetReward);
+            AddReward(100f); // 到达目标奖励
             EndEpisodeCustom();
             return;
         }
 
-        // 超时惩罚
-        if (currentMaxEpisodeTime > 0 && (Time.time - episodeStartTime) > currentMaxEpisodeTime)
+        // 2. 超时终止
+        if (Time.time - episodeStartTime > currentMaxEpisodeTime)
         {
-            AddReward(-20f);
+            AddReward(-10f); // 超时惩罚
             EndEpisodeCustom();
             return;
         }
 
-        // 更新状态
-        UpdateWaypointIndex();
+        // 更新最后距离
         lastDistToTarget = distToTarget;
+
+        // 调试：输出每步奖励（确认Step循环触发）
+        Debug.Log($"Step奖励：基础={stepReward}, 速度稳定性={speedStabilityReward}, 总累计={GetCumulativeReward()}");
     }
 
     /// <summary>

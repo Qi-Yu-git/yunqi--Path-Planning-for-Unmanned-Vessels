@@ -926,6 +926,10 @@ MonoBehaviour:
   waypointDistance: 1
   endPointSlowRange: 2
   minEndSpeed: 0.5
+  collisionAvoidanceForce: 2
+  collisionRotationAngle: 30
+  collisionSpeedRecoveryTime: 0.5
+  collisionIgnoreTime: 0.3
   isPathLoaded: 0
 --- !u!54 &173794666
 Rigidbody:

@@ -6,5 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes: []
   m_configObjects:
+    com.unity.ml-agents.settings: {fileID: 11400000, guid: 55b86c2d4bd446947a5259d6273b1f7f, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 03455b39465f59d4881e33f9c7344efc, type: 2}
   m_UseUCBPForAssetBundles: 0
