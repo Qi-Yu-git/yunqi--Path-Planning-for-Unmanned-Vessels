@@ -684,7 +684,7 @@ PlayerSettings:
   webGLCloseOnQuit: 0
   webWasm2023: 0
   scriptingDefineSymbols:
-    Standalone: DISABLE_SPEEDTREE_POSTPROCESSOR
+    Standalone: DISABLE_SPEEDTREE_POSTPROCESSOR;UNITY_DISABLE_SOURCE_GENERATORS
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}

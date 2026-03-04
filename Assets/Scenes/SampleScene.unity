@@ -3802,7 +3802,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 981483753}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4398d956d8372a645865deaeb69d824b, type: 3}
   m_Name: 
@@ -3813,8 +3813,10 @@ MonoBehaviour:
   trainerConfigPath: Assets/config/trainer_config.yaml
   resultsDirectory: results
   port: 5004
+  useNoGraphics: 1
   commandTimeout: 30
   trainerCheckTimeout: 10
+  unityConnectTimeout: 120
 --- !u!4 &981483755
 Transform:
   m_ObjectHideFlags: 0

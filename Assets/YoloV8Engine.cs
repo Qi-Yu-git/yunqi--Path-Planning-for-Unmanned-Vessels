@@ -4,6 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+
 using OpenCvSharp;
 using OpenCvSharp.Dnn;
 using UnityEngine;
@@ -56,6 +59,13 @@ namespace YoloV8Detection
         private float _detectionInterval => 1f / _targetDetectionFrequency; // 检测间隔（秒）
         private float _lastDetectionTime;                 // 上次检测时间戳
         private readonly object _frequencyLock = new object(); // 频率控制锁
+
+        // 异步推理新增字段
+        private readonly SemaphoreSlim _threadSemaphore; // 线程池控制
+        private CancellationTokenSource _cts; // 异步任务取消令牌
+        private readonly TaskScheduler _mainThreadScheduler; // 主线程调度器
+        private Task _currentDetectionTask; // 当前异步任务缓存
+        private readonly object _taskLock = new object(); // 任务锁
         #endregion
 
         #region 公共属性
@@ -63,6 +73,16 @@ namespace YoloV8Detection
         public Size InputSize => _inputSize;
         public IReadOnlyList<string> ClassNames => _classNames.AsReadOnly();
         public bool UseCuda { get => _useCuda; set => _useCuda = value; } // 暴露CUDA控制
+
+        /// <summary>
+        /// 是否有异步检测任务在执行
+        /// </summary>
+        public bool IsDetectingAsync => _currentDetectionTask != null && !_currentDetectionTask.IsCompleted;
+
+        /// <summary>
+        /// 异步检测完成回调（主线程执行）
+        /// </summary>
+        public Action<List<YoloResult>> OnDetectionCompleted;
 
         // 保留原有日志配置兼容（内部映射到统一日志配置）
         public bool LogModelProcessing
@@ -127,7 +147,7 @@ namespace YoloV8Detection
 
         #region 构造函数
         /// <summary>
-        /// 构造函数（新增统一日志配置参数）
+        /// 构造函数（新增统一日志配置参数 + 异步初始化）
         /// </summary>
         /// <param name="modelPath">模型文件路径</param>
         /// <param name="classNames">类别名称列表（默认COCO80类）</param>
@@ -139,13 +159,15 @@ namespace YoloV8Detection
         /// <param name="aggregateLogInterval">聚合日志输出间隔</param>
         /// <param name="autoWarmUp">是否自动预热模型</param>
         /// <param name="useCuda">是否优先使用CUDA推理</param>
+        /// <param name="maxConcurrentThreads">最大并发线程数（异步新增）</param>
         public YoloV8Engine(string modelPath, List<string> classNames = null,
                            float confidenceThreshold = 0.5f, float iouThreshold = 0.4f,
                            Size? inputSize = null, bool isNoSeparateConfidence = true,
                            YoloLogSettings logSettings = null,
                            float aggregateLogInterval = 5f,
                            bool autoWarmUp = true,
-                           bool useCuda = true)
+                           bool useCuda = true,
+                           int maxConcurrentThreads = 2) // 异步新增参数
         {
             _modelPath = modelPath;
             _confidenceThreshold = Mathf.Clamp01(confidenceThreshold);
@@ -161,6 +183,12 @@ namespace YoloV8Detection
 
             // 监听日志配置变更
             _logSettings.OnSettingsChanged += RefreshLogConfig;
+
+            // ===================== 异步初始化（新增） =====================
+            _cts = new CancellationTokenSource();
+            _threadSemaphore = new SemaphoreSlim(maxConcurrentThreads, maxConcurrentThreads);
+            _mainThreadScheduler = TaskScheduler.FromCurrentSynchronizationContext();
+            // ==============================================================
 
             try
             {
@@ -517,6 +545,257 @@ namespace YoloV8Detection
             {
                 _lastDetectionTime = 0;
                 LogInfo("⏱️ 检测频率计时已重置");
+            }
+        }
+
+        /// <summary>
+        /// 异步检测（非阻塞主线程）
+        /// </summary>
+        /// <param name="frame">输入图像Mat（会自动拷贝，避免主线程释放）</param>
+        /// <returns>异步任务</returns>
+        public async Task DetectAsync(Mat frame)
+        {
+            // 1. 前置校验
+            if (!_isDetectionEnabled)
+            {
+                LogDebug("❌ 检测已禁用，跳过异步推理");
+                OnDetectionCompleted?.Invoke(new List<YoloResult>());
+                return;
+            }
+
+            lock (_frequencyLock)
+            {
+                if (Time.time - _lastDetectionTime < _detectionInterval)
+                {
+                    LogDebug($"⏱️ 未达到检测频率要求，跳过异步推理");
+                    OnDetectionCompleted?.Invoke(new List<YoloResult>());
+                    return;
+                }
+                _lastDetectionTime = Time.time;
+            }
+
+            if (_net == null || _net.Empty() || !_isInitialized || frame == null || frame.Empty())
+            {
+                LogError("❌ 异步检测前置校验失败");
+                OnDetectionCompleted?.Invoke(new List<YoloResult>());
+                return;
+            }
+
+            // 2. 避免重复提交任务
+            lock (_taskLock)
+            {
+                if (IsDetectingAsync)
+                {
+                    LogDebug("⚠️ 已有异步检测任务在执行，跳过本次提交");
+                    return;
+                }
+
+                // 3. 拷贝Mat到内存（避免主线程释放导致异步线程访问异常）
+                Mat frameCopy = frame.Clone();
+                _currentDetectionTask = ExecuteDetectionAsync(frameCopy, _cts.Token);
+            }
+
+            // 4. 等待任务完成并清理
+            try
+            {
+                await _currentDetectionTask;
+            }
+            catch (OperationCanceledException)
+            {
+                LogDebug("🔴 异步检测任务被取消");
+            }
+            catch (Exception ex)
+            {
+                LogError($"🚫 异步检测任务异常：{ex.Message}");
+            }
+            finally
+            {
+                lock (_taskLock)
+                {
+                    _currentDetectionTask = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 异步批量检测
+        /// </summary>
+        /// <param name="frames">图像列表（需提前拷贝）</param>
+        /// <param name="onBatchCompleted">批量完成回调（主线程）</param>
+        public async Task BatchDetectAsync(List<Mat> frames, Action<List<List<YoloResult>>> onBatchCompleted)
+        {
+            if (frames == null || frames.Count == 0 || !_isInitialized || _net == null)
+            {
+                onBatchCompleted?.Invoke(new List<List<YoloResult>>());
+                return;
+            }
+
+            await _threadSemaphore.WaitAsync(_cts.Token);
+            try
+            {
+                // 后台线程执行批量检测
+                var batchResults = await Task.Run(() =>
+                {
+                    var results = new List<List<YoloResult>>();
+                    foreach (var frame in frames)
+                    {
+                        if (_cts.Token.IsCancellationRequested) break;
+                        var frameCopy = frame.Clone();
+                        results.Add(DetectInternal(frameCopy));
+                        frameCopy.Release();
+                    }
+                    return results;
+                }, _cts.Token);
+
+                // 主线程回调
+                await Task.Factory.StartNew(() =>
+                {
+                    onBatchCompleted?.Invoke(batchResults);
+                }, _cts.Token, TaskCreationOptions.None, _mainThreadScheduler);
+            }
+            catch (Exception ex)
+            {
+                LogError($"🚫 异步批量检测失败：{ex.Message}");
+                await Task.Factory.StartNew(() =>
+                {
+                    onBatchCompleted?.Invoke(new List<List<YoloResult>>());
+                }, CancellationToken.None, TaskCreationOptions.None, _mainThreadScheduler);
+            }
+            finally
+            {
+                _threadSemaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// 内部同步检测逻辑（抽离原有Detect方法的核心，去掉频率控制）
+        /// </summary>
+        private List<YoloResult> DetectInternal(Mat frame)
+        {
+            if (_net == null || _net.Empty() || frame == null || frame.Empty())
+                return new List<YoloResult>();
+
+            float preprocessTime = 0, inferenceTime = 0, parseTime = 0;
+            try
+            {
+                int frameWidth = frame.Cols;
+                int frameHeight = frame.Rows;
+
+                // 1. 预处理
+                var watch = Stopwatch.StartNew();
+                using (var blob = PreprocessImage(frame))
+                {
+                    watch.Stop();
+                    preprocessTime = (float)watch.Elapsed.TotalMilliseconds;
+
+                    // 2. 推理
+                    watch.Restart();
+                    _net.SetInput(blob);
+                    string[] outputLayerNames = _net.GetUnconnectedOutLayersNames();
+                    using (var originalOutput = _net.Forward(outputLayerNames.Length > 0 ? outputLayerNames[0] : ""))
+                    {
+                        watch.Stop();
+                        inferenceTime = (float)watch.Elapsed.TotalMilliseconds;
+
+                        // 3. 解析
+                        watch.Restart();
+                        Mat output = originalOutput.Clone();
+
+                        // 维度转换适配
+                        if (output.Dims == 3 && output.Size(0) == 1)
+                        {
+                            int channel = output.Size(1);
+                            int boxCount = output.Size(2);
+                            if (boxCount == 8400 && (channel == 84 || channel == 85))
+                            {
+                                output = output.Reshape(1, channel);
+                                output = output.T();
+                            }
+                            else if (channel == 8400 && (output.Size(2) == 84 || output.Size(2) == 85))
+                            {
+                                output = output.Reshape(1, 8400);
+                            }
+                        }
+                        else if (output.Dims == 2 && output.Rows != 8400 && output.Cols == 8400)
+                        {
+                            output = output.T();
+                        }
+
+                        var results = ParseDetectionOutput(output, frameWidth, frameHeight);
+                        watch.Stop();
+                        parseTime = (float)watch.Elapsed.TotalMilliseconds;
+
+                        output.Release();
+
+                        // 记录性能统计
+                        lock (_statsLock)
+                        {
+                            AddStat("Preprocess", preprocessTime);
+                            AddStat("Inference", inferenceTime);
+                            AddStat("Parse", parseTime);
+                            AddStat("Total", preprocessTime + inferenceTime + parseTime);
+                        }
+
+                        return results;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lock (_statsLock)
+                {
+                    _detectionErrorCount++;
+                }
+
+                LogError($"🚫 内部检测逻辑出错：{ex.Message}");
+                return RetryDetectWithCpu(frame);
+            }
+        }
+
+        /// <summary>
+        /// 执行异步检测（核心逻辑，运行在后台线程）
+        /// </summary>
+        private async Task ExecuteDetectionAsync(Mat frame, CancellationToken token)
+        {
+            List<YoloResult> results = new List<YoloResult>();
+            await _threadSemaphore.WaitAsync(token); // 限制并发数
+
+            try
+            {
+                // 切换到后台线程执行推理
+                await Task.Run(() =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    lock (_lockObj)
+                    {
+                        // 复用原有同步检测逻辑
+                        results = DetectInternal(frame);
+                    }
+                }, token);
+
+                // 切换回主线程执行回调（关键：Unity的API必须在主线程调用）
+                await Task.Factory.StartNew(() =>
+                {
+                    if (!token.IsCancellationRequested)
+                    {
+                        OnDetectionCompleted?.Invoke(results);
+                        ProcessDetectionLogs(results); // 日志也在主线程输出
+                    }
+                }, token, TaskCreationOptions.None, _mainThreadScheduler);
+            }
+            catch (Exception ex)
+            {
+                LogError($"🚫 异步检测执行失败：{ex.Message}\n{ex.StackTrace}");
+                // 主线程回调空结果
+                await Task.Factory.StartNew(() =>
+                {
+                    OnDetectionCompleted?.Invoke(new List<YoloResult>());
+                }, CancellationToken.None, TaskCreationOptions.None, _mainThreadScheduler);
+            }
+            finally
+            {
+                frame.Release(); // 释放拷贝的Mat
+                _threadSemaphore.Release(); // 释放信号量
             }
         }
         #endregion
@@ -905,8 +1184,69 @@ namespace YoloV8Detection
         /// </summary>
         public void Dispose()
         {
+            // ===================== 异步资源释放（新增） =====================
+            // 取消所有异步任务
+            if (_cts != null)
+            {
+                _cts.Cancel();
+                _cts.Dispose();
+            }
+
+            // 释放信号量
+            _threadSemaphore?.Dispose();
+            // ==============================================================
+
             Dispose(true);
             GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// 释放资源
+        /// </summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // 释放托管资源
+                _classNames?.Clear();
+                _classCountAggregate?.Clear();
+                _classTrackIdCounter?.Clear();
+                _lastFrameResults?.Clear();
+                _inferenceTimeStats?.Clear();
+                LogIncludedClasses?.Clear();
+                LogExcludedClasses?.Clear();
+
+                // 取消日志配置监听
+                _logSettings.OnSettingsChanged -= RefreshLogConfig;
+
+                // ===================== 异步资源释放（新增） =====================
+                // 清空回调
+                OnDetectionCompleted = null;
+                // ==============================================================
+            }
+
+            // 释放非托管资源（修复Net无Release方法）
+            if (_net != null)
+            {
+                try
+                {
+                    if (!_net.Empty())
+                    {
+                        _net.Dispose(); // 替换Release为Dispose
+                    }
+                    _net = null;
+                }
+                catch
+                {
+                    // 忽略释放时的异常
+                }
+            }
+
+            // 重置状态
+            _isInitialized = false;
+            _modelPath = null;
+            _lastAggregateLogTime = 0;
+            _detectionErrorCount = 0;
         }
 
         #region 私有核心方法
@@ -1573,49 +1913,6 @@ namespace YoloV8Detection
             }
         }
 
-        /// <summary>
-        /// 释放资源
-        /// </summary>
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                // 释放托管资源
-                _classNames?.Clear();
-                _classCountAggregate?.Clear();
-                _classTrackIdCounter?.Clear();
-                _lastFrameResults?.Clear();
-                _inferenceTimeStats?.Clear();
-                LogIncludedClasses?.Clear();
-                LogExcludedClasses?.Clear();
-
-                // 取消日志配置监听
-                _logSettings.OnSettingsChanged -= RefreshLogConfig;
-            }
-
-            // 释放非托管资源（修复Net无Release方法）
-            if (_net != null)
-            {
-                try
-                {
-                    if (!_net.Empty())
-                    {
-                        _net.Dispose(); // 替换Release为Dispose
-                    }
-                    _net = null;
-                }
-                catch
-                {
-                    // 忽略释放时的异常
-                }
-            }
-
-            // 重置状态
-            _isInitialized = false;
-            _modelPath = null;
-            _lastAggregateLogTime = 0;
-            _detectionErrorCount = 0;
-        }
 
         /// <summary>
         /// 析构函数

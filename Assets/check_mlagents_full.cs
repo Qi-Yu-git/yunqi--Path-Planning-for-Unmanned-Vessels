@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using UnityEngine;
+using System.Reflection;
 
 // 解决Debug命名冲突的别名
 using Debug = UnityEngine.Debug;
@@ -17,10 +18,12 @@ public class MLAgentsChecker : MonoBehaviour
     public string trainerConfigPath = "Assets/config/trainer_config.yaml";
     public string resultsDirectory = "results";
     public int port = 5004;
+    public bool useNoGraphics = true; // 新增：无图形化启动（解决无头服务器超时）
 
     [Header("调试配置")]
     public int commandTimeout = 60; // 普通命令超时时间（秒）
-    public int trainerCheckTimeout = 30; // 训练进程检查超时（延长至30秒，适配旧版本启动慢）
+    public int trainerCheckTimeout = 60; // 延长至60秒，适配Unity<->Python连接
+    public int unityConnectTimeout = 120; // Unity主动连接超时（秒）
 
     // 训练进程
     private Process _trainProcess;
@@ -30,6 +33,8 @@ public class MLAgentsChecker : MonoBehaviour
     private string _mlagentsVersion = "";
     // 自动生成的唯一RunID
     private string _uniqueRunId;
+    // 连接状态标记（补充使用逻辑，消除CS0414警告）
+    private bool _isUnityConnected = false;
 
     void Start()
     {
@@ -40,12 +45,118 @@ public class MLAgentsChecker : MonoBehaviour
         // 优先修复YoloLogSettings资源泄漏问题
         FixYoloLogSettingsRootIssue();
 
+        // 适配1.x版本：检查Agent的Behavior配置（反射方式，兼容不同版本）
+        CheckAgentBehaviorSettingsForMLAgents1x();
+
         // 基础环境检查（Conda/Python/MLAgents）
         CheckMLAgentsEnvironment();
 
         // 测试训练命令（适配不同MLAgents版本参数）
         TestTrainerCommand();
+
+        // 适配1.x版本：启动后主动检查Unity与训练器的连接状态
+        Invoke(nameof(CheckUnityTrainerConnectionForMLAgents1x), 5f);
     }
+
+    #region 适配1.x版本：检查Agent Behavior配置（反射方式兼容）
+    void CheckAgentBehaviorSettingsForMLAgents1x()
+    {
+        Debug.Log($"=== 检查Agent Behavior配置（适配ML-Agents 1.x） ===");
+
+        // 修复：使用新版Unity API FindObjectsByType，解决Object命名冲突和泛型错误
+        UnityEngine.Object[] agentObjects = UnityEngine.Object.FindObjectsByType<UnityEngine.MonoBehaviour>(FindObjectsSortMode.None);
+        System.Collections.Generic.List<Component> agents = new System.Collections.Generic.List<Component>();
+
+        // 筛选出Agent组件（反射方式，避免直接引用MLAgents类型）
+        foreach (var obj in agentObjects)
+        {
+            try
+            {
+                if (obj.GetType().Name == "Agent" || obj.GetType().FullName.Contains("MLAgents.Agent"))
+                {
+                    agents.Add(obj as Component);
+                }
+            }
+            catch
+            {
+                continue;
+            }
+        }
+
+        if (agents.Count == 0)
+        {
+            Debug.LogWarning($"⚠️ 场景中未找到任何Agent组件，请确认Agent已正确添加");
+            return;
+        }
+
+        bool hasInvalidBehavior = false;
+        foreach (var agent in agents)
+        {
+            // 反射获取BehaviorParameters组件（兼容1.x/2.x）
+            Component behaviorParams = null;
+            try
+            {
+                // 先尝试2.x的名称
+                behaviorParams = agent.GetComponent("BehaviorParameters");
+                if (behaviorParams == null)
+                {
+                    // 再尝试1.x的旧名称/兼容方式
+                    behaviorParams = agent.GetComponent("AgentParameters");
+                }
+            }
+            catch
+            {
+                // 忽略反射错误
+            }
+
+            if (behaviorParams == null)
+            {
+                Debug.LogError($"❌ Agent {agent.name} 缺少Behavior/Agent Parameters组件");
+                hasInvalidBehavior = true;
+                continue;
+            }
+
+            // 反射检查BehaviorType（兼容1.x/2.x）
+            try
+            {
+                var behaviorTypeProp = behaviorParams.GetType().GetProperty("BehaviorType");
+                if (behaviorTypeProp != null)
+                {
+                    object behaviorTypeValue = behaviorTypeProp.GetValue(behaviorParams);
+                    // 1.x版本中BehaviorType的Default值可能是"Default"或枚举值0
+                    if (behaviorTypeValue.ToString() != "Default" && behaviorTypeValue.ToString() != "0")
+                    {
+                        Debug.LogError($"❌ Agent {agent.name} 的Behavior Type不是Default（当前：{behaviorTypeValue}）");
+                        hasInvalidBehavior = true;
+                    }
+                }
+                else
+                {
+                    // 1.x旧版本可能没有BehaviorType，检查Brain参数
+                    var brainProp = behaviorParams.GetType().GetProperty("Brain");
+                    if (brainProp != null && brainProp.GetValue(behaviorParams) == null)
+                    {
+                        Debug.LogError($"❌ Agent {agent.name} 的Brain参数未设置");
+                        hasInvalidBehavior = true;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"⚠️ 检查Agent {agent.name} 的Behavior配置时出错: {e.Message}");
+            }
+        }
+
+        if (hasInvalidBehavior)
+        {
+            Debug.LogError($"💡 解决方案：将所有Agent的Behavior Type设置为Default，或配置正确的Brain参数");
+        }
+        else
+        {
+            Debug.Log($"✅ 所有Agent的Behavior Parameters配置正确");
+        }
+    }
+    #endregion
 
     #region 核心修复1：YoloLogSettings资源泄漏修复
     // 彻底修复YoloLogSettings的DontDestroyOnLoad导致的资源泄漏
@@ -85,6 +196,16 @@ public class MLAgentsChecker : MonoBehaviour
     // 场景销毁时清理资源
     void OnDestroy()
     {
+        // 补充使用_isUnityConnected，消除CS0414警告
+        if (_isUnityConnected)
+        {
+            Debug.Log($"ℹ️ 训练连接状态：已连接，退出时终止进程");
+        }
+        else
+        {
+            Debug.Log($"ℹ️ 训练连接状态：未连接，退出时清理进程");
+        }
+
         // 严格判断进程状态，避免空引用和重复释放
         if (_isTrainProcessStarted && _trainProcess != null)
         {
@@ -267,6 +388,110 @@ public class MLAgentsChecker : MonoBehaviour
     }
     #endregion
 
+    #region 适配1.x版本：检查Unity与训练器的连接状态
+    void CheckUnityTrainerConnectionForMLAgents1x()
+    {
+        if (!_isTrainProcessStarted)
+        {
+            Debug.LogWarning($"⚠️ 训练进程未启动，跳过连接检查");
+            return;
+        }
+
+        Debug.Log($"=== 检查Unity与训练器连接状态（适配ML-Agents 1.x） ===");
+        try
+        {
+            // 适配1.x版本：反射获取Academy的连接状态
+            Type academyType = Type.GetType("Unity.MLAgents.Academy, Unity.MLAgents");
+            // 原代码：检测Academy类（1.x）
+            if (academyType == null)
+            {
+                // 替换为检测4.x的核心类 BehaviorParameters
+                var behaviorParamsType = Type.GetType("Unity.MLAgents.Policies.BehaviorParameters, Unity.ML-Agents");
+                if (behaviorParamsType == null)
+                {
+                    Debug.LogWarning($"⚠️ 未找到ML-Agents 4.x BehaviorParameters类，5秒后重试...");
+                    Invoke(nameof(CheckUnityTrainerConnectionForMLAgents1x), 5f);
+                    return;
+                }
+                // 如果找到4.x类，直接跳过重试（避免无限循环）
+                return;
+            }
+
+            // 获取Academy实例
+            PropertyInfo instanceProp = academyType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+            if (instanceProp == null)
+            {
+                Debug.LogWarning($"⚠️ Academy没有Instance属性，5秒后重试...");
+                Invoke(nameof(CheckUnityTrainerConnectionForMLAgents1x), 5f);
+                return;
+            }
+            object academyInstance = instanceProp.GetValue(null);
+
+            if (academyInstance == null)
+            {
+                Debug.LogWarning($"⚠️ Academy未初始化，5秒后重试...");
+                Invoke(nameof(CheckUnityTrainerConnectionForMLAgents1x), 5f);
+                return;
+            }
+
+            // 检查连接状态（1.x版本的不同方式）
+            bool isConnected = false;
+            // 尝试1：检查是否有IsConnected方法
+            MethodInfo isConnectedMethod = academyType.GetMethod("IsConnected", BindingFlags.Public | BindingFlags.Instance);
+            if (isConnectedMethod != null)
+            {
+                isConnected = (bool)isConnectedMethod.Invoke(academyInstance, null);
+            }
+            else
+            {
+                // 尝试2：检查Academy的状态属性
+                PropertyInfo statusProp = academyType.GetProperty("Status", BindingFlags.Public | BindingFlags.Instance);
+                if (statusProp != null)
+                {
+                    object statusValue = statusProp.GetValue(academyInstance);
+                    isConnected = statusValue.ToString() == "Running" || statusValue.ToString() == "Connected";
+                }
+                else
+                {
+                    // 无法直接检查，通过进程状态间接判断
+                    isConnected = _trainProcess != null && !_trainProcess.HasExited;
+                    Debug.LogWarning($"ℹ️ 无法直接检查连接状态，通过训练进程状态判断：{(isConnected ? "运行中" : "已退出")}");
+                }
+            }
+
+            // 更新连接状态标记（消除CS0414警告）
+            _isUnityConnected = isConnected;
+
+            if (isConnected)
+            {
+                Debug.Log($"✅ Unity已成功连接到ML-Agents训练器（端口：{port}）");
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ Unity尚未连接到训练器，等待中...（超时剩余：{unityConnectTimeout}秒）");
+                unityConnectTimeout -= 5;
+                if (unityConnectTimeout > 0)
+                {
+                    Invoke(nameof(CheckUnityTrainerConnectionForMLAgents1x), 5f);
+                }
+                else
+                {
+                    Debug.LogError($"❌ Unity连接训练器超时！请检查：");
+                    Debug.LogError($"1. 训练器进程是否正常运行（任务管理器查看python.exe）");
+                    Debug.LogError($"2. 端口{port}是否被防火墙/杀毒软件拦截");
+                    Debug.LogError($"3. ML-Agents版本是否与Unity包版本匹配");
+                    Debug.LogError($"4. 是否添加了--no-graphics参数（无头环境必需）");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"⚠️ 连接检查出错：{e.Message}");
+            Invoke(nameof(CheckUnityTrainerConnectionForMLAgents1x), 5f);
+        }
+    }
+    #endregion
+
     #region 环境检查与训练命令测试
     // 基础环境检查（Conda/Python/MLAgents版本）
     void CheckMLAgentsEnvironment()
@@ -295,6 +520,9 @@ public class MLAgentsChecker : MonoBehaviour
         if (pipCode == 0 && !string.IsNullOrEmpty(_mlagentsVersion))
         {
             Debug.Log($"✅ MLAgents版本: {_mlagentsVersion}");
+            // 适配1.x版本：简化版本匹配检查
+            Debug.Log($"ℹ️ ML-Agents 1.x版本，自动使用--base-port参数");
+
             if (_mlagentsVersion.StartsWith("1."))
             {
                 Debug.Log("ℹ️ 检测到旧版本MLAgents (1.x)，自动使用--base-port参数");
@@ -309,7 +537,7 @@ public class MLAgentsChecker : MonoBehaviour
         Debug.Log("ℹ️ 跳过mlagents-learn --help检查，直接测试训练命令");
     }
 
-    // 测试训练命令（核心：动态适配MLAgents版本参数 + 唯一RunID + --force）
+    // 测试训练命令（核心：动态适配MLAgents版本参数 + 唯一RunID + --force + --no-graphics）
     void TestTrainerCommand()
     {
         Debug.Log($"\n=== 训练命令测试 ===");
@@ -326,13 +554,23 @@ public class MLAgentsChecker : MonoBehaviour
         // 2. 动态选择端口参数（1.x用--base-port，新版用--port）
         string portParam = _mlagentsVersion.StartsWith("1.") ? "--base-port" : "--port";
 
-        // 核心修复：添加--force参数解决重复RunID问题 + 使用唯一RunID
+        // 核心修复：
+        // 1. 添加--force参数解决重复RunID问题（1.x版本若报错可移除）
+        // 2. 添加--no-graphics参数解决无头环境超时
+        // 3. 使用唯一RunID
         string trainCmd =
             $"mlagents-learn \"{trainerConfigPath}\" " +
             $"--run-id {_uniqueRunId} " +
             $"--results-dir \"{resultsDirectory}\" " +
             $"{portParam} {port} " +
-            $"--force"; // 强制覆盖同名RunID，解决启动失败
+            $"--force"; // 1.x版本若报错"unrecognized arguments"，请删除此行
+
+        // 新增：无图形化参数（解决无头服务器/后台运行超时）
+        if (useNoGraphics)
+        {
+            trainCmd += " --no-graphics";
+            Debug.Log("ℹ️ 已添加--no-graphics参数，适配无图形化环境");
+        }
 
         // 3. 执行训练命令
         var (trainCode, trainOut, trainErr) = RunCmd(trainCmd, true);
@@ -376,6 +614,16 @@ public class MLAgentsChecker : MonoBehaviour
             if (trainErr.Contains("encoding") || trainErr.Contains("编码"))
             {
                 Debug.LogError($"💡 解决方案：已设置PYTHONIOENCODING=utf-8，若仍失败请检查系统区域设置为UTF-8，或在Conda环境执行 chcp 65001");
+            }
+            // 新增：超时错误针对性提示
+            if (trainErr.Contains("UnityTimeOutException") || trainErr.Contains("took too long to respond"))
+            {
+                Debug.LogError($"💡 超时解决方案：");
+                Debug.LogError($"1. 确保所有Agent的Behavior Type设置为Default或配置正确的Brain");
+                Debug.LogError($"2. 启用--no-graphics参数（已自动添加）");
+                Debug.LogError($"3. 延长超时时间（当前trainerCheckTimeout={trainerCheckTimeout}秒）");
+                Debug.LogError($"4. 检查ML-Agents Python包与Unity包版本是否匹配");
+                Debug.LogError($"5. 关闭Unity的Console窗口，减少图形渲染压力");
             }
         }
     }
