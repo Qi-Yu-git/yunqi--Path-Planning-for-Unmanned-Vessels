@@ -12,9 +12,16 @@ public class BoatController : MonoBehaviour
     [Tooltip("转向速度（建议1）")]
     public float rotationSpeed = 1f;          // 转向平滑系数
     [Tooltip("路径点切换距离（建议1）")]
-    [SerializeField] private float waypointDistance = 2.0f;       // 修复：改为2.0f匹配最大速度
+    [SerializeField] private float waypointDistance = 1.0f;       // 匹配目标版本的1f
     public float endPointSlowRange = 2f;      // 终点前减速范围
     public float minEndSpeed = 0.5f;          // 终点前最小速度
+
+    // 碰撞避障新增参数（可在Inspector调试）
+    [Header("碰撞避障参数")]
+    public float collisionAvoidanceForce = 2f; // 碰撞后避障推力
+    public float collisionRotationAngle = 30f; // 碰撞后转向角度（度）
+    public float collisionSpeedRecoveryTime = 0.5f; // 速度恢复时间
+    public float collisionIgnoreTime = 0.3f;   // 碰撞后短时间忽略重复碰撞（防止抖动）
 
     // 私有变量
     private List<Vector2Int> gridPath;        // 栅格坐标路径
@@ -25,10 +32,10 @@ public class BoatController : MonoBehaviour
     private float currentSpeed = 0f;          // 当前速度（用于平滑过渡）
     private int 路径重试次数 = 0;            // 路径加载重试计数器
     private const int 最大重试次数 = 5;      // 最大重试次数
-    private bool wasPathInvalid = false;     // 新增字段用于跟踪路径失效状态
     public bool isPathLoaded = false;        // 新增：标记路径是否加载完成
     private Vector3 originalTargetPos;       // 新增：存储原始目标点（关键！）
-    private bool isReplaningPath = false;     // 新增：标记是否正在重规划路径
+    private bool isInCollisionAvoidance = false; // 是否处于避障状态
+    private float lastCollisionTime = 0f;     // 最后一次碰撞时间
 
     // ======== 核心修复：重构Awake，优先从栅格生成有效目标点 ========
     void Awake()
@@ -90,7 +97,7 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 配置刚体参数
+        // 配置刚体参数（保留原有配置 + 新增目标版本的阻尼参数）
         ConfigureRigidbody();
 
         // 检查必要引用
@@ -115,131 +122,109 @@ public class BoatController : MonoBehaviour
         TryLoadPath();
     }
 
-    // 配置刚体物理参数
+    // 配置刚体物理参数（整合原有+目标版本的阻尼配置，移除重复赋值）
     private void ConfigureRigidbody()
     {
         rb.useGravity = false;                // 禁用重力（适用于水上运动）
         rb.interpolation = RigidbodyInterpolation.Interpolate; // 平滑刚体移动
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic; // 连续碰撞检测
+        // 统一设置阻尼参数（移除重复赋值，保留目标版本命名）
         rb.linearDamping = 0.5f;              // 线性阻尼（阻力）
-        rb.angularDamping = 2f;               // 角阻尼（旋转阻力）
+        rb.angularDamping = 0.8f;             // 角阻尼（旋转阻力）
     }
 
-    // 碰撞处理：修复核心逻辑，保留原始目标点+触发精准重规划
+    // ========== 核心修改：碰撞处理逻辑（移除暂停/重规划，改为轻量避障） ==========
     private void OnCollisionEnter(Collision collision)
     {
+        // 忽略重复碰撞（短时间内只处理一次）
+        if (Time.time - lastCollisionTime < collisionIgnoreTime)
+            return;
+
         if (collision.collider.CompareTag("USV") || collision.collider.CompareTag("Obstacle"))
         {
-            Debug.LogError($"与{collision.collider.tag}发生碰撞！重新规划路径至原目标：{originalTargetPos}");
-            StopMovement();
-            worldPath.Clear(); // 仅清空路径，保留原始目标点
-            isPathLoaded = false;
+            lastCollisionTime = Time.time;
+            Debug.Log($"碰撞到{collision.collider.tag}，执行轻量避障（{Time.time}）");
 
-            // 避免重复重规划
-            if (!isReplaningPath)
-            {
-                StartCoroutine(ReplanPathToOriginalTarget()); // 改用协程精准重规划
-            }
+            // 1. 记录碰撞数据（供训练用，可根据需求扩展）
+            RecordCollisionData(collision);
+
+            // 2. 执行避障逻辑（不中断路径，仅临时调整方向/速度）
+            StartCoroutine(ExecuteCollisionAvoidance(collision));
         }
     }
 
-    // 停止移动
+    // 新增：记录碰撞数据（可对接训练系统）
+    private void RecordCollisionData(Collision collision)
+    {
+        // 示例：记录碰撞时间、位置、碰撞对象、当前速度、路径进度等
+        Debug.Log($"【训练数据】碰撞时间：{Time.time}，位置：{transform.position}，碰撞对象：{collision.collider.name}，当前路径点：{currentWaypointIndex}/{worldPath.Count}");
+        // 可扩展：将数据写入List/CSV/训练系统接口
+    }
+
+    // 新增：执行轻量避障（临时调整方向和速度，不重置路径）
+    private IEnumerator ExecuteCollisionAvoidance(Collision collision)
+    {
+        isInCollisionAvoidance = true;
+
+        // 1. 轻微减速（不停止）
+        float originalSpeed = currentSpeed;
+        currentSpeed = originalSpeed * 0.3f;
+        rb.linearVelocity = rb.linearVelocity * 0.5f; // 降低当前速度
+
+        // 2. 计算避障方向（远离碰撞体，或随机侧转）
+        Vector3 avoidDir = GetAvoidanceDirection(collision);
+
+        // 3. 应用避障推力和转向
+        rb.AddForce(avoidDir * collisionAvoidanceForce, ForceMode.Impulse);
+        Quaternion targetRot = Quaternion.LookRotation(avoidDir);
+        transform.rotation = Quaternion.Lerp(transform.rotation, targetRot, 0.3f);
+
+        // 4. 短暂保持避障状态后恢复速度
+        yield return new WaitForSeconds(collisionSpeedRecoveryTime);
+
+        // 5. 恢复速度，继续沿原路径前进
+        currentSpeed = originalSpeed;
+        isInCollisionAvoidance = false;
+        Debug.Log("避障完成，恢复原路径运动");
+    }
+
+    // 新增：计算避障方向（远离碰撞体，优先侧方避让）
+    private Vector3 GetAvoidanceDirection(Collision collision)
+    {
+        // 方式1：远离碰撞体中心
+        Vector3 awayFromCollision = (transform.position - collision.contacts[0].point).normalized;
+        awayFromCollision.y = 0; // 忽略Y轴
+
+        // 方式2：如果远离方向无效，随机侧转（左/右）
+        if (awayFromCollision.magnitude < 0.1f)
+        {
+            int randomSide = Random.Range(0, 2) == 0 ? -1 : 1;
+            awayFromCollision = Quaternion.Euler(0, collisionRotationAngle * randomSide, 0) * transform.forward;
+        }
+
+        return awayFromCollision;
+    }
+
+    // ========== 移除：原碰撞后重规划路径的方法（不再使用） ==========
+    // private void ReplanPathAfterCollision()
+    // {
+    //     isPathLoaded = false; // 标记路径失效
+    //     TryLoadPath(); // 重新加载路径
+    // }
+
+    // ========== 移除：原恢复运动逻辑（改为避障后自动恢复） ==========
+    // private void ResumeMovement()
+    // {
+    //     currentWaypointIndex = Mathf.Max(0, currentWaypointIndex - 1);
+    //     isReachedEnd = false;
+    // }
+
+    // 停止移动（保留原有方法，兼容历史逻辑）
     private void StopMovement()
     {
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
         currentSpeed = 0f;
-    }
-
-    // 恢复运动
-    private void ResumeMovement()
-    {
-        // 回到上一个路径点重试
-        currentWaypointIndex = Mathf.Max(0, currentWaypointIndex - 1);
-        isReachedEnd = false;
-        Debug.Log("恢复移动，继续前往路径点");
-    }
-
-    // 核心修复：基于原始目标点的精准重规划协程
-    private IEnumerator ReplanPathToOriginalTarget()
-    {
-        isReplaningPath = true;
-        // 清空旧路径
-        worldPath.Clear();
-        currentWaypointIndex = 0;
-        isPathLoaded = false;
-
-        int retryCount = 0;
-        int maxRetry = 3;
-        bool replanSuccess = false;
-
-        while (retryCount < maxRetry && !replanSuccess)
-        {
-            retryCount++;
-            Debug.Log($"第{retryCount}次尝试重规划路径：当前位置→原目标点({originalTargetPos})");
-
-            if (pathfinder != null && gridManager != null && originalTargetPos != Vector3.zero)
-            {
-                // 转换当前位置和原始目标点为栅格坐标
-                Vector2Int currentGridPos = gridManager.WorldToGrid(transform.position);
-                Vector2Int targetGridPos = gridManager.WorldToGrid(originalTargetPos);
-
-                // 调用公开的FindPath方法（确保ImprovedAStar的FindPath为public）
-                List<Vector2Int> newGridPath = pathfinder.FindPath(currentGridPos, targetGridPos);
-
-                if (newGridPath != null && newGridPath.Count > 0)
-                {
-                    // 转换栅格路径为世界路径
-                    worldPath.Clear();
-                    foreach (var gridPos in newGridPath)
-                    {
-                        Vector3 worldPos = gridManager.GridToWorld(gridPos);
-                        worldPos.y = 0.05f; // 固定Y轴高度
-                        worldPath.Add(worldPos);
-                    }
-                    isPathLoaded = true;
-                    replanSuccess = true;
-                    Debug.Log($"路径重规划成功！新路径包含{worldPath.Count}个点");
-                    // 修正朝向第一个路径点（增加零向量防护）
-                    FaceFirstWaypoint();
-                }
-                else
-                {
-                    Debug.LogWarning($"第{retryCount}次重规划失败，1秒后重试");
-                    yield return new WaitForSeconds(1f);
-                }
-            }
-            else
-            {
-                Debug.LogError("Pathfinder/GridManager未赋值，或原始目标点为空，无法重规划");
-                yield break;
-            }
-        }
-
-        // 重试耗尽仍失败的处理：偏移当前位置后再次尝试
-        if (!replanSuccess)
-        {
-            Debug.LogError("重试耗尽，尝试偏移位置后重规划");
-            Vector3 offsetPos = transform.position + Random.insideUnitSphere * 2f;
-            offsetPos.y = 0.05f; // 固定Y轴
-            Vector2Int offsetGridPos = gridManager.WorldToGrid(offsetPos);
-            Vector2Int targetGridPos = gridManager.WorldToGrid(originalTargetPos);
-
-            List<Vector2Int> newGridPath = pathfinder.FindPath(offsetGridPos, targetGridPos);
-            if (newGridPath != null && newGridPath.Count > 0)
-            {
-                worldPath.Clear();
-                foreach (var gridPos in newGridPath)
-                {
-                    worldPath.Add(gridManager.GridToWorld(gridPos));
-                }
-                isPathLoaded = true;
-                replanSuccess = true;
-                FaceFirstWaypoint();
-            }
-        }
-
-        isReplaningPath = false;
     }
 
     // 尝试加载路径
@@ -317,7 +302,7 @@ public class BoatController : MonoBehaviour
             return;
         }
 
-        // 第三步：转换路径坐标（栅格→世界）（原代码逻辑保留，无需修改）
+        // 第三步：转换路径坐标（栅格→世界）（兼容目标版本的"栅格转世界"方法名）
         gridPath = pathfinder.path;
         worldPath.Clear(); // 清空旧路径，避免重复
         foreach (var gridPos in gridPath)
@@ -331,8 +316,28 @@ public class BoatController : MonoBehaviour
                 return;
             }
 
-            // 转换为世界坐标
-            Vector3 worldPos = gridManager.GridToWorld(gridPos);
+            // 转换为世界坐标（兼容目标版本的方法名：优先用"栅格转世界"，兼容原有"GridToWorld"）
+            Vector3 worldPos;
+            try
+            {
+                // 尝试调用目标版本的"栅格转世界"方法
+                var method = gridManager.GetType().GetMethod("栅格转世界");
+                if (method != null)
+                {
+                    worldPos = (Vector3)method.Invoke(gridManager, new object[] { gridPos });
+                }
+                else
+                {
+                    // 兼容原有GridToWorld方法
+                    worldPos = gridManager.GridToWorld(gridPos);
+                }
+            }
+            catch
+            {
+                // 兜底：使用原有方法
+                worldPos = gridManager.GridToWorld(gridPos);
+            }
+
             if (float.IsNaN(worldPos.x) || float.IsNaN(worldPos.z))
             {
                 Debug.LogError($"栅格转世界坐标失败：{gridPos}");
@@ -391,79 +396,76 @@ public class BoatController : MonoBehaviour
         Debug.Log($"无人船朝向已修正：{transform.forward}，目标路径点：{firstWaypoint}");
     }
 
-    // 移动逻辑（补充完整的FixedUpdate，确保碰撞后能沿新路径移动）
+    // ========== 核心优化：FixedUpdate增加避障状态判断 ==========
     void FixedUpdate()
     {
-        // 固定Y轴高度（防止上下浮动）
+        // 固定Y轴高度，避免上下浮动
         transform.position = new Vector3(transform.position.x, 0.4f, transform.position.z);
 
-        // 路径无效时尝试重新加载（只在路径状态从有效变为无效时打印一次日志）
         if (isReachedEnd || worldPath == null || worldPath.Count == 0)
-        {
-            bool isPathInvalid = worldPath == null || worldPath.Count == 0;
-            if (isPathInvalid && !wasPathInvalid)
-            {
-                Debug.LogWarning("路径无效，尝试重新加载...");
-                wasPathInvalid = true;
-                TryLoadPath();
-            }
             return;
-        }
 
-        // 重置路径无效标记
-        wasPathInvalid = false;
-
-        // 到达终点判断
+        // 到达最后一个路径点
         if (currentWaypointIndex >= worldPath.Count)
         {
-            if (!isReachedEnd)
+            rb.linearVelocity = Vector3.zero;
+            isReachedEnd = true;
+            Debug.Log("已到达终点，停止移动");
+            return;
+        }
+
+        // 避障状态下跳过常规移动逻辑（由避障协程处理）
+        if (isInCollisionAvoidance)
+            return;
+
+        // 移动到当前路径点（目标版本逻辑）
+        Vector3 target = worldPath[currentWaypointIndex];
+        Vector3 targetXZ = new Vector3(target.x, 0.4f, target.z);
+        Vector3 currentXZ = new Vector3(transform.position.x, 0.4f, transform.position.z);
+        float distance = Vector3.Distance(currentXZ, targetXZ);
+        bool isLastWaypoint = (currentWaypointIndex == worldPath.Count - 1);
+        float stopDistance = isLastWaypoint ? 0.5f : waypointDistance; // 用waypointDistance作为判断阈值
+
+        // 到达当前路径点，切换到下一个（提前预判下一个点方向）
+        if (distance <= stopDistance)
+        {
+            currentWaypointIndex++;
+            // 提前转向下一个点，减少转向延迟
+            if (currentWaypointIndex < worldPath.Count)
             {
-                Debug.Log("到达最终目标点！");
-                StopMovement();
-                isReachedEnd = true;
+                Vector3 nextTarget = worldPath[currentWaypointIndex];
+                Vector3 nextTargetXZ = new Vector3(nextTarget.x, 0.4f, nextTarget.z);
+                Quaternion nextRotation = Quaternion.LookRotation(nextTargetXZ - currentXZ);
+                transform.rotation = Quaternion.Euler(0, nextRotation.eulerAngles.y, 0);
             }
             return;
         }
 
-        // 移动到下一个路径点
-        MoveToWaypoint();
-    }
+        // 平滑转向目标（降低旋转速度，减少抖动）
+        Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
+        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
+        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
 
-    // 核心移动逻辑：沿路径点移动
-    private void MoveToWaypoint()
-    {
-        Vector3 targetWaypoint = worldPath[currentWaypointIndex];
-        // 计算到目标路径点的方向（忽略Y轴）
-        Vector3 direction = (targetWaypoint - transform.position).normalized;
-        direction.y = 0;
-
-        // 距离判断：是否到达当前路径点
-        float distanceToWaypoint = Vector3.Distance(transform.position, targetWaypoint);
-        if (distanceToWaypoint < waypointDistance)
+        // 计算目标速度（终点前减速，增加平滑过渡）
+        float targetSpeed = moveSpeed;
+        if (isLastWaypoint)
         {
-            // 切换到下一个路径点
-            currentWaypointIndex++;
-            return;
+            float distanceToEnd = Vector3.Distance(currentXZ, worldPath[worldPath.Count - 1]);
+            if (distanceToEnd <= endPointSlowRange)
+            {
+                float speedRatio = distanceToEnd / endPointSlowRange;
+                targetSpeed = Mathf.Lerp(minEndSpeed, moveSpeed * 0.5f, speedRatio);
+            }
+            else
+            {
+                targetSpeed = moveSpeed * 0.5f;
+            }
         }
 
-        // 终点前减速逻辑
-        float distanceToEnd = Vector3.Distance(transform.position, worldPath[worldPath.Count - 1]);
-        float speedFactor = 1f;
-        if (distanceToEnd < endPointSlowRange)
-        {
-            speedFactor = Mathf.Lerp(minEndSpeed / moveSpeed, 1f, distanceToEnd / endPointSlowRange);
-        }
-        currentSpeed = Mathf.Lerp(currentSpeed, moveSpeed * speedFactor, Time.fixedDeltaTime * rotationSpeed);
-
-        // 平滑转向目标方向（增加零向量防护）
-        if (direction.sqrMagnitude > 0.001f)
-        {
-            Quaternion targetRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.fixedDeltaTime * rotationSpeed);
-        }
-
-        // 移动刚体
-        rb.linearVelocity = transform.forward * currentSpeed;
+        // 速度平滑过渡（避免突然加速/减速）
+        currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.fixedDeltaTime * 2f);
+        Vector3 moveDir = transform.forward * currentSpeed;
+        rb.linearVelocity = new Vector3(moveDir.x, rb.linearVelocity.y, moveDir.z);
     }
 
     // 外部设置原始目标点的方法（供外部调用，如路径管理器）
@@ -472,5 +474,18 @@ public class BoatController : MonoBehaviour
         originalTargetPos = targetPos;
         originalTargetPos.y = 0.05f; // 固定Y轴
         Debug.Log($"外部设置原始目标点：{originalTargetPos}");
+        // 目标点变更后重新加载路径
+        isPathLoaded = false;
+        TryLoadPath();
+    }
+
+    // 可选：Gizmos绘制避障方向（调试用）
+    private void OnDrawGizmos()
+    {
+        if (isInCollisionAvoidance)
+        {
+            Gizmos.color = Color.red;
+            Gizmos.DrawRay(transform.position, transform.forward * 2f);
+        }
     }
 }
