@@ -1077,6 +1077,21 @@ MonoBehaviour:
   collisionThreshold: 2.5
   avoidDistance: 3
   obstacleSpeedFactor: 0.8
+--- !u!114 &173794675
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 173794664}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a5c9d521e5ef4759a8246a07d52221e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  DecisionPeriod: 10
+  DecisionStep: 0
+  TakeActionsBetweenDecisions: 1
 --- !u!1 &207255595
 GameObject:
   m_ObjectHideFlags: 0
@@ -3798,7 +3813,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &981483754
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3806,7 +3821,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 981483753}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4398d956d8372a645865deaeb69d824b, type: 3}
   m_Name: 
@@ -5762,6 +5777,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
       insertIndex: -1
       addedObject: {fileID: 173794674}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 173794675}
   m_SourcePrefab: {fileID: 100100000, guid: 9b59a6ac6668d704ba1279589d43eeec, type: 3}
 --- !u!4 &1223131698291057687
 Transform:

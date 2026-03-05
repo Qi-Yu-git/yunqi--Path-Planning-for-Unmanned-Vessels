@@ -41,7 +41,7 @@ public class USV_GlobalRLAgent : Agent
     private const int ViewRange = 5;
     private const float MaxSpeed = 2f;
     private const float MaxAngularSpeed = 60f;
-
+    private string _resetReason = "";
     // 全局路径相关
     private ImprovedAStar globalPathfinder;
     private int currentWaypointIndex = 0;
@@ -113,7 +113,7 @@ public class USV_GlobalRLAgent : Agent
     public void ResetAgentState(float maxSpeed, float maxEpisodeTime)
     {
         currentMaxSpeed = maxSpeed <= 0 ? MaxSpeed : maxSpeed;
-        currentMaxEpisodeTime = maxEpisodeTime <= 0 ? 60f : maxEpisodeTime;
+        currentMaxEpisodeTime = maxEpisodeTime <= 0 ? 300f : maxEpisodeTime;
         episodeStartTime = Time.time;
 
         lastDistToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 0;
@@ -284,11 +284,17 @@ public class USV_GlobalRLAgent : Agent
     }
 
     /// <summary>
-    /// 自定义结束回合方法
+    /// 自定义结束回合方法（添加日志）
     /// </summary>
     private void EndEpisodeCustom()
     {
         IsEpisodeDone = true;
+        float currentDist = Vector3.Distance(transform.position, target.position);
+        float elapsedTime = Time.time - episodeStartTime;
+        Debug.LogWarning($"=== 回合结束 ===");
+        Debug.LogWarning($"原因：{(_resetReason == "collision" ? "碰撞障碍物" : _resetReason == "timeout" ? "超时" : _resetReason == "target" ? "到达终点" : _resetReason == "boundary" ? "驶出边界" : "未知")}");
+        Debug.LogWarning($"结束时距离终点：{currentDist:F2}米，耗时：{elapsedTime:F2}秒");
+        Debug.LogWarning($"累计奖励：{GetCumulativeReward():F2}");
         EndEpisode();
     }
 
@@ -486,40 +492,66 @@ public class USV_GlobalRLAgent : Agent
         float speedStabilityReward = 0.1f * (1 - Mathf.Abs(currentSpeed - idealSpeed) / idealSpeed);
         AddReward(speedStabilityReward);
 
-        // 碰撞惩罚
-        Collider[] colliders = Physics.OverlapSphere(transform.position, 0.5f);
-        bool isCollided = false;
-        foreach (var collider in colliders)
-        {
-            if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
-            {
-                isCollided = true;
-                break;
-            }
-        }
-        if (isCollided)
-        {
-            AddReward(-50f);
-            EndEpisodeCustom(); // 碰撞后结束回合
-            return;
-        }
+      // 碰撞惩罚（放宽阈值+增加“持续碰撞”判断，避免误触）
+Collider[] colliders = Physics.OverlapSphere(transform.position, 1.0f); // 从0.5f放宽到1.0f
+bool isCollided = false;
+int obstacleCount = 0;
+foreach (var collider in colliders)
+{
+    if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
+    {
+        obstacleCount++;
+    }
+}
+// 只有同时接触多个障碍物（≥2个）才判定为碰撞，避免轻微触碰
+isCollided = obstacleCount >= 2;
+
+if (isCollided)
+{
+    AddReward(-20f); // 降低惩罚值，从-50f改为-20f
+    Debug.Log($"碰撞障碍物，结束回合！当前位置：{transform.position}");
+    EndEpisodeCustom();
+    return;
+}
 
         // ========== 新增：回合终止条件（避免无限循环） ==========
-        // 1. 到达目标终止
-        if (distToTarget < 1f)
+        // ========== 新增：回合终止条件（避免无限循环） ==========
+        // 1. 到达目标终止（替换原有1f阈值逻辑）
+        float targetArriveThreshold = 2.0f; // 明确阈值，方便调整
+        if (distToTarget < targetArriveThreshold)
         {
-            AddReward(100f); // 到达目标奖励
+            _resetReason = "target"; // 记录重置原因（需先定义该变量）
+            AddReward(200f); // 提高奖励，激励智能体靠近目标
+            Debug.Log($"到达终点！当前距离：{distToTarget}，累计奖励：{GetCumulativeReward()}");
             EndEpisodeCustom();
             return;
         }
+        // 新增：接近目标但未到达时，给予梯度奖励（鼓励靠近）
+        else if (distToTarget < 5f)
+        {
+            float nearTargetReward = 5f * (1 - distToTarget / 5f);
+            AddReward(nearTargetReward);
+        }
 
-        // 2. 超时终止
+        // 2. 超时终止（保留原有逻辑，仅添加重置原因标记）
         if (Time.time - episodeStartTime > currentMaxEpisodeTime)
         {
+            _resetReason = "timeout"; // 记录重置原因
             AddReward(-10f); // 超时惩罚
             EndEpisodeCustom();
             return;
         }
+        // 3. 新增：边界检测，避免船驶出训练区域
+        float maxBoundary = Mathf.Max(gridWidth, gridHeight) * 1.5f;
+        if (Mathf.Abs(transform.position.x) > maxBoundary || Mathf.Abs(transform.position.z) > maxBoundary)
+        {
+            _resetReason = "boundary"; // 记录重置原因
+            AddReward(-15f);
+            Debug.Log($"驶出边界，结束回合！当前位置：{transform.position}");
+            EndEpisodeCustom();
+            return;
+        }
+
 
         // 更新最后距离
         lastDistToTarget = distToTarget;
