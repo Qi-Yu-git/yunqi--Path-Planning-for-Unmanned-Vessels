@@ -64,16 +64,24 @@ public class USV_GlobalRLAgent : Agent
     [Tooltip("触发碰撞的最小障碍物数量")]
     public int minObstacleCount = 3;
     [Tooltip("目标到达阈值（增大以避免提前终止）")]
-    public float targetArriveThreshold = 5.0f;
+    public float targetArriveThreshold = 2.0f;
     [Tooltip("边界检测阈值系数（减小以扩大可航行区域）")]
     public float boundaryThresholdFactor = 0.8f;
     [Tooltip("路径完成判定：连续到达多少个路径点视为路径完成")]
     public int pathCompleteWaypointCount = 3;
+    // 新增：路径完成后的终止阈值（独立控制）
+    public float pathCompleteTerminateThreshold = 3.0f;
 
     /// <summary>
     /// 检查当前回合是否结束（自定义标记版，替代原有反射逻辑）
     /// </summary>
     public bool IsEpisodeDone { get; private set; }
+
+    // 新增：防抖+日志控制（核心解决误判和刷屏问题）
+    private bool _isTerminating = false; // 终止流程中标记（防止误判）
+    private Coroutine _terminateCoroutine; // 终止协程引用
+    private float _actionIgnoreDelay = 1.0f; // 延迟标记结束的时间（可调整）
+    private static bool _ignoreLogPrinted = false; // 日志仅打印一次标记
 
     protected override void Awake()
     {
@@ -179,12 +187,14 @@ public class USV_GlobalRLAgent : Agent
     // ========== 核心修复：重写OnEpisodeBegin方法 ==========
     public override void OnEpisodeBegin()
     {
+        // 重置所有标记（核心：解决回合重置后仍误判的问题）
         IsEpisodeDone = false;
-        _resetReason = ""; // 重置终止原因
-                           // 启动协程等待GridManager初始化并确保安全位置非空
+        _isTerminating = false;
+        _ignoreLogPrinted = false; // 重置日志标记
+        _resetReason = "";
+
         StartCoroutine(WaitForGridInitThenReset());
     }
-
     /// <summary>
     /// 校验环境初始化状态，防止卡死
     /// </summary>
@@ -353,17 +363,25 @@ public class USV_GlobalRLAgent : Agent
     }
 
     /// <summary>
-    /// 自定义结束回合方法（添加日志 + 状态校验 + 结束原因枚举）
+    /// 自定义结束回合方法（修复误判+防抖）
     /// </summary>
     private void EndEpisodeCustom()
     {
-        if (IsEpisodeDone) return; // 防止重复终止
-        IsEpisodeDone = true;
+        // 双重防护：防止重复终止、防止未到终点误终止
+        if (IsEpisodeDone || _isTerminating) return;
+        _isTerminating = true;
 
+        // 强制停止物理移动（视觉上立即停下）
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.Sleep(); // 彻底休眠刚体，停止所有物理计算
+        }
+
+        // 日志输出（保留原有逻辑）
         float currentDist = Vector3.Distance(transform.position, target.position);
         float elapsedTime = Time.time - episodeStartTime;
-
-        // 【核心修复】枚举所有结束原因，定位"未知"根因
         string endReason = "未知";
         if (_resetReason == "collision") endReason = "碰撞障碍物";
         else if (_resetReason == "timeout") endReason = "超时";
@@ -371,22 +389,29 @@ public class USV_GlobalRLAgent : Agent
         else if (_resetReason == "boundary") endReason = "驶出边界";
         else if (_resetReason == "path_complete") endReason = "路径完成";
         else if (_resetReason == "exception") endReason = "逻辑异常";
-        else if (elapsedTime < 0.1f) endReason = "初始化阶段异常触发结束"; // 极短耗时根因
+        else if (elapsedTime < 0.1f) endReason = "初始化阶段异常触发结束";
 
         Debug.LogWarning($"=== 回合结束 ===");
-        Debug.LogWarning($"原因：{endReason}");
-        Debug.LogWarning($"结束时距离终点：{currentDist:F2}米，耗时：{elapsedTime:F2}秒");
-        Debug.LogWarning($"累计奖励：{GetCumulativeReward():F2}");
+        Debug.LogWarning($"原因：{endReason} | 结束距离终点：{currentDist:F2}米");
+        Debug.LogWarning($"耗时：{elapsedTime:F2}秒 | 累计奖励：{GetCumulativeReward():F2}");
 
-        // 确保终止前速度清零
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-        }
+        // 延迟标记回合结束（核心：避免MLAgents帧同步导致的误判）
+        if (_terminateCoroutine != null) StopCoroutine(_terminateCoroutine);
+        _terminateCoroutine = StartCoroutine(DelayedMarkEpisodeDone());
+    }
+
+    /// <summary>
+    /// 延迟标记回合结束（仅在真实终止时执行）
+    /// </summary>
+    private IEnumerator DelayedMarkEpisodeDone()
+    {
+        yield return new WaitForSeconds(_actionIgnoreDelay);
+        // 最终标记：只有真正满足终止条件才设为true
+        IsEpisodeDone = true;
+        _isTerminating = false;
 
         // 严格控制EndEpisode调用时机，避免MLAgents状态异常
-        if (!IsEpisodeDone) // 替换原有的 !IsDone
+        if (!IsEpisodeDone) // 改用自定义的回合状态标记
         {
             EndEpisode();
         }
@@ -514,12 +539,21 @@ public class USV_GlobalRLAgent : Agent
         try
         {
 
-            // 【核心修复】初始化阶段屏蔽动作，防止误触发结束逻辑
-            if (IsEpisodeDone || isEnvironmentInitializing)
+            // 核心优化：1. 防抖 2. 日志仅打印一次 3. 杜绝误判
+            if (IsEpisodeDone || isEnvironmentInitializing || _isTerminating)
             {
-                Debug.LogWarning($"忽略动作：{(IsEpisodeDone ? "回合已结束" : "环境初始化中")}");
+                // 日志仅首次忽略时打印（彻底解决刷屏）
+                if (!_ignoreLogPrinted)
+                {
+                    string reason = IsEpisodeDone ? "回合已结束" :
+                                   _isTerminating ? $"回合终止中（当前距离终点：{Vector3.Distance(transform.position, target.position):F2}米）" : "环境初始化中";
+                    Debug.LogWarning($"⚠️ 忽略动作：{reason}");
+                    _ignoreLogPrinted = true;
+                }
                 return;
             }
+            // 重置日志标记（回合正常执行时清空）
+            _ignoreLogPrinted = false;
 
             // 容错：如果回合已结束/核心组件缺失，直接返回
             if (IsEpisodeDone || target == null || gridManager == null || rb == null) return;
@@ -679,7 +713,7 @@ public class USV_GlobalRLAgent : Agent
             _resetReason = "collision";
             Debug.Log($"碰撞障碍物（{obstacleCount}个），结束回合！当前位置：{transform.position} | 惩罚：{collisionPenalty}");
             // 延迟终止，确保日志和奖励结算完成
-            Invoke(nameof(EndEpisodeCustom), 0.1f);
+            EndEpisodeCustom();
             return;
         }
 
@@ -691,7 +725,7 @@ public class USV_GlobalRLAgent : Agent
             _resetReason = "target";
             AddReward(200f);
             // 增加延迟终止，避免瞬间重置导致数据丢失
-            Invoke(nameof(EndEpisodeCustom), 0.1f);
+            EndEpisodeCustom();
             return;
         }
         // 接近目标奖励（梯度调整）
@@ -723,15 +757,21 @@ public class USV_GlobalRLAgent : Agent
             return;
         }
 
-        // 4. 路径完成后到达目标才终止（新增缓冲逻辑）
-        if (isPathCompleted && distToTarget < targetArriveThreshold * 1.5f)
+        // 4. 路径完成后到达目标才终止（修改判定逻辑）
+        if (isPathCompleted && distToTarget < pathCompleteTerminateThreshold)
         {
             _resetReason = "path_complete";
             AddReward(100f);
             Debug.Log($"路径完成并接近目标，结束回合！距离目标：{distToTarget}");
             // 延迟终止，确保奖励结算完成
-            Invoke(nameof(EndEpisodeCustom), 0.2f);
+            EndEpisodeCustom();
             return;
+        }
+        // 新增：路径完成但未到终点，给予持续奖励（鼓励继续靠近）
+        else if (isPathCompleted && !IsEpisodeDone)
+        {
+            float nearTargetBonus = 2f * (1 - distToTarget / (pathCompleteTerminateThreshold * 2));
+            AddReward(Mathf.Clamp(nearTargetBonus, 0.5f, 2f));
         }
 
         // 更新最后距离

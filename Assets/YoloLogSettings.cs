@@ -5,6 +5,9 @@ using System.Collections;
 
 #if UNITY_EDITOR
 using UnityEditor;
+using UnityEditor.SceneManagement;
+// 关键修复1：添加Scene命名空间引用（解决CS0246）
+using UnityEngine.SceneManagement;
 #endif
 
 namespace YoloV8Detection
@@ -109,7 +112,11 @@ namespace YoloV8Detection
                                 GameObject configObj = new GameObject("[YoloLogSettings]");
                                 // 关键：通过 AddComponent 实例化，而非直接 new（避免构造函数权限问题）
                                 _instance = configObj.AddComponent<YoloLogSettings>();
-                                DontDestroyOnLoad(configObj);
+                                // 修复点1：仅在运行时设置DontDestroyOnLoad，编辑模式不设置
+                                if (Application.isPlaying)
+                                {
+                                    DontDestroyOnLoad(configObj);
+                                }
                                 Debug.Log($"📌 自动创建YoloLogSettings实例（路径：{configObj.name}）");
                             }
                         }
@@ -328,6 +335,9 @@ namespace YoloV8Detection
         {
 #if UNITY_EDITOR
             EditorApplication.update += SyncSettingsInEditor;
+            // 关键修复2：先移除再添加，避免重复注册（解决CS0123）
+            EditorSceneManager.sceneClosing -= OnSceneClosing;
+            EditorSceneManager.sceneClosing += OnSceneClosing;
             // 编辑器模式下启动配置检测，不执行同步
             if (!Application.isPlaying && !_editorRetryStarted)
             {
@@ -343,6 +353,8 @@ namespace YoloV8Detection
         {
 #if UNITY_EDITOR
             EditorApplication.update -= SyncSettingsInEditor;
+            // 取消场景关闭监听
+            EditorSceneManager.sceneClosing -= OnSceneClosing;
             _editorRetryStarted = false;
 #endif
         }
@@ -357,9 +369,38 @@ namespace YoloV8Detection
 #if UNITY_EDITOR
             _editorRetryStarted = false;
 #endif
+
+            // 修复点2：在OnDestroy中主动销毁物体（仅编辑模式）
+            if (!Application.isPlaying && gameObject != null)
+            {
+                DestroyImmediate(gameObject);
+            }
         }
 
 #if UNITY_EDITOR
+        /// <summary>
+        /// 场景关闭时的清理逻辑（关键修复3：简化参数类型，匹配委托签名）
+        /// </summary>
+        /// <param name="scene">要关闭的场景</param>
+        /// <param name="removingScene">是否从项目中移除</param>
+        // 修复：去掉 UnityEngine.SceneManagement. 前缀，直接用 Scene（已在顶部引用）
+        private void OnSceneClosing(Scene scene, bool removingScene)
+        {
+            // 增加空引用保护（避免销毁时报错）
+            if (this == null || gameObject == null) return;
+
+            // 清理YoloLogSettings物体
+            if (gameObject.name == "[YoloLogSettings]")
+            {
+                // 延迟销毁，避免立即访问已销毁对象
+                EditorApplication.delayCall += () =>
+                {
+                    if (gameObject != null) DestroyImmediate(gameObject);
+                };
+                _instance = null;
+            }
+        }
+
         /// <summary>
         /// 编辑器停止播放时自动清理空物体
         /// </summary>
@@ -379,6 +420,17 @@ namespace YoloV8Detection
                         Object.DestroyImmediate(logObj);
                     }
                     // 重置单例引用
+                    _instance = null;
+                }
+            };
+
+            // 修复点3：监听场景关闭事件（全局）- 使用匿名方法避免签名问题
+            EditorSceneManager.sceneClosing += (Scene scene, bool removingScene) =>
+            {
+                GameObject logObj = GameObject.Find("[YoloLogSettings]");
+                if (logObj != null)
+                {
+                    Object.DestroyImmediate(logObj);
                     _instance = null;
                 }
             };
@@ -548,6 +600,25 @@ namespace YoloV8Detection
                          $"包含类别：{(logIncludedClasses.Count > 0 ? string.Join(",", logIncludedClasses) : "无")}\n" +
                          $"排除类别：{(logExcludedClasses.Count > 0 ? string.Join(",", logExcludedClasses) : "无")}";
             Debug.Log(log);
+        }
+
+        // 新增：手动清理YoloLogSettings物体
+        [ContextMenu("手动清理YoloLogSettings物体")]
+        public void CleanupYoloLogObject()
+        {
+#if UNITY_EDITOR
+            GameObject logObj = GameObject.Find("[YoloLogSettings]");
+            if (logObj != null)
+            {
+                DestroyImmediate(logObj);
+                _instance = null;
+                Debug.Log("🗑️ 已手动清理YoloLogSettings物体");
+            }
+            else
+            {
+                Debug.Log("ℹ️ 未找到YoloLogSettings物体，无需清理");
+            }
+#endif
         }
         #endregion
     }
