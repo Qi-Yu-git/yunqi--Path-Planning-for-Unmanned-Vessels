@@ -52,6 +52,24 @@ public class USV_GlobalRLAgent : Agent
     private float episodeStartTime;
     private BoatController boatController;
 
+    // 新增：路径完成相关
+    private bool isPathCompleted = false;
+    private int consecutiveWaypointReached = 0; // 连续到达路径点计数
+                                                // 新增：环境初始化标记，防止初始化阶段触发结束逻辑
+    private bool isEnvironmentInitializing = false;
+
+    [Header("回合终止参数（关键调整）")]
+    [Tooltip("碰撞检测半径（增大以减少误判）")]
+    public float collisionCheckRadius = 1.5f;
+    [Tooltip("触发碰撞的最小障碍物数量")]
+    public int minObstacleCount = 3;
+    [Tooltip("目标到达阈值（增大以避免提前终止）")]
+    public float targetArriveThreshold = 5.0f;
+    [Tooltip("边界检测阈值系数（减小以扩大可航行区域）")]
+    public float boundaryThresholdFactor = 0.8f;
+    [Tooltip("路径完成判定：连续到达多少个路径点视为路径完成")]
+    public int pathCompleteWaypointCount = 3;
+
     /// <summary>
     /// 检查当前回合是否结束（自定义标记版，替代原有反射逻辑）
     /// </summary>
@@ -103,6 +121,7 @@ public class USV_GlobalRLAgent : Agent
         {
             StartCoroutine(WaitForGridInit());
         }
+        StartCoroutine(CheckInitializationStatus());
     }
 
     /// <summary>
@@ -117,6 +136,11 @@ public class USV_GlobalRLAgent : Agent
         episodeStartTime = Time.time;
 
         lastDistToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 0;
+
+        // 重置路径完成标记
+        isPathCompleted = false;
+        consecutiveWaypointReached = 0;
+        currentWaypointIndex = 0;
     }
 
     /// <summary>
@@ -156,8 +180,24 @@ public class USV_GlobalRLAgent : Agent
     public override void OnEpisodeBegin()
     {
         IsEpisodeDone = false;
-        // 启动协程等待GridManager初始化并确保安全位置非空
+        _resetReason = ""; // 重置终止原因
+                           // 启动协程等待GridManager初始化并确保安全位置非空
         StartCoroutine(WaitForGridInitThenReset());
+    }
+
+    /// <summary>
+    /// 校验环境初始化状态，防止卡死
+    /// </summary>
+    private IEnumerator CheckInitializationStatus()
+    {
+        yield return new WaitForSeconds(2.0f); // 等待2秒后校验
+        if (isEnvironmentInitializing)
+        {
+            Debug.LogError("环境初始化超时，强制标记为完成");
+            isEnvironmentInitializing = false;
+            // 兜底重置智能体状态
+            ResetAgentState(MaxSpeed, 90f);
+        }
     }
 
     /// <summary>
@@ -165,6 +205,9 @@ public class USV_GlobalRLAgent : Agent
     /// </summary>
     private IEnumerator WaitForGridInitThenReset()
     {
+        // 标记：环境初始化中，禁止智能体执行动作
+        isEnvironmentInitializing = true;
+
         // 1. 等待GridManager就绪
         while (gridManager == null || !gridManager.IsGridReady())
         {
@@ -175,9 +218,9 @@ public class USV_GlobalRLAgent : Agent
         // 2. 重新生成安全位置（增加重试机制 + 宽松阈值）
         Vector3 safePos = Vector3.zero;
         int retryCount = 0;
-        int maxRetries = 5;
+        int maxRetries = 8; // 增加重试次数
         float initialMinDistance = 1.0f;
-        float minDistanceStep = 0.2f;
+        float minDistanceStep = 0.15f;
         float currentMinDistance = initialMinDistance;
 
         while (safePos == Vector3.zero && retryCount < maxRetries)
@@ -186,28 +229,35 @@ public class USV_GlobalRLAgent : Agent
             if (safePositions.Count > 0)
             {
                 safePos = safePositions[UnityEngine.Random.Range(0, safePositions.Count)];
+                // 确保Y轴高度正确（无人船水面高度）
+                safePos.y = 0.4f;
             }
             else
             {
                 retryCount++;
-                currentMinDistance = Mathf.Max(0.1f, initialMinDistance - (retryCount * minDistanceStep));
+                currentMinDistance = Mathf.Max(0.05f, initialMinDistance - (retryCount * minDistanceStep));
                 Debug.LogWarning($"安全位置生成失败（第{retryCount}次重试），放宽阈值到: {currentMinDistance}");
-                if (retryCount >= 2) CachePassableGrid();
+                if (retryCount >= 2) CachePassableGrid(); // 重试2次后重新缓存栅格
             }
             if (safePos == Vector3.zero) yield return new WaitForSeconds(0.05f);
         }
 
-        // ========== 新增：强制给Agent赋值初始位置（关键！） ==========
+        // ========== 强制给Agent赋值初始位置（关键！） ==========
         if (safePos != Vector3.zero)
         {
-            transform.position = safePos; // 必须设置位置，否则Agent无物理体
-            transform.rotation = Quaternion.identity; // 重置朝向
+            transform.position = safePos;
+            transform.rotation = Quaternion.identity;
         }
         else
         {
-            // 终极兜底：手动指定初始位置
-            transform.position = new Vector3(0, 0.4f, 0);
-            Debug.LogError("安全位置全空，强制设置初始位置为(0,0.4,0)");
+            // 终极兜底：随机生成安全区域内的位置
+            safePos = new Vector3(
+                UnityEngine.Random.Range(-gridWidth / 2, gridWidth / 2),
+                0.4f,
+                UnityEngine.Random.Range(-gridHeight / 2, gridHeight / 2)
+            );
+            transform.position = safePos;
+            Debug.LogError($"安全位置全空，强制随机设置初始位置: {safePos}");
         }
 
         // 3. 执行原有重置逻辑
@@ -218,9 +268,17 @@ public class USV_GlobalRLAgent : Agent
             rb.angularVelocity = Vector3.zero;
         }
         currentWaypointIndex = 0;
+        consecutiveWaypointReached = 0; // 重置连续路径点计数
+        isPathCompleted = false; // 重置路径完成标记
         globalPathfinder?.CalculatePathAfterDelay();
         Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);
-        ResetAgentState(MaxSpeed, 60f);
+        ResetAgentState(MaxSpeed, 90f); // 延长默认回合时间到90秒
+
+        // 新增：初始化完成后延迟0.5秒，确保状态稳定
+        yield return new WaitForSeconds(0.5f);
+
+        // 标记：初始化完成，允许智能体执行动作
+        isEnvironmentInitializing = false;
 
         Debug.Log($"智能体重置完成：位置={transform.position}，重试次数={retryCount}");
     }
@@ -284,18 +342,54 @@ public class USV_GlobalRLAgent : Agent
     }
 
     /// <summary>
-    /// 自定义结束回合方法（添加日志）
+    /// 延迟终止回合的兜底方法（避免立即终止导致的状态异常）
+    /// </summary>
+    private void DelayedEndEpisode()
+    {
+        if (!IsEpisodeDone)
+        {
+            EndEpisodeCustom();
+        }
+    }
+
+    /// <summary>
+    /// 自定义结束回合方法（添加日志 + 状态校验 + 结束原因枚举）
     /// </summary>
     private void EndEpisodeCustom()
     {
+        if (IsEpisodeDone) return; // 防止重复终止
         IsEpisodeDone = true;
+
         float currentDist = Vector3.Distance(transform.position, target.position);
         float elapsedTime = Time.time - episodeStartTime;
+
+        // 【核心修复】枚举所有结束原因，定位"未知"根因
+        string endReason = "未知";
+        if (_resetReason == "collision") endReason = "碰撞障碍物";
+        else if (_resetReason == "timeout") endReason = "超时";
+        else if (_resetReason == "target") endReason = "到达终点";
+        else if (_resetReason == "boundary") endReason = "驶出边界";
+        else if (_resetReason == "path_complete") endReason = "路径完成";
+        else if (_resetReason == "exception") endReason = "逻辑异常";
+        else if (elapsedTime < 0.1f) endReason = "初始化阶段异常触发结束"; // 极短耗时根因
+
         Debug.LogWarning($"=== 回合结束 ===");
-        Debug.LogWarning($"原因：{(_resetReason == "collision" ? "碰撞障碍物" : _resetReason == "timeout" ? "超时" : _resetReason == "target" ? "到达终点" : _resetReason == "boundary" ? "驶出边界" : "未知")}");
+        Debug.LogWarning($"原因：{endReason}");
         Debug.LogWarning($"结束时距离终点：{currentDist:F2}米，耗时：{elapsedTime:F2}秒");
         Debug.LogWarning($"累计奖励：{GetCumulativeReward():F2}");
-        EndEpisode();
+
+        // 确保终止前速度清零
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
+
+        // 严格控制EndEpisode调用时机，避免MLAgents状态异常
+        if (!IsEpisodeDone) // 替换原有的 !IsDone
+        {
+            EndEpisode();
+        }
     }
 
     /// <summary>
@@ -416,30 +510,89 @@ public class USV_GlobalRLAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // 容错：如果回合已结束/核心组件缺失，直接返回
-        if (IsEpisodeDone || target == null || gridManager == null || rb == null) return;
-
-        // 初始化默认速度（避免空值）
-        if (currentMaxSpeed <= 0)
+        // 新增：全局异常捕获，避免逻辑错误导致的异常终止
+        try
         {
-            currentMaxSpeed = MaxSpeed;
-            Debug.LogWarning("currentMaxSpeed未初始化，使用默认值");
+
+            // 【核心修复】初始化阶段屏蔽动作，防止误触发结束逻辑
+            if (IsEpisodeDone || isEnvironmentInitializing)
+            {
+                Debug.LogWarning($"忽略动作：{(IsEpisodeDone ? "回合已结束" : "环境初始化中")}");
+                return;
+            }
+
+            // 容错：如果回合已结束/核心组件缺失，直接返回
+            if (IsEpisodeDone || target == null || gridManager == null || rb == null) return;
+
+            // 初始化默认速度（避免空值）
+            if (currentMaxSpeed <= 0)
+            {
+                currentMaxSpeed = MaxSpeed;
+                Debug.LogWarning("currentMaxSpeed未初始化，使用默认值");
+            }
+
+            // ========== 核心修改：读取2维连续动作 ==========
+            // 动作0：前进/后退速度 (-1~1 归一化)
+            float moveForward = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
+            // 动作1：转向速度 (-1~1 归一化，-1左转，1右转)
+            float turn = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
+
+            // 执行移动逻辑（适配连续动作）
+            MoveAgentContinuous(moveForward, turn);
+
+            // 更新路径点状态
+            UpdateWaypointProgress();
+
+            // 计算奖励（保留原有逻辑）
+            CalculateReward();
+
+            // 通知局部规划器（保留原有逻辑）
+            GetComponent<USV_LocalPlanner>()?.OnAgentActionReceived(actions);
         }
+        catch (Exception ex)
+        {
+            Debug.LogError($"OnActionReceived异常：{ex.Message}\n{ex.StackTrace}");
+            // 异常时不直接终止，仅记录并惩罚
+            AddReward(-5f);
+            _resetReason = "exception";
+            // 延迟终止，避免连锁错误
+            Invoke(nameof(EndEpisodeCustom), 0.5f);
+        }
+    }
 
-        // ========== 核心修改：读取2维连续动作 ==========
-        // 动作0：前进/后退速度 (-1~1 归一化)
-        float moveForward = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
-        // 动作1：转向速度 (-1~1 归一化，-1左转，1右转)
-        float turn = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
+    /// <summary>
+    /// 更新路径点完成进度
+    /// </summary>
+    private void UpdateWaypointProgress()
+    {
+        if (globalPathfinder == null || globalPathfinder.path == null || globalPathfinder.path.Count == 0)
+            return;
 
-        // 执行移动逻辑（适配连续动作）
-        MoveAgentContinuous(moveForward, turn);
+        // 检查是否到达当前路径点
+        if (currentWaypointIndex < globalPathfinder.path.Count)
+        {
+            Vector3 currentWaypointPos = gridManager.GridToWorld(globalPathfinder.path[currentWaypointIndex]);
+            float distToWaypoint = Vector3.Distance(transform.position, currentWaypointPos);
 
-        // 计算奖励（保留原有逻辑）
-        CalculateReward();
+            if (distToWaypoint < 3.0f) // 到达路径点的判定阈值
+            {
+                consecutiveWaypointReached++;
+                currentWaypointIndex = Mathf.Min(currentWaypointIndex + 1, globalPathfinder.path.Count - 1);
+                Debug.Log($"到达路径点 {currentWaypointIndex}，连续到达数：{consecutiveWaypointReached}");
+            }
+            else
+            {
+                // 未到达则重置连续计数
+                consecutiveWaypointReached = Mathf.Max(0, consecutiveWaypointReached - 1);
+            }
 
-        // 通知局部规划器（保留原有逻辑）
-        GetComponent<USV_LocalPlanner>()?.OnAgentActionReceived(actions);
+            // 判断路径是否完成
+            if (consecutiveWaypointReached >= pathCompleteWaypointCount || currentWaypointIndex >= globalPathfinder.path.Count - 1)
+            {
+                isPathCompleted = true;
+                Debug.Log("路径完成！等待到达最终目标");
+            }
+        }
     }
 
     /// <summary>
@@ -492,66 +645,94 @@ public class USV_GlobalRLAgent : Agent
         float speedStabilityReward = 0.1f * (1 - Mathf.Abs(currentSpeed - idealSpeed) / idealSpeed);
         AddReward(speedStabilityReward);
 
-      // 碰撞惩罚（放宽阈值+增加“持续碰撞”判断，避免误触）
-Collider[] colliders = Physics.OverlapSphere(transform.position, 1.0f); // 从0.5f放宽到1.0f
-bool isCollided = false;
-int obstacleCount = 0;
-foreach (var collider in colliders)
-{
-    if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
-    {
-        obstacleCount++;
-    }
-}
-// 只有同时接触多个障碍物（≥2个）才判定为碰撞，避免轻微触碰
-isCollided = obstacleCount >= 2;
-
-if (isCollided)
-{
-    AddReward(-20f); // 降低惩罚值，从-50f改为-20f
-    Debug.Log($"碰撞障碍物，结束回合！当前位置：{transform.position}");
-    EndEpisodeCustom();
-    return;
-}
-
-        // ========== 新增：回合终止条件（避免无限循环） ==========
-        // ========== 新增：回合终止条件（避免无限循环） ==========
-        // 1. 到达目标终止（替换原有1f阈值逻辑）
-        float targetArriveThreshold = 2.0f; // 明确阈值，方便调整
-        if (distToTarget < targetArriveThreshold)
+        // 路径完成奖励
+        if (isPathCompleted && !IsEpisodeDone)
         {
-            _resetReason = "target"; // 记录重置原因（需先定义该变量）
-            AddReward(200f); // 提高奖励，激励智能体靠近目标
-            Debug.Log($"到达终点！当前距离：{distToTarget}，累计奖励：{GetCumulativeReward()}");
-            EndEpisodeCustom();
+            AddReward(50f); // 路径完成奖励
+            // 路径完成后不立即终止，仅给予奖励
+        }
+
+        // 优化：碰撞检测（大幅放宽条件 + 分层惩罚）
+        Collider[] colliders = Physics.OverlapSphere(transform.position, collisionCheckRadius);
+        bool isCollided = false;
+        int obstacleCount = 0;
+        foreach (var collider in colliders)
+        {
+            if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
+            {
+                // 新增：检测障碍物是否真正接触（而非仅进入检测半径）
+                float actualDist = Vector3.Distance(transform.position, collider.transform.position);
+                if (actualDist < collisionCheckRadius * 0.7f) // 仅70%半径内算有效碰撞
+                {
+                    obstacleCount++;
+                }
+            }
+        }
+        // 只有接触足够多的障碍物才判定为碰撞（增加容错）
+        isCollided = obstacleCount >= minObstacleCount && obstacleCount > 0;
+
+        if (isCollided)
+        {
+            // 分层惩罚：根据障碍物数量调整惩罚值
+            float collisionPenalty = -20f * obstacleCount;
+            AddReward(Mathf.Clamp(collisionPenalty, -50f, -10f));
+            _resetReason = "collision";
+            Debug.Log($"碰撞障碍物（{obstacleCount}个），结束回合！当前位置：{transform.position} | 惩罚：{collisionPenalty}");
+            // 延迟终止，确保日志和奖励结算完成
+            Invoke(nameof(EndEpisodeCustom), 0.1f);
             return;
         }
-        // 新增：接近目标但未到达时，给予梯度奖励（鼓励靠近）
-        else if (distToTarget < 5f)
+
+
+        // ========== 优化：回合终止条件 ==========
+        // 1. 到达目标终止（增大阈值，增加缓冲）
+        if (distToTarget < targetArriveThreshold)
         {
-            float nearTargetReward = 5f * (1 - distToTarget / 5f);
+            _resetReason = "target";
+            AddReward(200f);
+            // 增加延迟终止，避免瞬间重置导致数据丢失
+            Invoke(nameof(EndEpisodeCustom), 0.1f);
+            return;
+        }
+        // 接近目标奖励（梯度调整）
+        else if (distToTarget < 10f)
+        {
+            float nearTargetReward = 5f * (1 - distToTarget / 10f);
             AddReward(nearTargetReward);
         }
 
-        // 2. 超时终止（保留原有逻辑，仅添加重置原因标记）
-        if (Time.time - episodeStartTime > currentMaxEpisodeTime)
+        // 2. 超时终止（动态延长，避免过早超时）
+        float timeoutThreshold = currentMaxEpisodeTime * 2.0f; // 延长100%超时时间
+        if (Time.time - episodeStartTime > timeoutThreshold)
         {
-            _resetReason = "timeout"; // 记录重置原因
-            AddReward(-10f); // 超时惩罚
-            EndEpisodeCustom();
-            return;
-        }
-        // 3. 新增：边界检测，避免船驶出训练区域
-        float maxBoundary = Mathf.Max(gridWidth, gridHeight) * 1.5f;
-        if (Mathf.Abs(transform.position.x) > maxBoundary || Mathf.Abs(transform.position.z) > maxBoundary)
-        {
-            _resetReason = "boundary"; // 记录重置原因
-            AddReward(-15f);
-            Debug.Log($"驶出边界，结束回合！当前位置：{transform.position}");
+            _resetReason = "timeout";
+            AddReward(-10f);
+            Debug.Log($"回合超时，结束回合！耗时：{Time.time - episodeStartTime}秒 | 阈值：{timeoutThreshold}秒");
             EndEpisodeCustom();
             return;
         }
 
+        // 3. 边界检测（动态扩大可航行区域）
+        float maxBoundary = Mathf.Max(gridWidth, gridHeight) * boundaryThresholdFactor * 1.2f; // 扩大20%边界
+        if (Mathf.Abs(transform.position.x) > maxBoundary || Mathf.Abs(transform.position.z) > maxBoundary)
+        {
+            _resetReason = "boundary";
+            AddReward(-15f);
+            Debug.Log($"驶出边界，结束回合！当前位置：{transform.position}，边界阈值：{maxBoundary}");
+            EndEpisodeCustom();
+            return;
+        }
+
+        // 4. 路径完成后到达目标才终止（新增缓冲逻辑）
+        if (isPathCompleted && distToTarget < targetArriveThreshold * 1.5f)
+        {
+            _resetReason = "path_complete";
+            AddReward(100f);
+            Debug.Log($"路径完成并接近目标，结束回合！距离目标：{distToTarget}");
+            // 延迟终止，确保奖励结算完成
+            Invoke(nameof(EndEpisodeCustom), 0.2f);
+            return;
+        }
 
         // 更新最后距离
         lastDistToTarget = distToTarget;

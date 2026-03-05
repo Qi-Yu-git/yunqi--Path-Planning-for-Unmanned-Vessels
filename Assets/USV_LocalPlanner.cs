@@ -102,75 +102,23 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
     public void OnAgentActionReceived(ActionBuffers actions)
     {
-        // 动态障碍物检测与预测
-        DetectAndPredictDynamicObstacles();
-
         Vector3 targetVelocity = Vector3.zero;
         float targetRotation = 0f;
 
-        // 局部规划优先级判定
-        bool needAvoid = false;
-        if (dynamicObstacles.Count > 0)
-        {
-            bool isInDangerZone = dynamicObstacles.Exists(obs =>
-                Vector3.Distance(transform.position, obs) < localSafeDistance);
+        // 仅使用全局RL动作，完全跳过避障逻辑
+        (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
+        Debug.Log($"[LocalPlanner] 全局路径模式：动作{actions.DiscreteActions[0]} → 速度={targetVelocity.magnitude:F2}，转向={targetRotation:F1}");
 
-            bool hasImminentCollision = false;
-            for (int i = 0; i < dynamicObstacles.Count; i++)
-            {
-                if (IsCollisionImminent(transform.position, rb.linearVelocity,
-                    dynamicObstacles[i], dynamicObstacleVelocities[i], dwaPredictTime))
-                {
-                    hasImminentCollision = true;
-                    break;
-                }
-            }
-
-            // 检测到障碍物时强制避障（新增sports ball）
-            bool hasObstacle = dynamicObstacles.Any(obs =>
-                yoloDetector.DetectedResults.Any(r =>
-                    (r.ClassName.ToLower() == "unmanned boat" || r.ClassName.ToLower() == "sports ball") &&
-                    Vector3.Distance(ConvertYoloToWorldPosition(r.Rect), obs) < 0.5f));
-
-            needAvoid = isInDangerZone || hasImminentCollision || hasObstacle;
-            Debug.Log($"[LocalPlanner] 避障判定：危险区域={isInDangerZone} 碰撞风险={hasImminentCollision} 检测到障碍物={hasObstacle} → 需避障={needAvoid}");
-        }
-
-        // 核心修复：强制使用避障动作覆盖全局路径
-        if (needAvoid)
-        {
-            isAvoidingDynamicObstacle = true;
-            (targetVelocity, targetRotation) = LocalPlannerWithCOLREGs();
-            Debug.Log($"[LocalPlanner] 进入避障模式：速度={targetVelocity.magnitude:F2}，转向={targetRotation:F1}");
-        }
-        else
-        {
-            if (isAvoidingDynamicObstacle && IsCloseToGlobalPath())
-            {
-                isAvoidingDynamicObstacle = false;
-                Debug.Log("LocalPlanner：局部避障完成，回归全局路径");
-            }
-            (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
-            Debug.Log($"[LocalPlanner] 全局路径模式：动作{actions.DiscreteActions[0]} → 速度={targetVelocity.magnitude:F2}，转向={targetRotation:F1}");
-        }
-
-        // 紧急情况处理
-        if (IsExtremeDanger())
-        {
-            targetVelocity *= 0.2f;
-            Debug.LogWarning("[LocalPlanner] 触发紧急减速");
-        }
-
-        // 修复：强制应用避障动作（关键！）
+        // 速度限制（保留基础物理约束）
         targetVelocity = Vector3.ClampMagnitude(targetVelocity, MaxLinearVel);
         rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
         transform.Rotate(0, targetRotation * Time.deltaTime, 0);
 
-        // 局部规划奖励系统
-        AddLocalPlanningRewards();
+        // 移除避障相关奖励，仅保留基础RL奖励逻辑（若需要）
+        // 如需完全清空奖励，可删除AddLocalPlanningRewards调用
+        // AddLocalPlanningRewards();
     }
 
-    // 动态障碍物检测与轨迹预测
     // 动态障碍物检测与轨迹预测
     private void DetectAndPredictDynamicObstacles()
     {
@@ -235,6 +183,7 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
         CleanupObstacleHistory();
     }
+
     // YOLO坐标转世界坐标（修复：适配检测相机 + 解决Rect命名冲突 + 类型转换问题）
     // 适配X-Y平面坐标系
     // 关键修改：显式指定OpenCvSharp.Rect，消除与UnityEngine.Rect的命名冲突
@@ -698,6 +647,10 @@ public partial class USV_LocalPlanner : MonoBehaviour
             case 3: // 减速
                 velocity = transform.forward * linearVelOptions[1];
                 break;
+            default: // 兜底：停止
+                velocity = Vector3.zero;
+                rotation = 0f;
+                break;
         }
 
         return (velocity, rotation);
@@ -807,3 +760,4 @@ public partial class USV_LocalPlanner : MonoBehaviour
     // 目标点引用
     private Transform target => globalAgent != null ? globalAgent.target : null;
 }
+

@@ -1,0 +1,95 @@
+[33mcommit ce6b6a81212718a5074cabec86adc65df208528d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mPPUV-YOLOv8[m[33m, [m[1;31morigin/PPUV-YOLOv8[m[33m)[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Mar 5 12:22:35 2026 +0800
+
+    python终端可输出训练数据
+
+[33mcommit a39083da5973cc2417152e9be96a681b32855411[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Thu Mar 5 01:37:05 2026 +0800
+
+    2026/3/5排查留档
+
+[33mcommit bb0e2e5e3872f42b7a0a35b682e2174be7e78647[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Mar 4 22:12:26 2026 +0800
+
+    优化代码逻辑
+
+[33mcommit be09404e29927a247ad7d7f5c2beb06cde8aab54[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Mar 4 18:24:32 2026 +0800
+
+    usv-g极简调试
+
+[33mcommit 07ad66d642828063398b8047c2aba1c7510bdb70[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Mar 4 00:46:10 2026 +0800
+
+    2026.3.4优化改前留档
+
+[33mcommit 7d6e90f32b71b7677befb3f3c377c9d99fdfb7b3[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Mon Mar 2 22:57:42 2026 +0800
+
+    新增check_mlagents_full训练检查文件
+
+[33mcommit 71923a33446cc3688c45d9fea77c41b6b12dace3[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sun Mar 1 01:52:30 2026 +0800
+
+    再次检查环境留档
+
+[33mcommit 1fb365db7662b762bda2551a0df0a1cd4f2c82e6[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Feb 28 20:29:51 2026 +0800
+
+    留档—训练进程受阻排查2026.2.28 20：29
+
+[33mcommit 9f0adc90bd6912dc9ca4457c17de214a858fd645[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Feb 28 02:54:56 2026 +0800
+
+    调试1
+
+[33mcommit 1521c2873bc111ff5ac098663534e6ab2b8c1c37[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Sat Feb 28 02:05:18 2026 +0800
+
+    u:4.0.2 p:1.1.0 mlagents版本校验最佳配合—待优化时序以建立通信链路
+
+[33mcommit 606d338a26942eb5a2f5ad9450f629a3475024db[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Feb 27 21:23:12 2026 +0800
+
+    优化日志管理YoloLogSettings
+
+[33mcommit bc5e80b43d0cf0cd02ca19f94c150747d9167085[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Feb 27 17:23:10 2026 +0800
+
+    2026.2.27改前留档
+
+[33mcommit a5bc2e9d7fb9090dcea69f435e379fa9f9171cf3[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Feb 27 00:44:15 2026 +0800
+
+    yolo8修复
+
+[33mcommit 2ceb1e508bd27ba292dadf7e9a356e2d2b5acee5[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Fri Feb 27 00:28:38 2026 +0800
+
+    修复及版本对齐4.7
+
+[33mcommit 3c734f03eea4b969db150a69e0259133f6754162[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Wed Feb 25 18:43:24 2026 +0800
+
+    2026.2.25留档
+
+[33mcommit ce37488ef745fd82cbcb4b1bbafbf3b4b1553c10[m
+Author: Qi-Yu-git <1759229463@qq.com>
+Date:   Tue Feb 24 20:23:43 2026 +0800
+
+    可切换回cpu版
