@@ -1054,7 +1054,7 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 5022602860645237092, guid: 3c75b0d157341354d80b42252e0d4d90, type: 3}
   m_InferenceDevice: 0
-  m_BehaviorType: 2
+  m_BehaviorType: 0
   m_BehaviorName: USV_GlobalRLAgent
   TeamId: 0
   m_UseChildSensors: 0
