@@ -662,31 +662,46 @@ public class USV_GlobalRLAgent : Agent
     /// <summary>
     /// 奖励计算逻辑
     /// </summary>
+    /// <summary>
+    /// 优化后的奖励计算逻辑（解决奖励波动大、缺乏过程反馈问题）
+    /// </summary>
     private void CalculateReward()
     {
+        // 基础参数计算
         float distToTarget = Vector3.Distance(transform.position, target.position);
-        float distanceDelta = lastDistToTarget - distToTarget;
-
-        // 距离缩短奖励
-        float proximityFactor = Mathf.Clamp01(1 - (distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f)));
-        float stepReward = distanceDelta * (1 + proximityFactor * targetProximitySmoothing);
-        stepReward = Mathf.Clamp(stepReward, minStepPenalty, maxStepReward);
-        AddReward(stepReward);
-
-        // 速度稳定性奖励
+        float distanceDelta = lastDistToTarget - distToTarget; // 距离变化量（缩短为正，增加为负）
         float currentSpeed = rb.linearVelocity.magnitude;
-        float idealSpeed = MaxSpeed * 0.5f;
-        float speedStabilityReward = 0.1f * (1 - Mathf.Abs(currentSpeed - idealSpeed) / idealSpeed);
+        float elapsedTime = Time.time - episodeStartTime;
+
+        // ========== 1. 过程奖励：距离缩短奖励（核心平滑项） ==========
+        // 归一化距离（0~1），距离越近权重越高
+        float normalizedDist = Mathf.Clamp01(distToTarget / (Mathf.Max(gridWidth, gridHeight) * 1f));
+        // 距离缩短奖励（平滑且有上限），避免单步奖励突变
+        float distanceReward = distanceDelta * (1 - normalizedDist * targetProximitySmoothing);
+        distanceReward = Mathf.Clamp(distanceReward, -0.5f, 0.3f); // 严格限制单步波动范围
+        AddReward(distanceReward);
+
+        // ========== 2. 过程奖励：速度稳定性奖励（鼓励平稳航行） ==========
+        float idealSpeed = currentMaxSpeed * 0.6f; // 设定理想巡航速度（60%最大速度）
+        float speedError = Mathf.Abs(currentSpeed - idealSpeed) / idealSpeed; // 速度偏差率（0~1）
+        float speedStabilityReward = 0.1f * (1 - speedError); // 偏差越小奖励越高（0~0.1）
         AddReward(speedStabilityReward);
 
-        // 路径完成奖励
-        if (isPathCompleted && !IsEpisodeDone)
+        // ========== 3. 过程奖励：航向合理性奖励（鼓励朝向目标） ==========
+        float angleToTarget = Vector3.SignedAngle(transform.forward, target.position - transform.position, Vector3.up);
+        float normalizedAngle = Mathf.Clamp01(Mathf.Abs(angleToTarget) / 180f); // 航向偏差率（0~1）
+        float headingReward = 0.05f * (1 - normalizedAngle); // 朝向越正奖励越高（0~0.05）
+        AddReward(headingReward);
+
+        // ========== 4. 过程奖励：接近目标梯度奖励（距离越近奖励越高） ==========
+        float nearTargetBonus = 0f;
+        if (distToTarget < 20f) // 20米内开始梯度奖励
         {
-            AddReward(50f); // 路径完成奖励
-            // 路径完成后不立即终止，仅给予奖励
+            nearTargetBonus = 0.1f * (1 - distToTarget / 20f); // 0~0.1的梯度奖励
+            AddReward(nearTargetBonus);
         }
 
-        // 优化：碰撞检测（大幅放宽条件 + 分层惩罚）
+        // ========== 5. 惩罚项：适度碰撞惩罚（避免极端值） ==========
         Collider[] colliders = Physics.OverlapSphere(transform.position, collisionCheckRadius);
         bool isCollided = false;
         int obstacleCount = 0;
@@ -694,91 +709,84 @@ public class USV_GlobalRLAgent : Agent
         {
             if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
             {
-                // 新增：检测障碍物是否真正接触（而非仅进入检测半径）
                 float actualDist = Vector3.Distance(transform.position, collider.transform.position);
-                if (actualDist < collisionCheckRadius * 0.7f) // 仅70%半径内算有效碰撞
+                if (actualDist < collisionCheckRadius * 0.7f)
                 {
                     obstacleCount++;
                 }
             }
         }
-        // 只有接触足够多的障碍物才判定为碰撞（增加容错）
         isCollided = obstacleCount >= minObstacleCount && obstacleCount > 0;
 
         if (isCollided)
         {
-            // 分层惩罚：根据障碍物数量调整惩罚值
-            float collisionPenalty = -20f * obstacleCount;
-            AddReward(Mathf.Clamp(collisionPenalty, -50f, -10f));
+            // 分层惩罚（-10 ~ -20），避免-1000等极端惩罚导致策略突变
+            float collisionPenalty = -10f - (obstacleCount * 2f);
+            collisionPenalty = Mathf.Clamp(collisionPenalty, -20f, -10f);
+            AddReward(collisionPenalty);
             _resetReason = "collision";
-            Debug.Log($"碰撞障碍物（{obstacleCount}个），结束回合！当前位置：{transform.position} | 惩罚：{collisionPenalty}");
-            // 延迟终止，确保日志和奖励结算完成
+            Debug.Log($"碰撞障碍物（{obstacleCount}个），惩罚：{collisionPenalty} | 累计奖励：{GetCumulativeReward()}");
             EndEpisodeCustom();
             return;
         }
 
-
-        // ========== 优化：回合终止条件 ==========
-        // 1. 到达目标终止（增大阈值，增加缓冲）
+        // ========== 6. 终局奖励/惩罚：目标达成（适度奖励） ==========
         if (distToTarget < targetArriveThreshold)
         {
+            float finishReward = 100f - (elapsedTime * 0.5f); // 完成越快奖励越高（最高100）
+            finishReward = Mathf.Clamp(finishReward, 50f, 100f); // 限制终局奖励范围
+            AddReward(finishReward);
             _resetReason = "target";
-            AddReward(200f);
-            // 增加延迟终止，避免瞬间重置导致数据丢失
+            Debug.Log($"到达目标，终局奖励：{finishReward} | 累计奖励：{GetCumulativeReward()}");
             EndEpisodeCustom();
             return;
         }
-        // 接近目标奖励（梯度调整）
-        else if (distToTarget < 10f)
-        {
-            float nearTargetReward = 5f * (1 - distToTarget / 10f);
-            AddReward(nearTargetReward);
-        }
 
-        // 2. 超时终止（动态延长，避免过早超时）
-        float timeoutThreshold = currentMaxEpisodeTime * 2.0f; // 延长100%超时时间
-        if (Time.time - episodeStartTime > timeoutThreshold)
+        // ========== 7. 终局惩罚：超时（适度惩罚） ==========
+        float timeoutThreshold = currentMaxEpisodeTime * 2.0f;
+        if (elapsedTime > timeoutThreshold)
         {
+            AddReward(-10f); // 超时适度惩罚（而非极端惩罚）
             _resetReason = "timeout";
-            AddReward(-10f);
-            Debug.Log($"回合超时，结束回合！耗时：{Time.time - episodeStartTime}秒 | 阈值：{timeoutThreshold}秒");
+            Debug.Log($"回合超时，惩罚：-10 | 累计奖励：{GetCumulativeReward()}");
             EndEpisodeCustom();
             return;
         }
 
-        // 3. 边界检测（动态扩大可航行区域）
-        float maxBoundary = Mathf.Max(gridWidth, gridHeight) * boundaryThresholdFactor * 1.2f; // 扩大20%边界
+        // ========== 8. 终局惩罚：驶出边界（适度惩罚） ==========
+        float maxBoundary = Mathf.Max(gridWidth, gridHeight) * boundaryThresholdFactor * 1.2f;
         if (Mathf.Abs(transform.position.x) > maxBoundary || Mathf.Abs(transform.position.z) > maxBoundary)
         {
+            AddReward(-15f); // 驶出边界适度惩罚
             _resetReason = "boundary";
-            AddReward(-15f);
-            Debug.Log($"驶出边界，结束回合！当前位置：{transform.position}，边界阈值：{maxBoundary}");
+            Debug.Log($"驶出边界，惩罚：-15 | 累计奖励：{GetCumulativeReward()}");
             EndEpisodeCustom();
             return;
         }
 
-        // 4. 路径完成后到达目标才终止（修改判定逻辑）
-        if (isPathCompleted && distToTarget < pathCompleteTerminateThreshold)
+        // ========== 9. 路径完成奖励（过程+终局结合） ==========
+        if (isPathCompleted && !IsEpisodeDone)
         {
-            _resetReason = "path_complete";
-            AddReward(100f);
-            Debug.Log($"路径完成并接近目标，结束回合！距离目标：{distToTarget}");
-            // 延迟终止，确保奖励结算完成
-            EndEpisodeCustom();
-            return;
-        }
-        // 新增：路径完成但未到终点，给予持续奖励（鼓励继续靠近）
-        else if (isPathCompleted && !IsEpisodeDone)
-        {
-            float nearTargetBonus = 2f * (1 - distToTarget / (pathCompleteTerminateThreshold * 2));
-            AddReward(Mathf.Clamp(nearTargetBonus, 0.5f, 2f));
+            float pathCompleteBonus = 2f * (1 - distToTarget / (pathCompleteTerminateThreshold * 2));
+            pathCompleteBonus = Mathf.Clamp(pathCompleteBonus, 0.5f, 2f); // 过程奖励（0.5~2）
+            AddReward(pathCompleteBonus);
+
+            // 路径完成+接近目标：终局奖励（适度）
+            if (distToTarget < pathCompleteTerminateThreshold)
+            {
+                AddReward(80f); // 路径完成终局奖励（低于直接到达目标）
+                _resetReason = "path_complete";
+                Debug.Log($"路径完成并接近目标，终局奖励：80 | 累计奖励：{GetCumulativeReward()}");
+                EndEpisodeCustom();
+                return;
+            }
         }
 
-        // 更新最后距离
+        // 更新最后距离（用于下一帧计算距离变化）
         lastDistToTarget = distToTarget;
 
-        // 调试：输出每步奖励（确认Step循环触发）
-        Debug.Log($"Step奖励：基础={stepReward}, 速度稳定性={speedStabilityReward}, 总累计={GetCumulativeReward()}");
+        // 调试：输出每步奖励构成（便于监控波动）
+        Debug.Log($"Step奖励：距离={distanceReward:F3}, 速度={speedStabilityReward:F3}, 航向={headingReward:F3}, 近目标={nearTargetBonus:F3}, 累计={GetCumulativeReward():F3}");
     }
 
     /// <summary>

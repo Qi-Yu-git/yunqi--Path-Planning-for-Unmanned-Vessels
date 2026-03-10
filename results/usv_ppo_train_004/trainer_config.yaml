@@ -6,7 +6,7 @@ behaviors:
       buffer_size: 4096
       learning_rate: 1e-4 
       learning_rate_schedule: linear
-      beta: 4e-4
+      beta: 2e-4
       epsilon: 0.2
       lambd: 0.95
 
@@ -25,7 +25,7 @@ behaviors:
         strength: 0.005
         gamma: 0.95
 
-    max_steps: 100000
+    max_steps: 500000
     summary_freq: 1000
     keep_checkpoints: 5
     checkpoint_interval: 10000

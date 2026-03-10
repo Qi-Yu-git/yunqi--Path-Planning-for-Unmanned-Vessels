@@ -1024,6 +1024,12 @@ MonoBehaviour:
   enableTaskLoop: 1
   spawnManager: {fileID: 398022124}
   target: {fileID: 1521328185}
+  collisionCheckRadius: 1.5
+  minObstacleCount: 3
+  targetArriveThreshold: 2
+  boundaryThresholdFactor: 0.8
+  pathCompleteWaypointCount: 3
+  pathCompleteTerminateThreshold: 3
 --- !u!114 &173794673
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1046,9 +1052,9 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 0}
+  m_Model: {fileID: 5022602860645237092, guid: 3c75b0d157341354d80b42252e0d4d90, type: 3}
   m_InferenceDevice: 0
-  m_BehaviorType: 0
+  m_BehaviorType: 2
   m_BehaviorName: USV_GlobalRLAgent
   TeamId: 0
   m_UseChildSensors: 0
@@ -2974,7 +2980,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &777516358
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4806,7 +4812,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1684558672
 RectTransform:
   m_ObjectHideFlags: 0
