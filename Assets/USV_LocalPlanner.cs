@@ -49,40 +49,19 @@ public partial class USV_LocalPlanner : MonoBehaviour
         // 优化物理参数
         rb.linearDamping = 0.6f;
         rb.angularDamping = 1.2f;
-        rb.useGravity = false; // 修复：水上运动禁用重力
-        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic; // 连续碰撞检测
+        rb.useGravity = false;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
-        // 初始化动态障碍物列表
         dynamicObstacles = new List<Vector3>();
         dynamicObstacleVelocities = new List<Vector3>();
 
         if (yoloDetector == null)
         {
-            // 第一次查找：优先找活跃的YoloDetector（推荐方式）
-            yoloDetector = FindFirstObjectByType<YoloDetector>();
-
+            yoloDetector = FindAnyObjectByType<YoloDetector>(FindObjectsInactive.Include);
             if (yoloDetector == null)
             {
-                // 第二次查找：允许找非活跃的实例（兼容场景隐藏的情况）
-                yoloDetector = FindAnyObjectByType<YoloDetector>(FindObjectsInactive.Include);
-
-                if (yoloDetector == null)
-                {
-                    Debug.LogError("[USV_LocalPlanner] YoloDetector未找到！动态避障功能无法启用，请检查场景中是否存在YoloDetector组件");
-                }
-                else
-                {
-                    Debug.LogWarning("[USV_LocalPlanner] 使用FindAnyObjectByType找到YoloDetector（可能包含非活跃实例），建议手动关联以提高性能和稳定性");
-                }
+                Debug.LogError("[USV_LocalPlanner] YoloDetector未找到！动态避障功能无法启用");
             }
-            else
-            {
-                Debug.Log("[USV_LocalPlanner] 通过FindFirstObjectByType自动找到YoloDetector，避障功能正常启用");
-            }
-        }
-        else
-        {
-            Debug.Log("[USV_LocalPlanner] 手动关联YoloDetector成功，避障功能正常启用");
         }
     }
 
@@ -97,7 +76,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         {
             Debug.LogError("YoloDetector未找到！动态避障功能无法启用");
         }
-        Debug.Log($"collisionThreshold值：{collisionThreshold}"); // 应输出2
     }
 
     public void OnAgentActionReceived(ActionBuffers actions)
@@ -105,21 +83,13 @@ public partial class USV_LocalPlanner : MonoBehaviour
         Vector3 targetVelocity = Vector3.zero;
         float targetRotation = 0f;
 
-        // 仅使用全局RL动作，完全跳过避障逻辑
         (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
-        Debug.Log($"[LocalPlanner] 全局路径模式：动作{actions.DiscreteActions[0]} → 速度={targetVelocity.magnitude:F2}，转向={targetRotation:F1}");
 
-        // 速度限制（保留基础物理约束）
         targetVelocity = Vector3.ClampMagnitude(targetVelocity, MaxLinearVel);
         rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
         transform.Rotate(0, targetRotation * Time.deltaTime, 0);
-
-        // 移除避障相关奖励，仅保留基础RL奖励逻辑（若需要）
-        // 如需完全清空奖励，可删除AddLocalPlanningRewards调用
-        // AddLocalPlanningRewards();
     }
 
-    // 动态障碍物检测与轨迹预测
     private void DetectAndPredictDynamicObstacles()
     {
         dynamicObstacles.Clear();
@@ -128,32 +98,26 @@ public partial class USV_LocalPlanner : MonoBehaviour
         if (yoloDetector == null || yoloDetector.DetectedResults == null)
             return;
 
-        // 关键修复：指定完整命名空间 YoloV8Detection.YoloResult
         List<YoloV8Detection.YoloResult> obstacleResults = yoloDetector.DetectedResults.FindAll(result =>
             result.ClassName.ToLower() == "unmanned boat" ||
             result.ClassName == "sports ball" ||
             result.ClassName == "mouse" ||
-            result.ClassName == "rock" || // 新增：YOLO识别的礁石类别名
-            result.ClassName == "obstacle"// 新增：通用障碍物类别
+            result.ClassName == "rock" ||
+            result.ClassName == "obstacle"
         );
 
-        Debug.Log($"[LocalPlanner] 筛选出障碍物：{obstacleResults.Count}个（无人船：{obstacleResults.Count(r => r.ClassName.ToLower() == "unmanned boat")}，运动球：{obstacleResults.Count(r => r.ClassName.ToLower() == "sports ball")}）");
         if (obstacleResults.Count == 0) return;
 
-        // 处理每个障碍物
         for (int i = 0; i < obstacleResults.Count; i++)
         {
-            // 关键修复：使用带命名空间的 YoloResult
             YoloV8Detection.YoloResult result = obstacleResults[i];
             Vector3 worldPos = ConvertYoloToWorldPosition(result.Rect);
 
-            // 修复：水域内的障碍物才参与避障
             if (gridManager != null)
             {
                 if (worldPos.x < gridManager.WaterMinX || worldPos.x > gridManager.WaterMaxX ||
                     worldPos.z < gridManager.WaterMinZ || worldPos.z > gridManager.WaterMaxZ)
                 {
-                    Debug.Log($"[LocalPlanner] 障碍物{i}超出水域，跳过");
                     continue;
                 }
             }
@@ -165,85 +129,68 @@ public partial class USV_LocalPlanner : MonoBehaviour
             Vector3 predictedPos = PredictObstaclePosition(worldPos, predictedVel, dwaPredictTime);
             dynamicObstacles.Add(predictedPos);
 
-            // 碰撞风险检测
             bool collisionRisk = IsCollisionImminent(transform.position, rb.linearVelocity, worldPos, predictedVel, dwaPredictTime);
             if (collisionRisk)
             {
                 isAvoidingDynamicObstacle = true;
-                Debug.Log($"[LocalPlanner] 障碍物{i}触发碰撞风险，强制进入避障模式");
             }
 
-            // 检测到sports ball或无人船时强制避障
             if (result.ClassName.ToLower() == "unmanned boat" || result.ClassName.ToLower() == "sports ball")
             {
                 isAvoidingDynamicObstacle = true;
-                Debug.Log($"[LocalPlanner] 检测到{result.ClassName}，强制避障");
             }
         }
 
         CleanupObstacleHistory();
     }
 
-    // YOLO坐标转世界坐标（修复：适配检测相机 + 解决Rect命名冲突 + 类型转换问题）
-    // 适配X-Y平面坐标系
-    // 关键修改：显式指定OpenCvSharp.Rect，消除与UnityEngine.Rect的命名冲突
     private Vector3 ConvertYoloToWorldPosition(OpenCvSharp.Rect rect)
     {
-        // 优先使用YoloDetector的DetectionCamera
         Camera detectCamera = yoloDetector != null ? yoloDetector.sceneCamera : Camera.main;
         if (detectCamera == null)
         {
-            Debug.LogError("[LocalPlanner] DetectionCamera未找到，使用主相机");
             detectCamera = Camera.main;
             if (detectCamera == null)
             {
-                Debug.LogError("[LocalPlanner] 主相机也未找到，返回默认位置");
+                Debug.LogError("[LocalPlanner] 未找到相机！");
                 return transform.position + transform.forward * 5f;
             }
         }
 
-        // 1. 图像坐标转DetectionCamera视口坐标
         float screenX = Mathf.Clamp((float)rect.X + (float)rect.Width / 2, 0, detectCamera.pixelWidth);
         float screenY = Mathf.Clamp((float)rect.Y + (float)rect.Height / 2, 0, detectCamera.pixelHeight);
         Vector3 viewportPos = new Vector3(screenX / detectCamera.pixelWidth, 1 - screenY / detectCamera.pixelHeight, 1f);
 
-        // 2. 视口转射线（适配DetectionCamera的位置X=11.623,Y=-0.036,Z=0）
         Ray ray = detectCamera.ViewportPointToRay(viewportPos);
+        float groundY = 0.4f;
+        Plane groundPlane = new Plane(Vector3.up, groundY);
 
-        // 3. 射线与水域平面（Y=0.4f）相交
-        float groundY = 0.4f; // USV的固定高度
-        Plane groundPlane = new Plane(Vector3.up, groundY); // 法向量向上，高度Y=0.4f
         if (groundPlane.Raycast(ray, out float distance))
         {
             Vector3 worldPos = ray.GetPoint(distance);
-
-            // 4. 水域边界校验（适配X/Y轴，你的场景中X=左右，Z=前后）
             bool inWater = true;
+
             if (gridManager != null)
             {
                 inWater = worldPos.x >= gridManager.WaterMinX && worldPos.x <= gridManager.WaterMaxX &&
                           worldPos.z >= gridManager.WaterMinZ && worldPos.z <= gridManager.WaterMaxZ;
-                Debug.Log($"[LocalPlanner] 水域边界校验：X[{gridManager.WaterMinX:F1},{gridManager.WaterMaxX:F1}] Z[{gridManager.WaterMinZ:F1},{gridManager.WaterMaxZ:F1}] → 位置({worldPos.x:F1},{worldPos.z:F1}) → {inWater}");
             }
 
             if (inWater)
             {
-                return new Vector3(worldPos.x, groundY, worldPos.z); // 固定Y=0.4f
+                return new Vector3(worldPos.x, groundY, worldPos.z);
             }
             else
             {
-                Debug.LogWarning($"[LocalPlanner] 障碍物位置超出水域，已修正");
                 worldPos.x = Mathf.Clamp(worldPos.x, gridManager.WaterMinX, gridManager.WaterMaxX);
                 worldPos.z = Mathf.Clamp(worldPos.z, gridManager.WaterMinZ, gridManager.WaterMaxZ);
                 return new Vector3(worldPos.x, groundY, worldPos.z);
             }
         }
 
-        Debug.LogWarning($"[LocalPlanner] 坐标转换失败，使用备选方案：{viewportPos}");
         return transform.position + transform.forward * 5f;
     }
 
-    // 障碍物速度估算
     private Vector3 EstimateObstacleVelocity(int obsId, Vector3 currentPos, string className)
     {
         if (!obstacleHistory.ContainsKey(obsId))
@@ -262,11 +209,9 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
         if (obstacleHistory[obsId].Count < 8)
         {
-            Debug.LogWarning($"障碍物{obsId}历史数据不足（{obstacleHistory[obsId].Count}帧），速度估算为0");
             return Vector3.zero;
         }
 
-        // 线性回归计算速度
         int n = obstacleHistory[obsId].Count;
         float sumT = 0, sumX = 0, sumZ = 0;
         float sumT2 = 0, sumTX = 0, sumTZ = 0;
@@ -286,7 +231,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         float denominator = n * sumT2 - sumT * sumT;
         if (denominator < 0.001f)
         {
-            Debug.LogWarning($"障碍物{obsId}速度计算分母过小，返回0");
             return Vector3.zero;
         }
 
@@ -295,56 +239,44 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
         float speedFactor = className.ToLower() == "unmanned boat" ? 1.2f : obstacleSpeedFactor;
         Vector3 predictedVel = new Vector3(aX, 0, aZ) * speedFactor;
-        Debug.Log($"障碍物{obsId}（{className}）估算速度：{predictedVel}");
 
         return predictedVel;
     }
 
-    // 预测障碍物未来位置
     private Vector3 PredictObstaclePosition(Vector3 currentPos, Vector3 velocity, float time)
     {
         return currentPos + velocity * time;
     }
 
-    // 碰撞风险检测（修复：TTC计算逻辑）
-    // 碰撞风险检测（适配X-Y平面坐标系）
     private bool IsCollisionImminent(Vector3 usvPos, Vector3 usvVel, Vector3 obsPos, Vector3 obsVel, float time)
     {
         Vector3 relativeVel = obsVel - usvVel;
         Vector3 relativePos = obsPos - usvPos;
 
-        // 1. 超出预警距离（5f）
         float warningDistance = localSafeDistance;
         if (relativePos.magnitude > warningDistance)
         {
-            Debug.Log($"距离障碍物{relativePos.magnitude:F1} > {warningDistance}，无碰撞风险");
             return false;
         }
 
-        // 2. 目标远离
         float dotProduct = Vector3.Dot(relativePos.normalized, relativeVel.normalized);
         if (dotProduct >= 0.1f)
         {
-            Debug.Log($"障碍物远离（点积{dotProduct:F2}≥0.1），无碰撞风险");
             return false;
         }
 
-        // 3. 计算碰撞时间(TTC)
         float relativeSpeed = relativeVel.magnitude;
         if (relativeSpeed < 0.01f)
         {
-            Debug.LogWarning("相对速度接近0，TTC计算无效，判定为近距离风险");
             return relativePos.magnitude < collisionThreshold;
         }
 
         float ttc = relativePos.magnitude / relativeSpeed;
         if (ttc < 0 || ttc > time)
         {
-            Debug.Log($"TTC={ttc:F1}超出有效范围（0~{time}），无碰撞风险");
             return false;
         }
 
-        // 4. 未来位置碰撞判断（适配你的坐标：X/Z为平面，Y固定）
         Vector3 usvFuture = new Vector3(
             usvPos.x + usvVel.x * ttc,
             usvPos.y,
@@ -359,12 +291,10 @@ public partial class USV_LocalPlanner : MonoBehaviour
         float distance = Vector3.Distance(usvFuture, obsFuture);
         float collisionCheckThreshold = relativePos.magnitude < warningDistance * 0.5f ? 1.5f : 2f;
         bool isImminent = distance < collisionCheckThreshold;
-        Debug.Log($"未来{ttc:F1}秒距离：{distance:F1}，阈值：{collisionCheckThreshold}，碰撞风险：{isImminent}");
 
         return isImminent;
     }
 
-    // 带COLREGs的局部规划器（修复：避障动作优先级）
     private (Vector3 velocity, float rotation) LocalPlannerWithCOLREGs()
     {
         float bestScore = -Mathf.Infinity;
@@ -372,33 +302,26 @@ public partial class USV_LocalPlanner : MonoBehaviour
         float bestRotation = 0f;
         Vector3 nextGlobalWaypoint = GetCurrentGlobalWaypoint();
 
-        Debug.Log($"[LocalPlanner] 开始避障规划：动作空间{linearVelOptions.Length}x{angularVelOptions.Length}，目标路径点({nextGlobalWaypoint.x:F1},{nextGlobalWaypoint.z:F1})");
-
-        // 遍历动作空间寻找最优解
         foreach (float linearVel in linearVelOptions)
         {
-            if (linearVel > MaxLinearVel * 0.8f) continue; // 避障时限制速度
+            if (linearVel > MaxLinearVel * 0.8f) continue;
 
             foreach (float angularVel in angularVelOptions)
             {
                 (Vector3 predictedPos, Quaternion predictedRot) = PredictMotion(linearVel, angularVel, dwaPredictTime);
 
-                // 排除碰撞动作
                 bool willCollide = dynamicObstacles.Any(obs =>
                     Vector3.Distance(predictedPos, obs) < collisionThreshold * 0.8f);
                 if (willCollide)
                 {
-                    Debug.Log($"[LocalPlanner] 动作(速度{linearVel}, 转向{angularVel})会碰撞，跳过");
                     continue;
                 }
 
-                // 多目标评分
                 float obstacleScore = CalculateObstacleScore(predictedPos);
                 float pathTrackScore = CalculatePathTrackScore(predictedPos, nextGlobalWaypoint);
                 float colregsScore = CalculateCOLREGsScore(predictedPos, predictedRot, angularVel);
                 float smoothScore = CalculateSmoothScore(linearVel, angularVel);
 
-                // 修复：避障权重提升至0.9
                 float totalScore = obstacleScore * 0.9f
                                  + pathTrackScore * 0.05f
                                  + colregsScore * 0.03f
@@ -413,21 +336,17 @@ public partial class USV_LocalPlanner : MonoBehaviour
             }
         }
 
-        // 兜底：无有效动作时强制远离最近障碍物
         if (bestScore < 0)
         {
-            Debug.LogWarning("[LocalPlanner] 未找到最优避障动作，使用应急方案");
             Vector3 closestObs = dynamicObstacles.OrderBy(obs => Vector3.Distance(transform.position, obs)).First();
             float avoidDir = closestObs.x > transform.position.x ? -15f : 15f;
-            bestVelocity = transform.forward * linearVelOptions[1]; // 低速
+            bestVelocity = transform.forward * linearVelOptions[1];
             bestRotation = avoidDir;
         }
 
-        Debug.Log($"[LocalPlanner] 避障动作确定：速度{bestVelocity.magnitude:F2}，转向{bestRotation:F1}");
         return (bestVelocity, bestRotation);
     }
 
-    // 障碍物规避评分
     private float CalculateObstacleScore(Vector3 predictedPos)
     {
         if (dynamicObstacles.Count == 0) return 1f;
@@ -447,14 +366,12 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return totalScore / dynamicObstacles.Count;
     }
 
-    // 路径跟踪评分
     private float CalculatePathTrackScore(Vector3 predictedPos, Vector3 nextWaypoint)
     {
         float distToWaypoint = Vector3.Distance(predictedPos, nextWaypoint);
         return Mathf.Clamp(1 - (distToWaypoint / (localSafeDistance * 2)), 0f, 1f);
     }
 
-    // COLREGs合规评分
     private float CalculateCOLREGsScore(Vector3 predictedPos, Quaternion predictedRot, float currentAngularVel)
     {
         float colregsScore = 1f;
@@ -466,25 +383,21 @@ public partial class USV_LocalPlanner : MonoBehaviour
             float relativeAngle = Vector3.SignedAngle(predictedRot * Vector3.forward, relativePos, Vector3.up);
             float obsSpeed = obsVel.magnitude;
 
-            // 对遇局面处理
             if (Mathf.Abs(relativeAngle) < 20f && obsSpeed > 0.5f)
             {
                 float rotationDiff = Mathf.Abs(currentAngularVel - HeadOnAvoidAngle);
                 colregsScore *= Mathf.Clamp(1 - (rotationDiff / 60f), 0.2f, 1f);
             }
-            // 右舷来船处理
             else if (relativeAngle > 0f && relativeAngle < 120f)
             {
                 colregsScore *= Mathf.Clamp(1 - (Mathf.Abs(currentAngularVel) / 20f), 0.3f, 1f);
             }
-            // 左舷来船处理
             else if (relativeAngle < 0f && relativeAngle > -120f)
             {
                 float rotationDiff = Mathf.Abs(currentAngularVel - StarboardAvoidAngle);
                 colregsScore *= Mathf.Clamp(1 - (rotationDiff / 50f), 0.2f, 1f);
             }
 
-            // 安全距离惩罚
             float distToObs = Vector3.Distance(predictedPos, obsPos);
             if (distToObs < colregsSafeDistance)
             {
@@ -495,7 +408,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return colregsScore;
     }
 
-    // 动作平滑度评分
     private float CalculateSmoothScore(float linearVel, float angularVel)
     {
         float currentLinearVel = Vector3.Dot(transform.forward, rb.linearVelocity);
@@ -505,7 +417,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return (linearSmooth + angularSmooth) / 2f;
     }
 
-    // 清理超时障碍物历史
     private void CleanupObstacleHistory()
     {
         List<int> toRemove = new List<int>();
@@ -524,7 +435,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         }
     }
 
-    // 获取当前全局路径点
     private Vector3 GetCurrentGlobalWaypoint()
     {
         if (globalPathfinder == null || globalPathfinder.path == null || globalPathfinder.path.Count == 0)
@@ -541,7 +451,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return gridManager.栅格转世界(globalPathfinder.path[Mathf.Min(currentGlobalWaypointIndex, globalPathfinder.path.Count - 1)]);
     }
 
-    // 检查是否靠近全局路径
     private bool IsCloseToGlobalPath()
     {
         if (globalPathfinder == null || globalPathfinder.path == null || globalPathfinder.path.Count < 2)
@@ -553,7 +462,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return Vector3.Distance(transform.position, closestPoint) < returnToPathThreshold;
     }
 
-    // 获取路径上最近点
     private Vector3 GetClosestPointOnPath(Vector3 point)
     {
         Vector3 closest = Vector3.zero;
@@ -575,7 +483,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return closest;
     }
 
-    // 点到线段距离计算
     private float DistancePointToLine(Vector3 point, Vector3 lineStart, Vector3 lineEnd)
     {
         Vector3 lineDir = lineEnd - lineStart;
@@ -592,7 +499,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return Vector3.Distance(point, closestPoint);
     }
 
-    // 线段上投影点计算
     private Vector3 GetPointOnLine(Vector3 point, Vector3 lineStart, Vector3 lineEnd)
     {
         Vector3 lineDir = lineEnd - lineStart;
@@ -607,7 +513,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return lineStart + t * lineDir;
     }
 
-    // 运动状态预测
     private (Vector3 pos, Quaternion rot) PredictMotion(float linearVel, float angularVel, float time)
     {
         Vector3 predictedPos = transform.position;
@@ -625,7 +530,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return (predictedPos, predictedRot);
     }
 
-    // RL动作映射
     private (Vector3 velocity, float rotation) GetGlobalActionVelocity(int action)
     {
         Vector3 velocity = Vector3.zero;
@@ -633,21 +537,21 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
         switch (action)
         {
-            case 0: // 前进（中等速度）
+            case 0:
                 velocity = transform.forward * linearVelOptions[3];
                 break;
-            case 1: // 左转（中等角度）
+            case 1:
                 rotation = angularVelOptions[1];
                 velocity = transform.forward * linearVelOptions[2];
                 break;
-            case 2: // 右转（中等角度）
+            case 2:
                 rotation = angularVelOptions[3];
                 velocity = transform.forward * linearVelOptions[2];
                 break;
-            case 3: // 减速
+            case 3:
                 velocity = transform.forward * linearVelOptions[1];
                 break;
-            default: // 兜底：停止
+            default:
                 velocity = Vector3.zero;
                 rotation = 0f;
                 break;
@@ -656,7 +560,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return (velocity, rotation);
     }
 
-    // 极度危险状态检测
     private bool IsExtremeDanger()
     {
         if (dynamicObstacles.Count == 0) return false;
@@ -670,7 +573,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
         return minDist < collisionThreshold * 0.5f;
     }
 
-    // 局部规划奖励系统
     private void AddLocalPlanningRewards()
     {
         if (dynamicObstacles.Count == 0) return;
@@ -681,51 +583,41 @@ public partial class USV_LocalPlanner : MonoBehaviour
             minDistToObs = Mathf.Min(minDistToObs, Vector3.Distance(transform.position, obsPos));
         }
 
-        // 避障奖励
         globalAgent.AddReward(minDistToObs / localSafeDistance * 5f);
-
-        // COLREGs合规奖励
         float currentAngularVel = transform.eulerAngles.y * Time.deltaTime;
         float colregsReward = CalculateCOLREGsScore(transform.position, transform.rotation, currentAngularVel);
         globalAgent.AddReward(colregsReward * 0.8f);
 
-        // 路径保持奖励
         if (IsCloseToGlobalPath())
         {
             globalAgent.AddReward(0.5f);
         }
 
-        // 近距离碰撞惩罚
         if (minDistToObs < collisionThreshold * 0.5f)
         {
             globalAgent.AddReward(-20f);
             EndEpisode();
         }
 
-        // 接近障碍物梯度惩罚
         if (minDistToObs < collisionThreshold)
         {
             globalAgent.AddReward(-(collisionThreshold - minDistToObs) * 3f);
         }
     }
 
-    // 结束当前episode
     private void EndEpisode()
     {
         globalAgent.EndEpisode();
     }
 
-    // Gizmos可视化（调试用）
     private void OnDrawGizmos()
     {
-        // 绘制动态障碍物（红色）
         Gizmos.color = Color.red;
         foreach (var obs in dynamicObstacles)
         {
             Gizmos.DrawSphere(obs, 0.5f);
         }
 
-        // 绘制避障路径（黄色）
         if (isAvoidingDynamicObstacle && rb != null)
         {
             Gizmos.color = Color.yellow;
@@ -733,7 +625,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
             Gizmos.DrawLine(transform.position, predictedPos);
         }
 
-        // 绘制水域边界（绿色半透明）
         if (gridManager != null)
         {
             Gizmos.color = new Color(0, 1, 0, 0.1f);
@@ -745,7 +636,6 @@ public partial class USV_LocalPlanner : MonoBehaviour
     }
 }
 
-// 部分类：存储障碍物历史和配置参数
 public partial class USV_LocalPlanner : MonoBehaviour
 {
     public float predictionTime = 3.0f;
@@ -753,11 +643,8 @@ public partial class USV_LocalPlanner : MonoBehaviour
     public float avoidDistance = 4.0f;
     public float obstacleSpeedFactor = 0.9f;
 
-    // 障碍物历史记录
     private Dictionary<int, List<(Vector3 pos, float time)>> obstacleHistory = new Dictionary<int, List<(Vector3 pos, float time)>>();
     private Dictionary<int, float> obstacleLastSeen = new Dictionary<int, float>();
 
-    // 目标点引用
     private Transform target => globalAgent != null ? globalAgent.target : null;
 }
-

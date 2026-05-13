@@ -1,0 +1,65 @@
+{
+    "USV_GlobalRLAgent": {
+        "checkpoints": [
+            {
+                "steps": 369999,
+                "file_path": "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-369999.onnx",
+                "reward": 231.74265532493592,
+                "creation_time": 1778485929.5935576,
+                "auxillary_file_paths": [
+                    "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-369999.pt"
+                ]
+            },
+            {
+                "steps": 379999,
+                "file_path": "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-379999.onnx",
+                "reward": 357.40442439488004,
+                "creation_time": 1778486577.0480938,
+                "auxillary_file_paths": [
+                    "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-379999.pt"
+                ]
+            },
+            {
+                "steps": 389999,
+                "file_path": "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-389999.onnx",
+                "reward": 344.57050157629925,
+                "creation_time": 1778487227.9685848,
+                "auxillary_file_paths": [
+                    "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-389999.pt"
+                ]
+            },
+            {
+                "steps": 399999,
+                "file_path": "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-399999.onnx",
+                "reward": 348.7996356487274,
+                "creation_time": 1778487871.9344401,
+                "auxillary_file_paths": [
+                    "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-399999.pt"
+                ]
+            },
+            {
+                "steps": 400099,
+                "file_path": "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-400099.onnx",
+                "reward": 352.9163440410907,
+                "creation_time": 1778487872.169371,
+                "auxillary_file_paths": [
+                    "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-400099.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 400099,
+            "file_path": "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent.onnx",
+            "reward": 352.9163440410907,
+            "creation_time": 1778487872.169371,
+            "auxillary_file_paths": [
+                "results\\usv_chuantong_ppo_train_3\\USV_GlobalRLAgent\\USV_GlobalRLAgent-400099.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.5.1+cu121"
+    }
+}

@@ -4,8 +4,8 @@ behaviors:
     hyperparameters:
       batch_size: 512
       buffer_size: 8196
-      learning_rate: 0
-      learning_rate_schedule: constant
+      learning_rate: 5e-5 
+      learning_rate_schedule: linear
       beta: 5e-4
       epsilon: 0.15
       lambd: 0.95
@@ -15,12 +15,15 @@ behaviors:
       hidden_units: 128
       num_layers:  3
       activation: relu
-      encoding_size: 128 
+      encoding_size: 128
 
     reward_signals:
       extrinsic:
         gamma: 0.99
         strength: 1.0
+      curiosity:
+        strength: 0.003
+        gamma: 0.95
 
     max_steps: 400000
     summary_freq: 1000

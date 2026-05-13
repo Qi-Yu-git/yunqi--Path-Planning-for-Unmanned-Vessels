@@ -1,0 +1,65 @@
+{
+    "USV_GlobalRLAgent": {
+        "checkpoints": [
+            {
+                "steps": 369900,
+                "file_path": "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-369900.onnx",
+                "reward": 486.8595784505208,
+                "creation_time": 1778614378.887828,
+                "auxillary_file_paths": [
+                    "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-369900.pt"
+                ]
+            },
+            {
+                "steps": 379900,
+                "file_path": "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-379900.onnx",
+                "reward": 346.0618161801939,
+                "creation_time": 1778615143.2127638,
+                "auxillary_file_paths": [
+                    "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-379900.pt"
+                ]
+            },
+            {
+                "steps": 389900,
+                "file_path": "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-389900.onnx",
+                "reward": 358.8972951253255,
+                "creation_time": 1778615906.2243392,
+                "auxillary_file_paths": [
+                    "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-389900.pt"
+                ]
+            },
+            {
+                "steps": 399900,
+                "file_path": "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-399900.onnx",
+                "reward": 358.70302036830356,
+                "creation_time": 1778616669.5781915,
+                "auxillary_file_paths": [
+                    "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-399900.pt"
+                ]
+            },
+            {
+                "steps": 400100,
+                "file_path": "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-400100.onnx",
+                "reward": 364.283642578125,
+                "creation_time": 1778616677.1338012,
+                "auxillary_file_paths": [
+                    "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-400100.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 400100,
+            "file_path": "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent.onnx",
+            "reward": 364.283642578125,
+            "creation_time": 1778616677.1338012,
+            "auxillary_file_paths": [
+                "results\\usv_no_ppo_train_1\\USV_GlobalRLAgent\\USV_GlobalRLAgent-400100.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.5.1+cu121"
+    }
+}
