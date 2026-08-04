@@ -1024,6 +1024,8 @@ MonoBehaviour:
   enableTaskLoop: 1
   spawnManager: {fileID: 398022124}
   target: {fileID: 1521328185}
+  safeNearMissDistance: 3
+  desiredSpeed: 1.2
   collisionCheckRadius: 1.5
   minObstacleCount: 3
   targetArriveThreshold: 2

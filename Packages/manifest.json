@@ -6,6 +6,7 @@
     "com.unity.ml-agents": "file:../ml-agents-release_23_tag/com.unity.ml-agents",
     "com.unity.nuget.newtonsoft-json": "3.2.2",
     "com.unity.render-pipelines.high-definition": "14.0.12",
+    "com.unity.render-pipelines.high-definition-config": "17.0.4",
     "com.unity.sentis": "1.1.0",
     "com.unity.textmeshpro": "3.0.7",
     "com.unity.timeline": "1.7.7",

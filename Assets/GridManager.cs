@@ -25,7 +25,7 @@ public class GridManager : MonoBehaviour
 {
     [Header("水域挂载配置（二选一）")]
     [Tooltip("是否自动读取水域实际尺寸（优先Collider，再读Mesh）")]
-    public bool autoReadWaterSize = true; // 自动读取开关
+    public bool autoReadWaterSize = true;
     [Tooltip("手动输入水域X轴长度（米），自动读取关闭时生效")]
     public float manualWaterSizeX = 100f;
     [Tooltip("手动输入水域Z轴长度（米），自动读取关闭时生效")]
@@ -33,14 +33,14 @@ public class GridManager : MonoBehaviour
 
     [Header("栅格基础配置")]
     public float 栅格尺寸 = 1f;
-    public Transform 水域平面; // 必须挂载水域GameObject（定位+读取用）
+    public Transform 水域平面;
     public LayerMask obstacleLayer;
     public Vector3 栅格原点;
     public int 栅格宽度;
     public int 栅格高度;
 
     [Header("初始化性能优化")]
-    public int 每帧初始化数量 = 50; // 保留但不使用，如需彻底清理也可删除
+    public int 每帧初始化数量 = 50;
 
     [Header("障碍物检测配置")]
     public float obstacleCheckRadius = 0.5f;
@@ -53,30 +53,25 @@ public class GridManager : MonoBehaviour
     public Color 障碍物颜色 = new Color(1f, 0f, 0f, 0.7f);
 
     [Header("初始化超时保护")]
-    public float initTimeout = 10f; // 保留但不使用，如需彻底清理也可删除
+    public float initTimeout = 10f;
 
-    // 公开的栅格尺寸/原点（兼容原代码的英文命名）
     public float gridCellSize = 1f;
     public Vector3 gridOrigin = Vector3.zero;
 
-    // 私有字段（删除了3个未使用的字段：初始化索引、isInitializing、initTimer）
     private Node[,] 栅格地图;
-    private bool isGridReady = false; // 唯一的栅格就绪标记
+    private bool isGridReady = false;
     private Collider[] 碰撞检测结果 = new Collider[1];
     private Vector2 水域大小缓存;
     private float 栅格半尺寸;
 
-    // 水域边界缓存
     private float waterMinX;
     private float waterMaxX;
     private float waterMinZ;
     private float waterMaxZ;
-    public float WaterHeight => 水域平面.position.y; // 直接返回水域平面的Y轴高度（即水域高度）
+    public float WaterHeight => 水域平面.position.y;
     public float WaterMinY { get; private set; }
     public float WaterMaxY { get; private set; }
-    
 
-    // 缓存上次边界值（防抖用）
     private float lastWaterMinX;
     private float lastWaterMaxX;
     private float lastWaterMinZ;
@@ -84,13 +79,10 @@ public class GridManager : MonoBehaviour
     private float lastWaterMinY;
     private float lastWaterMaxY;
 
-    // 加到 GridManager 类的最上方（类作用域内）
     private static GridManager _instance;
 
-    // ========== 新增：初始化完成标识（时序校验核心） ==========
     public bool IsInitialized { get; private set; }
 
-    // ========== 新增：默认起始位置（解决CS1061错误） ==========
     public Vector3 DefaultStartPosition
     {
         get
@@ -100,12 +92,10 @@ public class GridManager : MonoBehaviour
                 Debug.LogWarning("GridManager：默认起始位置获取失败，栅格未初始化！");
                 return Vector3.zero;
             }
-            // 返回水域中心作为默认起始位置（可根据需求调整）
             return 水域平面.position + new Vector3(0, 0.05f, 0);
         }
     }
 
-    // 公开属性（兼容英文命名）
     public int gridWidth => 栅格宽度;
     public int gridHeight => 栅格高度;
     public float WaterMinX => waterMinX;
@@ -115,88 +105,65 @@ public class GridManager : MonoBehaviour
 
     void Start()
     {
-        // 1. 基础校验（保留原有逻辑）
         if (水域平面 == null)
         {
             Debug.LogError("GridManager：未赋值水域平面！");
-            IsInitialized = false; // 标记初始化失败
+            IsInitialized = false;
             return;
         }
 
-        // 2. 计算栅格基础参数（保留原有逻辑）
         栅格半尺寸 = 栅格尺寸 / 2f;
         计算水域大小();
 
-        // 精准计算栅格尺寸（取消向上取整）
         栅格宽度 = Mathf.RoundToInt(水域大小缓存.x / 栅格尺寸);
         栅格高度 = Mathf.RoundToInt(水域大小缓存.y / 栅格尺寸);
 
-        // 限制栅格范围不超过水域
         栅格宽度 = Mathf.Clamp(栅格宽度, 10, Mathf.RoundToInt(水域大小缓存.x / 栅格尺寸));
         栅格高度 = Mathf.Clamp(栅格高度, 10, Mathf.RoundToInt(水域大小缓存.y / 栅格尺寸));
 
-        // 对齐栅格原点到水域中心
         栅格原点 = 水域平面.position - new Vector3(水域大小缓存.x / 2, 0, 水域大小缓存.y / 2);
         栅格原点.y = 水域平面.position.y;
-        gridOrigin = 栅格原点; // 同步英文命名的原点
-        gridCellSize = 栅格尺寸; // 同步英文命名的单元格大小
+        gridOrigin = 栅格原点;
+        gridCellSize = 栅格尺寸;
 
-        // 3. 初始化栅格地图数组（保留）
         栅格地图 = new Node[栅格宽度, 栅格高度];
 
-        // ================ 关键修改：关闭分帧，启用同步初始化 ================
-        // 直接同步初始化栅格
         同步初始化栅格();
-
-        // 4. 标记障碍物（修复参数问题：原方法不需要Camera参数）
         标记障碍物();
 
-        // 标记栅格就绪
         isGridReady = true;
-        // ========== 关键修改：标记初始化完成 ==========
         IsInitialized = true;
 
-        // 日志更新：提示同步初始化完成
         Debug.Log($"GridManager：核心栅格同步初始化完成，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}");
     }
 
-    // 同步初始化栅格方法（替代分帧）
     void 同步初始化栅格()
     {
-        // 双层循环遍历所有栅格，直接创建节点（无分帧延迟）
         for (int x = 0; x < 栅格宽度; x++)
         {
             for (int z = 0; z < 栅格高度; z++)
             {
-                // 原分帧处理的节点创建逻辑（直接写在这里，替代不存在的“创建栅格节点”方法）
                 Vector3 节点位置 = 栅格原点 + new Vector3(
                     x * 栅格尺寸 + 栅格半尺寸,
                     水域平面.position.y,
                     z * 栅格尺寸 + 栅格半尺寸
                 );
 
-                // 初始化节点为可行走状态（障碍物后续标记）
                 栅格地图[x, z] = new Node(true, 节点位置, x, z);
             }
         }
     }
 
-    // 彻底删除无用的Update方法（因为分帧逻辑已关闭，留着无意义）
-    // void Update() {}
-
-    // 检查栅格坐标有效性（核心方法）
     public bool IsValidGridPosition(Vector2Int gridPos)
     {
         return gridPos.x >= 0 && gridPos.x < 栅格宽度 && gridPos.y >= 0 && gridPos.y < 栅格高度;
     }
 
-    // 栅格是否就绪（核心方法）
     public bool IsGridReady()
     {
-        return isGridReady && IsInitialized; // 关联初始化完成标识
+        return isGridReady && IsInitialized;
     }
 
-    // 标记障碍物（核心方法）
     public void 标记障碍物(Camera 主相机 = null)
     {
         if (栅格地图 == null)
@@ -242,25 +209,22 @@ public class GridManager : MonoBehaviour
         Debug.Log($"GridManager：障碍物标记完成，共检测{总节点数}个节点，发现{障碍物数量}个障碍物节点");
     }
 
-    // 重置栅格（核心方法）
     public void 重置栅格()
     {
         重新初始化栅格数据();
         标记障碍物();
-        IsInitialized = true; // 重置后重新标记初始化完成
+        IsInitialized = true;
         Debug.Log("GridManager：栅格已重置并重新标记障碍物");
     }
 
-    // 初始化栅格（供外部调用）
     public void 初始化栅格()
     {
         重新初始化栅格数据();
         标记障碍物();
-        IsInitialized = true; // 初始化后标记完成
+        IsInitialized = true;
         Debug.Log("GridManager：栅格初始化完成（适配SpawnManager调用）");
     }
 
-    // 重新初始化栅格数据（私有核心方法）
     private void 重新初始化栅格数据()
     {
         if (水域平面 == null)
@@ -307,7 +271,6 @@ public class GridManager : MonoBehaviour
         Debug.Log($"GridManager：重新初始化完成，水域尺寸：{水域大小缓存.x}x{水域大小缓存.y}，栅格参数：{栅格宽度}x{栅格高度}");
     }
 
-    // 计算水域大小（核心优化方法）
     private void 计算水域大小()
     {
         if (水域平面 == null)
@@ -317,7 +280,6 @@ public class GridManager : MonoBehaviour
             return;
         }
 
-        // 自动/手动模式切换
         Vector2 newWaterSize;
         if (autoReadWaterSize)
         {
@@ -328,13 +290,11 @@ public class GridManager : MonoBehaviour
             newWaterSize = new Vector2(manualWaterSizeX, manualWaterSizeZ);
         }
 
-        // 防抖更新
         if (Mathf.Abs(newWaterSize.x - 水域大小缓存.x) > 0.01f || Mathf.Abs(newWaterSize.y - 水域大小缓存.y) > 0.01f)
         {
             水域大小缓存 = newWaterSize;
         }
 
-        // 计算水域边界
         waterMinX = 水域平面.position.x - 水域大小缓存.x / 2;
         waterMaxX = 水域平面.position.x + 水域大小缓存.x / 2;
         waterMinZ = 水域平面.position.z - 水域大小缓存.y / 2;
@@ -342,7 +302,6 @@ public class GridManager : MonoBehaviour
         WaterMinY = 水域平面.position.y - 0.1f;
         WaterMaxY = 水域平面.position.y + 0.1f;
 
-        // 日志防抖
         if (Mathf.Abs(waterMinX - lastWaterMinX) > 0.01f ||
             Mathf.Abs(waterMaxX - lastWaterMaxX) > 0.01f ||
             Mathf.Abs(waterMinZ - lastWaterMinZ) > 0.01f ||
@@ -361,10 +320,8 @@ public class GridManager : MonoBehaviour
         }
     }
 
-    // 自动获取水域尺寸（私有方法）
     private Vector2 GetAutoWaterSize(GameObject waterObj)
     {
-        // 优先读Collider
         Collider waterCollider = waterObj.GetComponent<Collider>();
         if (waterCollider != null)
         {
@@ -374,7 +331,6 @@ public class GridManager : MonoBehaviour
             );
         }
 
-        // 其次读Mesh
         MeshFilter waterMesh = waterObj.GetComponent<MeshFilter>();
         if (waterMesh != null && waterMesh.mesh != null)
         {
@@ -384,12 +340,10 @@ public class GridManager : MonoBehaviour
             );
         }
 
-        // 兜底
         Debug.LogWarning("GridManager：自动读取水域尺寸失败，使用手动输入默认值");
         return new Vector2(manualWaterSizeX, manualWaterSizeZ);
     }
 
-    // 世界坐标转栅格坐标（中文方法，兼容原代码）
     public Vector2Int 世界转栅格(Vector3 世界坐标)
     {
         if (!isGridReady)
@@ -406,7 +360,6 @@ public class GridManager : MonoBehaviour
         return new Vector2Int(x, z);
     }
 
-    // 栅格坐标转世界坐标（中文方法，兼容原代码）
     public Vector3 栅格转世界(Vector2Int 栅格坐标)
     {
         if (!isGridReady)
@@ -424,25 +377,21 @@ public class GridManager : MonoBehaviour
         );
     }
 
-    // 世界坐标转栅格坐标（英文方法，兼容BoatController）
     public Vector2Int WorldToGrid(Vector3 worldPos)
     {
         return 世界转栅格(worldPos);
     }
 
-    // 栅格坐标转世界坐标（英文方法，兼容BoatController）
     public Vector3 GridToWorld(Vector2Int gridPos)
     {
         return 栅格转世界(gridPos);
     }
 
-    // ======== 新增：IsGridPassable 英文方法（解决CS1061错误）========
     public bool IsGridPassable(Vector2Int gridPos)
     {
         return 栅格是否可通行(gridPos);
     }
 
-    // 检查栅格是否可通行（中文方法，兼容原代码）
     public bool 栅格是否可通行(Vector2Int 栅格坐标)
     {
         if (!isGridReady || 栅格地图 == null)
@@ -462,12 +411,9 @@ public class GridManager : MonoBehaviour
     {
         get
         {
-            // 方式1：自动创建（若GridManager是场景内的组件，推荐先检查场景内实例）
             if (_instance == null)
             {
-                // 替换过时的 FindObjectOfType 为 FindAnyObjectByType（Unity官方推荐）
                 _instance = UnityEngine.Object.FindAnyObjectByType<GridManager>();
-                // 可选：确保场景内唯一
                 if (_instance == null)
                 {
                     GameObject go = new GameObject("GridManager");
@@ -478,20 +424,11 @@ public class GridManager : MonoBehaviour
         }
     }
 
-
-    // ========== 新增：IsWalkable 方法（随机点核心） ==========
-    /// <summary>
-    /// 判断栅格是否可通行（英文命名，兼容随机点方法）
-    /// </summary>
     public bool IsWalkable(Vector2Int gridPos)
     {
         return 栅格是否可通行(gridPos);
     }
 
-    // ========== 新增：GetRandomWalkablePosition 方法（解决目标点全0 + Random二义性） ==========
-    /// <summary>
-    /// 获取栅格通行区域内的随机有效位置
-    /// </summary>
     public Vector3 GetRandomWalkablePosition()
     {
         if (!IsInitialized)
@@ -502,7 +439,6 @@ public class GridManager : MonoBehaviour
 
         List<Vector2Int> walkableGrids = new List<Vector2Int>();
 
-        // 遍历所有栅格，收集通行节点
         for (int x = 0; x < 栅格宽度; x++)
         {
             for (int y = 0; y < 栅格高度; y++)
@@ -515,24 +451,18 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // 无有效通行区时返回零向量
         if (walkableGrids.Count == 0)
         {
             Debug.LogError("GridManager：无可用的通行栅格！");
             return Vector3.zero;
         }
 
-        // 关键修复：明确指定UnityEngine.Random，消除二义性
         Vector2Int randomGrid = walkableGrids[UnityEngine.Random.Range(0, walkableGrids.Count)];
         Vector3 worldPos = GridToWorld(randomGrid);
-        worldPos.y = 0.05f; // 匹配无人船Y轴高度
+        worldPos.y = 0.05f;
         return worldPos;
     }
 
-    // ========== 新增：GetAllSafePositions 方法（解决CS1061错误） ==========
-    /// <summary>
-    /// 获取所有安全通行的栅格位置（世界坐标）
-    /// </summary>
     public List<Vector3> GetAllSafePositions()
     {
         if (!IsInitialized)
@@ -558,17 +488,15 @@ public class GridManager : MonoBehaviour
         return safePositions;
     }
 
-    // 强制刷新栅格（上下文菜单）
     [ContextMenu("强制刷新栅格和障碍物")]
     public void 强制刷新栅格()
     {
         重新初始化栅格数据();
         标记障碍物();
-        IsInitialized = true; // 刷新后重新标记
+        IsInitialized = true;
         Debug.Log("GridManager：已强制刷新栅格和障碍物标记");
     }
 
-    // 定位到栅格原点（上下文菜单）
     [ContextMenu("定位到栅格原点")]
     public void 定位到栅格原点()
     {
@@ -586,7 +514,6 @@ public class GridManager : MonoBehaviour
         Debug.Log($"GridManager：已定位到栅格中心，坐标：{栅格范围.center}");
     }
 
-    // Gizmos绘制（保持原有逻辑）
     private void OnDrawGizmos()
     {
         if (水域平面 == null)
@@ -601,13 +528,11 @@ public class GridManager : MonoBehaviour
             计算水域大小();
         }
 
-        // 绘制水域范围
         Gizmos.color = new Color(0.3f, 0.3f, 0.3f, 0.1f);
         Gizmos.DrawWireCube(水域平面.position, new Vector3(水域大小缓存.x, 0.1f, 水域大小缓存.y));
 
         if (!isGridReady || 栅格地图 == null) return;
 
-        // 绘制栅格线
         Gizmos.color = 栅格线颜色;
         float gridMaxX = 栅格原点.x + 栅格宽度 * 栅格尺寸;
         float gridMaxZ = 栅格原点.z + 栅格高度 * 栅格尺寸;
@@ -616,7 +541,6 @@ public class GridManager : MonoBehaviour
         float waterMinZ = 水域平面.position.z - 水域大小缓存.y / 2;
         float waterMaxZ = 水域平面.position.z + 水域大小缓存.y / 2;
 
-        // X方向栅格线
         for (int x = 0; x <= 栅格宽度; x++)
         {
             float lineX = 栅格原点.x + x * 栅格尺寸;
@@ -628,7 +552,6 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // Z方向栅格线
         for (int z = 0; z <= 栅格高度; z++)
         {
             float lineZ = 栅格原点.z + z * 栅格尺寸;
@@ -640,7 +563,6 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // 绘制障碍物
         Gizmos.color = 障碍物颜色;
         for (int x = 0; x < 栅格宽度; x++)
         {
@@ -667,37 +589,116 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        // 绘制栅格边界
         Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.05f);
         Gizmos.DrawWireCube(
             栅格原点 + new Vector3(栅格宽度 * 栅格尺寸 / 2, 栅格线高度, 栅格高度 * 栅格尺寸 / 2),
             new Vector3(栅格宽度 * 栅格尺寸, 0.1f, 栅格高度 * 栅格尺寸)
         );
 
-        // 绘制路径
-        ImprovedAStar pathfinder = UnityEngine.Object.FindAnyObjectByType<ImprovedAStar>(); // 加命名空间限定，消除歧义+性能最优
+        // 绘制路径 - 黄(已走) / 绿(未走) / 紫(终点)
+        ImprovedAStar pathfinder = UnityEngine.Object.FindAnyObjectByType<ImprovedAStar>();
         if (pathfinder != null && pathfinder.path != null && pathfinder.path.Count > 1)
         {
-            Gizmos.color = Color.cyan;
+            // 1. 找到当前单位位置（为了判断走到哪了）
+            USV_LocalPlanner localPlanner = UnityEngine.Object.FindAnyObjectByType<USV_LocalPlanner>();
+            Vector3 currentPos = localPlanner != null ? localPlanner.transform.position : Vector3.zero;
+
+            // 2. 计算最近路径点的索引 (分界线)
+            int nearestIndex = 0;
+            float minDist = float.MaxValue;
+            for (int i = 0; i < pathfinder.path.Count; i++)
+            {
+                Vector3 worldPos = 栅格转世界(pathfinder.path[i]);
+                float dist = Vector3.Distance(new Vector3(currentPos.x, 0, currentPos.z),
+                                               new Vector3(worldPos.x, 0, worldPos.z));
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    nearestIndex = i;
+                }
+            }
+            // 边界保护，防止数组越界
+            nearestIndex = Mathf.Clamp(nearestIndex, 0, pathfinder.path.Count - 2);
+
+            // 3. 循环绘制路径
             for (int i = 0; i < pathfinder.path.Count - 1; i++)
             {
                 Vector3 start = 栅格转世界(pathfinder.path[i]);
                 Vector3 end = 栅格转世界(pathfinder.path[i + 1]);
+
+                // 边界检查 (如果在水域外就不画，跟你原来逻辑一致)
                 if (start.x >= waterMinX && start.x <= waterMaxX && start.z >= waterMinZ && start.z <= waterMaxZ &&
                     end.x >= waterMinX && end.x <= waterMaxX && end.z >= waterMinZ && end.z <= waterMaxZ)
                 {
                     start.y = 0.1f;
                     end.y = 0.1f;
-                    Gizmos.DrawLine(start, end);
-                    Gizmos.DrawSphere(start, 栅格尺寸 * 0.3f);
+
+                    // --- 核心修改：分颜色绘制 ---
+                    if (i < nearestIndex)
+                    {
+                        Gizmos.color = Color.green; // 已走过的为黄色
+                    }
+                    else
+                    {
+                        Gizmos.color = Color.yellow;  // 未走过的为绿色
+                    }
+// 使用 Handles 绘制带粗细的线 (需要在顶部引用 UnityEditor)
+// 参数：起点, 终点, 线宽
+UnityEditor.Handles.color = Gizmos.color; // 保持和上面设置的颜色一致
+UnityEditor.Handles.DrawLine(start, end, 2f); // 2f 就是粗细，你调成 3f 或者 4f 都可以
+                    // 每个节点画个小球 (可以注释掉这一行，只留线，画面更干净)
+                    // Gizmos.DrawSphere(start, 栅格尺寸 * 0.3f); 
                 }
             }
+
+            // 4. 绘制终点 (紫色)
             Vector3 finalPoint = 栅格转世界(pathfinder.path[pathfinder.path.Count - 1]);
             if (finalPoint.x >= waterMinX && finalPoint.x <= waterMaxX && finalPoint.z >= waterMinZ && finalPoint.z <= waterMaxZ)
             {
                 finalPoint.y = 0.1f;
+
+                // 先把颜色设为紫色
+                Gizmos.color = new Color(0.5f, 0f, 0.5f, 0.8f);
                 Gizmos.DrawSphere(finalPoint, 栅格尺寸 * 0.4f);
+
+                // 画个小白十字 (可选)
+                Gizmos.color = Color.white;
+                float crossSize = 栅格尺寸 * 0.2f;
+                Gizmos.DrawLine(finalPoint - Vector3.right * crossSize, finalPoint + Vector3.right * crossSize);
+                Gizmos.DrawLine(finalPoint - Vector3.forward * crossSize, finalPoint + Vector3.forward * crossSize);
             }
         }
+
+    
     }
-}
+
+    // ========== DrawThickLine 方法 - 放在 OnDrawGizmos 外面 ==========
+    private void DrawThickLine(Vector3 start, Vector3 end, Color color, float thickness)
+    {
+        Vector3 direction = (end - start).normalized;
+
+        Vector3 perpendicular = Vector3.Cross(direction, Vector3.up).normalized;
+        if (perpendicular.magnitude < 0.01f)
+        {
+            perpendicular = Vector3.right;
+        }
+
+        int lineCount = Mathf.Max(3, Mathf.RoundToInt(thickness * 10f));
+
+        for (int i = 0; i <= lineCount; i++)
+        {
+            float t = (float)i / lineCount;
+            float offset = (t - 0.5f) * thickness * 2f;
+            Vector3 offsetPos = perpendicular * offset;
+
+            Vector3 startOffset = start + offsetPos;
+            Vector3 endOffset = end + offsetPos;
+
+            float brightness = 1f - Mathf.Abs(t - 0.5f) * 0.6f;
+            Color lineColor = new Color(color.r * brightness, color.g * brightness, color.b * brightness, color.a);
+            Gizmos.color = lineColor;
+            Gizmos.DrawLine(startOffset, endOffset);
+        }
+    }
+
+} // ← GridManager 类结束

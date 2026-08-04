@@ -1,0 +1,13 @@
+初始数据
+序号	算法名称    	        图例文字（直接复制）       线条颜色
+10	优化 PPO 算法	        Proposed Optimized PPO    黑
+9	传统基线 PPO 算法	189-589   Baseline PPO        红（选取18900-58900步数据）
+11	未开启强化学习	         Non-RL Baseline                 蓝
+训练步数：Training Steps
+
+需平滑使用
+字体26，刻度20
+选择曲线图，字体26加粗，刻度20，线3 
+
+
+最后得到.opju文件，可插入word文档使用
