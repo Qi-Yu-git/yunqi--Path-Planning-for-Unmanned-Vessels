@@ -80,14 +80,19 @@ public partial class USV_LocalPlanner : MonoBehaviour
 
     public void OnAgentActionReceived(ActionBuffers actions)
     {
-        Vector3 targetVelocity = Vector3.zero;
-        float targetRotation = 0f;
-
-        (targetVelocity, targetRotation) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
-
-        targetVelocity = Vector3.ClampMagnitude(targetVelocity, MaxLinearVel);
-        rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
-        transform.Rotate(0, targetRotation * Time.deltaTime, 0);
+        if (actions.ContinuousActions.Length >= 2)
+        {
+            float forward = actions.ContinuousActions[0];
+            float turn = actions.ContinuousActions[1];
+            rb.linearVelocity = transform.forward * forward * MaxLinearVel;
+            transform.Rotate(0, turn * 60f * Time.deltaTime, 0);
+        }
+        else if (actions.DiscreteActions.Length >= 1)
+        {
+            var (vel, rot) = GetGlobalActionVelocity(actions.DiscreteActions[0]);
+            rb.linearVelocity = new Vector3(vel.x, rb.linearVelocity.y, vel.z);
+            transform.Rotate(0, rot * Time.deltaTime, 0);
+        }
     }
 
     private void DetectAndPredictDynamicObstacles()
@@ -322,10 +327,10 @@ public partial class USV_LocalPlanner : MonoBehaviour
                 float colregsScore = CalculateCOLREGsScore(predictedPos, predictedRot, angularVel);
                 float smoothScore = CalculateSmoothScore(linearVel, angularVel);
 
-                float totalScore = obstacleScore * 0.9f
-                                 + pathTrackScore * 0.05f
-                                 + colregsScore * 0.03f
-                                 + smoothScore * 0.02f;
+                float totalScore = pathTrackScore * 0.3f   // heading
+                                 + obstacleScore * 0.4f    // dist
+                                 + smoothScore * 0.2f      // velocity
+                                 + colregsScore * 0.1f;    // COLREGs
 
                 if (totalScore > bestScore)
                 {

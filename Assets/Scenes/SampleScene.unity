@@ -970,6 +970,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9a22e1d6b3a17d844877f1dc4d76ea75, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  safeCostWeight: 3
+  pathOffset: {x: 0, y: 0}
+  enableClosedLoopFeedback: 1
+  safeCostWeightAStar: 3
+  safeCostLambda: 2
+  safeDistanceRadius: 2
   targetWorldPos: {x: 0, y: 0, z: 0}
   gridManager: {fileID: 41255708}
   startPos: {fileID: 173794670}
@@ -1024,14 +1030,19 @@ MonoBehaviour:
   enableTaskLoop: 1
   spawnManager: {fileID: 398022124}
   target: {fileID: 1521328185}
-  safeNearMissDistance: 3
-  desiredSpeed: 1.2
+  colregsEvaluator: {fileID: 0}
   collisionCheckRadius: 1.5
   minObstacleCount: 3
   targetArriveThreshold: 2
   boundaryThresholdFactor: 0.8
   pathCompleteWaypointCount: 3
   pathCompleteTerminateThreshold: 3
+  desiredSpeed: 1.2
+  safeNearMissDistance: 3
+  enableRewardDebug: 1
+  debugUpdateInterval: 30
+  logRewardDetails: 0
+  recordRewardHistory: 1
 --- !u!114 &173794673
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2046,6 +2057,7 @@ MonoBehaviour:
   detectInterval: 0.1
   boxLineWidth: 10
   labelFontSize: 20
+  enableCLAHE: 1
 --- !u!114 &537956251
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5037,6 +5049,163 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1198013969}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1837460094
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1837460097}
+  - component: {fileID: 1837460096}
+  - component: {fileID: 1837460095}
+  - component: {fileID: 1837460099}
+  - component: {fileID: 1837460098}
+  m_Layer: 0
+  m_Name: Commissioning
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &1837460095
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1837460094}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1fa9dafdf73227469212fea55def618, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  autoReadWaterSize: 1
+  manualWaterSizeX: 100
+  manualWaterSizeZ: 80
+  "\u6805\u683C\u5C3A\u5BF8": 1
+  "\u6C34\u57DF\u5E73\u9762": {fileID: 0}
+  obstacleLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  "\u6805\u683C\u539F\u70B9": {x: 0, y: 0, z: 0}
+  "\u6805\u683C\u5BBD\u5EA6": 0
+  "\u6805\u683C\u9AD8\u5EA6": 0
+  "\u6BCF\u5E27\u521D\u59CB\u5316\u6570\u91CF": 50
+  obstacleCheckRadius: 0.2
+  radiusOffset: 0
+  "\u6805\u683C\u7EBF\u9AD8\u5EA6": 0.1
+  "\u969C\u788D\u7269\u663E\u793A\u9AD8\u5EA6": 0.2
+  "\u6805\u683C\u7EBF\u989C\u8272": {r: 0.5, g: 0.5, b: 0.5, a: 0.1}
+  "\u969C\u788D\u7269\u989C\u8272": {r: 1, g: 0, b: 0, a: 0.7}
+  initTimeout: 10
+  gridCellSize: 1
+  gridOrigin: {x: 0, y: 0, z: 0}
+--- !u!114 &1837460096
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1837460094}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a22e1d6b3a17d844877f1dc4d76ea75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  safeCostWeight: 3
+  pathOffset: {x: 0, y: 0}
+  enableClosedLoopFeedback: 1
+  safeCostWeightAStar: 0.25
+  safeCostLambda: 1.2
+  safeDistanceRadius: 1
+  targetWorldPos: {x: 0, y: 0, z: 0}
+  gridManager: {fileID: 0}
+  startPos: {fileID: 0}
+  targetPos: {fileID: 0}
+  path: []
+--- !u!4 &1837460097
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1837460094}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.17776379, y: -2.3896499, z: 0.16776124}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1837460098
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1837460094}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e4536525e773f8c4dadde28f8ffe6af4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  targetProximitySmoothing: 0.3
+  maxStepReward: 2
+  minStepPenalty: -1
+  enableTaskLoop: 1
+  spawnManager: {fileID: 0}
+  target: {fileID: 0}
+  colregsEvaluator: {fileID: 0}
+  collisionCheckRadius: 1.5
+  minObstacleCount: 3
+  targetArriveThreshold: 2
+  boundaryThresholdFactor: 0.8
+  pathCompleteWaypointCount: 3
+  pathCompleteTerminateThreshold: 3
+  desiredSpeed: 1.2
+  safeNearMissDistance: 3
+  enableRewardDebug: 1
+  debugUpdateInterval: 30
+  logRewardDetails: 0
+  recordRewardHistory: 1
+--- !u!114 &1837460099
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1837460094}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_BrainParameters:
+    VectorObservationSize: 1
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 01000000
+    VectorActionSize: 01000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: My Behavior
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
 --- !u!1 &1841934249
 GameObject:
   m_ObjectHideFlags: 0
@@ -5927,3 +6096,4 @@ SceneRoots:
   - {fileID: 1325994584}
   - {fileID: 959740698}
   - {fileID: 981483755}
+  - {fileID: 1837460097}

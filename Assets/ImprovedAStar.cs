@@ -5,62 +5,96 @@ using UnityEngine;
 
 public class ImprovedAStar : MonoBehaviour
 {
-    public Vector3 targetWorldPos; // ´æ´¢Ä¿±êµãµÄÊÀ½ç×ø±ê
-    // ³£Á¿¶¨Òå
+    [Header("é—­ç¯åé¦ˆå‚æ•° (å†³ç­–å±‚â†’è§„åˆ’å±‚)")]
+    [Tooltip("å®‰å…¨è·ç¦»ä»£ä»·æƒé‡ (åŠ¨æ€è°ƒæ•´)")]
+    public float safeCostWeight = 3.0f;
+
+    [Tooltip("è·¯å¾„åç§»ä¿®æ­£")]
+    public Vector2 pathOffset = Vector2.zero;
+
+    [Tooltip("æ˜¯å¦å¯ç”¨é—­ç¯åé¦ˆ")]
+    public bool enableClosedLoopFeedback = true;
+
+    [Header("å®‰å…¨è·ç¦»ä»£ä»·å‚æ•° (A*)")]
+    [Tooltip("å®‰å…¨è·ç¦»ä»£ä»·æƒé‡ C_safe")]
+    public float safeCostWeightAStar = 3.0f;
+
+    [Tooltip("è¡°å‡ç³»æ•° Î»")]
+    public float safeCostLambda = 2.0f;
+
+    [Tooltip("å®‰å…¨è·ç¦»åŠå¾„ r_safe (ç±³)")]
+    public float safeDistanceRadius = 2.0f;
+
+    private DecisionFeedbackManager feedbackManager;
+
+    public Vector3 targetWorldPos;
     private const float WATER_Y_HEIGHT = 0.05f;
     private const int NEIGHBOR_SEARCH_RANGE = 2;
-    private const float DIAGONAL_COST = 1.41421356f; // ¾«È·¡Ì2Öµ
+    private const int SAFETY_SEARCH_RANGE = 2;
+    private const float DIAGONAL_COST = 1.41421356f;
     private const float STRAIGHT_COST = 1f;
-    // ¾²Ì¬ÁÚ¾ÓÆ«ÒÆÁ¿£¨8·½Ïò£©
+
     private static readonly Vector2Int[] NeighborOffsets = new[]
     {
         new Vector2Int(-1, -1), new Vector2Int(0, -1), new Vector2Int(1, -1),
         new Vector2Int(-1, 0),                          new Vector2Int(1, 0),
         new Vector2Int(-1, 1),  new Vector2Int(0, 1), new Vector2Int(1, 1)
     };
+
     [SerializeField] private GridManager gridManager;
     [SerializeField] private Transform startPos;
     [SerializeField] private Transform targetPos;
     public List<Vector2Int> path;
 
-    // Õ¤¸ñ²ÎÊı»º´æ
     private int gridWidth;
     private int gridHeight;
     private float cellSize;
     private Vector3 gridOrigin;
-    private float cellSizeHeuristic; // Ô¤¼ÆËãÆô·¢Ê½ÏµÊı
-    // ¸´ÓÃ¼¯ºÏ£¨¼õÉÙGC£©
+    private float cellSizeHeuristic;
+
     private List<Vector2Int> neighborBuffer = new List<Vector2Int>(8);
     private BinaryHeapPriorityQueue openQueue = new BinaryHeapPriorityQueue(1024);
-    private NodeData[,] nodeDataArray; // ¸´ÓÃ½ÚµãÊı×é
+    private NodeData[,] nodeDataArray;
     private List<Vector2Int> pathBuffer = new List<Vector2Int>(256);
 
-    // ÔÚImprovedAStarÀàÖĞÌí¼Ó×´Ì¬±ê¼Ç
     private bool isCalculatingPath = false;
 
     private void Start()
     {
-        // ======== ĞÂÔö£º³õÊ¼»¯Ä¿±êÊÀ½ç×ø±ê£¨¼ÓÔÚ×î¿ªÍ·£©========
-        if (targetPos != null) // ÏÈÅĞ¿Õ£¬±ÜÃâ¿ÕÖ¸Õë
+        if (targetPos != null)
         {
             targetWorldPos = targetPos.position;
         }
         else
         {
-            Debug.LogError("ImprovedAStar: Î´ÉèÖÃtargetPos£¬Â·¾¶¹æ»®Ä¿±êÎª¿Õ£¡");
+            Debug.LogError("ImprovedAStar: æœªè®¾ç½®targetPosï¼Œè·¯å¾„è§„åˆ’ç›®æ ‡ä¸ºç©ºï¼");
             targetWorldPos = Vector3.zero;
         }
-        // ========================================
 
-        // ÄãÔ­ÓĞËùÓĞÂß¼­ÍêÈ«±£Áô£¬ÎŞĞèĞŞ¸Ä
-        Debug.Log("A*Â·¾¶×¼±¸¼ÆËã£¨µÈ´ıÄ¿±êµãÉú³É£©");
+        Debug.Log("A*è·¯å¾„å‡†å¤‡è®¡ç®—ï¼ˆç­‰å¾…ç›®æ ‡ç‚¹ç”Ÿæˆï¼‰");
         if (CheckDependencies())
         {
             StartCoroutine(DelayCalculatePath(0.5f));
         }
+
+        if (enableClosedLoopFeedback)
+        {
+            feedbackManager = DecisionFeedbackManager.Instance;
+            if (feedbackManager == null)
+            {
+                Debug.LogWarning("[A*] æœªæ‰¾åˆ° DecisionFeedbackManagerï¼Œé—­ç¯åé¦ˆç¦ç”¨");
+            }
+        }
     }
 
-    // ÑÓ³ÙÆô¶¯Â·¾¶¼ÆËã
+    /// <summary>
+    /// è®¾ç½®è·¯å¾„åç§»ä¿®æ­£ (ç”±åé¦ˆç®¡ç†å™¨è°ƒç”¨)
+    /// </summary>
+    public void SetPathOffset(Vector2 offset)
+    {
+        pathOffset = offset;
+    }
+
     private IEnumerator DelayCalculatePath(float delayTime)
     {
         yield return new WaitForSeconds(delayTime);
@@ -69,19 +103,16 @@ public class ImprovedAStar : MonoBehaviour
 
     private void CacheGridParameters()
     {
-        // ======== Ìæ»»ÖĞÎÄ±äÁ¿ÎªÓ¢ÎÄÊôĞÔ ========
-        gridWidth = gridManager.gridWidth;       // Ìæ»» gridManager.Õ¤¸ñ¿í¶È
-        gridHeight = gridManager.gridHeight;     // Ìæ»» gridManager.Õ¤¸ñ¸ß¶È
-        cellSize = gridManager.gridCellSize;     // Ìæ»» gridManager.Õ¤¸ñ³ß´ç
-        gridOrigin = gridManager.gridOrigin;     // Ìæ»» gridManager.Õ¤¸ñÔ­µã
-                                                 // =======================================
-        cellSizeHeuristic = cellSize * 1.0001f; // Î¢Ğ¡Æ«ÒÆÈ·±£Æô·¢Ê½²»¸ß¹À
+        gridWidth = gridManager.gridWidth;
+        gridHeight = gridManager.gridHeight;
+        cellSize = gridManager.gridCellSize;
+        gridOrigin = gridManager.gridOrigin;
+        cellSizeHeuristic = cellSize * 1.0001f;
     }
 
     private void InitializeNodeDataArray()
     {
         nodeDataArray = new NodeData[gridWidth, gridHeight];
-        // Ô¤³õÊ¼»¯ËùÓĞ½Úµã
         for (int x = 0; x < gridWidth; x++)
         {
             for (int y = 0; y < gridHeight; y++)
@@ -101,69 +132,61 @@ public class ImprovedAStar : MonoBehaviour
     {
         if (gridManager == null)
         {
-            Debug.LogError("ImprovedAStar£ºGridManagerÎ´¸³Öµ£¡");
+            Debug.LogError("ImprovedAStarï¼šGridManageræœªèµ‹å€¼ï¼");
             return false;
         }
         if (startPos == null || targetPos == null)
         {
-            Debug.LogError("ImprovedAStar£ºÆğµã»òÄ¿±êµãÎ´¸³Öµ£¡");
+            Debug.LogError("ImprovedAStarï¼šèµ·ç‚¹æˆ–ç›®æ ‡ç‚¹æœªèµ‹å€¼ï¼");
             return false;
         }
         return true;
     }
 
-    // ĞŞ¸ÄCalculatePathAfterDelay·½·¨
     public void CalculatePathAfterDelay()
     {
         if (isCalculatingPath)
         {
-            Debug.Log("Â·¾¶¼ÆËãÒÑÔÚ½øĞĞÖĞ£¬ºöÂÔÖØ¸´ÇëÇó");
+            Debug.Log("è·¯å¾„è®¡ç®—å·²åœ¨è¿›è¡Œä¸­ï¼Œå¿½ç•¥é‡å¤è¯·æ±‚");
             return;
         }
         StartCoroutine(CalculatePathCoroutine());
     }
 
-
-    // Ğ­³Ì°æÂ·¾¶¼ÆËã£¨´øÖØÊÔ»úÖÆ£©
     private IEnumerator CalculatePathCoroutine()
     {
-        // ======== ĞÂÔö£º¸üĞÂÄ¿±êÊÀ½ç×ø±ê£¨¼ÓÔÚ·½·¨×î¿ªÍ·£©========
         if (targetPos != null)
         {
-            // ÈôÄãÃ»ÓĞ ClampPositionToGrid ·½·¨£¬Ö±½ÓÓÃ targetPos.position ¼´¿É
             targetWorldPos = ClampPositionToGrid(targetPos.position);
-            // ±¸ÓÃ·½°¸£¨ÎŞ ClampPositionToGrid Ê±£©£ºtargetWorldPos = targetPos.position;
         }
         else
         {
-            Debug.LogError("A*Â·¾¶¼ÆËãÊ§°Ü£ºtargetPos Î´¸³Öµ£¡");
+            Debug.LogError("A*è·¯å¾„è®¡ç®—å¤±è´¥ï¼štargetPos æœªèµ‹å€¼ï¼");
             path = null;
             yield break;
         }
-        // ========================================================
 
         int retryCount = 0;
         while (retryCount < 3)
         {
             if (gridManager == null)
             {
-                Debug.LogError("A*Â·¾¶¼ÆËãÊ§°Ü£ºgridManager Î´¸³Öµ£¡");
+                Debug.LogError("A*è·¯å¾„è®¡ç®—å¤±è´¥ï¼šgridManager æœªèµ‹å€¼ï¼");
                 path = null;
                 yield break;
             }
 
-            // µÈ´ıÕ¤¸ñ³õÊ¼»¯
             float waitTime = 0f;
             while (!gridManager.IsGridReady() && waitTime < 5f)
             {
-                Debug.LogWarning($"A*µÈ´ıÕ¤¸ñ³õÊ¼»¯...ÒÑµÈ´ı{waitTime:F1}Ãë");
+                Debug.LogWarning($"A*ç­‰å¾…æ …æ ¼åˆå§‹åŒ–...å·²ç­‰å¾…{waitTime:F1}ç§’");
                 waitTime += 0.5f;
                 yield return new WaitForSeconds(0.5f);
             }
 
             if (!gridManager.IsGridReady())
             {
-                Debug.LogError("A*Â·¾¶¼ÆËãÊ§°Ü£ºÕ¤¸ñ³õÊ¼»¯³¬Ê±£¡");
+                Debug.LogError("A*è·¯å¾„è®¡ç®—å¤±è´¥ï¼šæ …æ ¼åˆå§‹åŒ–è¶…æ—¶ï¼");
                 path = null;
                 yield break;
             }
@@ -171,131 +194,88 @@ public class ImprovedAStar : MonoBehaviour
             CacheGridParameters();
             InitializeNodeDataArray();
 
-            // Ğ£Ñé²¢ĞŞÕıÆğµã/ÖÕµã
             Vector3 startWorldPos = ClampPositionToGrid(startPos.position);
             Vector3 targetWorldPos = ClampPositionToGrid(targetPos.position);
-            // ======== Ìæ»»ÖĞÎÄ·½·¨ÎªÓ¢ÎÄ·½·¨ ========
-            Vector2Int startGrid = gridManager.WorldToGrid(startWorldPos);       // Ìæ»» ÊÀ½ç×ªÕ¤¸ñ
-            Vector2Int targetGrid = gridManager.WorldToGrid(targetWorldPos);     // Ìæ»» ÊÀ½ç×ªÕ¤¸ñ
+            Vector2Int startGrid = gridManager.WorldToGrid(startWorldPos);
+            Vector2Int targetGrid = gridManager.WorldToGrid(targetWorldPos);
 
-            // µ÷ÓÃ´øËÑË÷°ë¾¶µÄFindValidGrid
             startGrid = FindValidGrid(startGrid, 5);
             targetGrid = FindValidGrid(targetGrid, 5);
 
             if (startGrid.x == -1 || targetGrid.x == -1)
             {
-                Debug.LogError($"µÚ{retryCount + 1}´ÎÖØÊÔ£ºÎŞ·¨ÕÒµ½ÓĞĞ§Æğµã/ÖÕµã£¡");
+                Debug.LogError($"ç¬¬{retryCount + 1}æ¬¡é‡è¯•ï¼šæ— æ³•æ‰¾åˆ°æœ‰æ•ˆèµ·ç‚¹/ç»ˆç‚¹ï¼");
                 retryCount++;
                 yield return new WaitForSeconds(1f);
                 continue;
             }
 
-            // ¸üĞÂÆğµã/ÖÕµãÊÀ½ç×ø±ê
-            startWorldPos = gridManager.GridToWorld(startGrid);                 // Ìæ»» Õ¤¸ñ×ªÊÀ½ç
+            startWorldPos = gridManager.GridToWorld(startGrid);
             startWorldPos.y = WATER_Y_HEIGHT;
             startPos.position = startWorldPos;
-            targetWorldPos = gridManager.GridToWorld(targetGrid);               // Ìæ»» Õ¤¸ñ×ªÊÀ½ç
+            targetWorldPos = gridManager.GridToWorld(targetGrid);
             targetWorldPos.y = WATER_Y_HEIGHT;
             targetPos.position = targetWorldPos;
 
-            // ¼ÆËãÂ·¾¶£¨°üº¬¼ò»¯£©
             path = FindPath(startGrid, targetGrid);
             if (path != null && path.Count > 1)
             {
-                
-                Debug.Log($"Â·¾¶¼ÆËã³É¹¦£¬°üº¬{path.Count}¸öµã£º{string.Join("->", path)}");
-
+                Debug.Log($"è·¯å¾„è®¡ç®—æˆåŠŸï¼ŒåŒ…å«{path.Count}ä¸ªç‚¹");
+                isCalculatingPath = false;
                 yield break;
             }
             else
             {
-                Debug.LogError("Â·¾¶Îª¿Õ»òÖ»ÓĞÒ»¸öµã£¬ÎŞ·¨ÏÔÊ¾");
-
+                Debug.LogError("è·¯å¾„ä¸ºç©ºæˆ–åªæœ‰ä¸€ä¸ªç‚¹");
                 retryCount++;
                 yield return new WaitForSeconds(1f);
             }
-
-            // µ±Â·¾¶¼ÆËã³É¹¦²¢·µ»ØÊ±
-            if (path != null && path.Count > 1)
-            {
-                Debug.Log($"Â·¾¶¼ÆËã³É¹¦£¬°üº¬{path.Count}¸öµã£º{string.Join("->", path)}");
-                isCalculatingPath = false; // ÖØÖÃ×´Ì¬
-                yield break;
-            }
-
         }
-        isCalculatingPath = false; // Ñ­»·½áÊøºóÖØÖÃ×´Ì¬
 
-        // ĞŞ¸´£ºÊ¹ÓÃUnity 6ÍÆ¼öµÄAPIÌæ»»¹ıÊ±µÄFindObjectOfType
-        Debug.LogError("A*Â·¾¶¼ÆËãÊ§°Ü£º3´ÎÖØÊÔºóÈÔÎª¿Õ£¡³¢ÊÔÖØĞÂÉú³ÉÆğµãÖÕµã...");
+        isCalculatingPath = false;
+        Debug.LogError("A*è·¯å¾„è®¡ç®—å¤±è´¥ï¼š3æ¬¡é‡è¯•åä»ä¸ºç©ºï¼å°è¯•é‡æ–°ç”Ÿæˆèµ·ç‚¹ç»ˆç‚¹...");
         RandomSpawnManager spawnManager = FindFirstObjectByType<RandomSpawnManager>();
         if (spawnManager != null)
         {
             spawnManager.Regenerate();
             yield return new WaitForSeconds(0.3f);
-            StartCoroutine(CalculatePathCoroutine()); // ÖØĞÂ¼ÆËãÂ·¾¶
+            StartCoroutine(CalculatePathCoroutine());
         }
         path = null;
     }
 
-    // ÏŞÖÆ×ø±êÔÚÕ¤¸ñ·¶Î§ÄÚ
     public Vector3 ClampPositionToGrid(Vector3 worldPos)
     {
-        // 1. ·À»¤£º¼ì²éÒÑ´æÔÚµÄgridManagerÊÇ·ñÓĞĞ§£¬Í³Ò»Ê¹ÓÃÕ¤¸ñ²ÎÊı¼ÆËã±ß½ç
-        float WATER_Y_HEIGHT = 0.05f; // ÊÊÅäÄãµÄË®ÓòYÖá¸ß¶È
         worldPos.y = WATER_Y_HEIGHT;
 
-        // 2. »ùÓÚÕ¤¸ñ»ù´¡²ÎÊı¼ÆËã±ß½ç£¨¸´ÓÃÔ­Ê¼Âß¼­£¬ĞŞÕıZÖá¼ÆËã£©
         float minX = gridOrigin.x + cellSize * 0.5f;
         float maxX = gridOrigin.x + (gridWidth - 1) * cellSize + cellSize * 0.5f;
         float minZ = gridOrigin.z + cellSize * 0.5f;
         float maxZ = gridOrigin.z + (gridHeight - 1) * cellSize + cellSize * 0.5f;
 
-        // 3. ÏŞÖÆ×ø±êÔÚÕ¤¸ñ±ß½çÄÚ
         float clampedX = Mathf.Clamp(worldPos.x, minX, maxX);
         float clampedZ = Mathf.Clamp(worldPos.z, minZ, maxZ);
-        Vector3 clampedPos = new Vector3(clampedX, WATER_Y_HEIGHT, clampedZ);
-
-        // 4. ÓÅ»¯ºóµÄÈÕÖ¾Êä³ö£¨ĞŞÕıÔ­±ß½çÊä³ö´íÎó£¬±ê×¼»¯Ğ¡ÊıÎ»Êı£©
-        Debug.Log($"ClampÇ°×ø±ê£º({worldPos.x:F2}, {worldPos.y:F2}, {worldPos.z:F2})£¬" +
-                  $"Clampºó×ø±ê£º({clampedPos.x:F2}, {clampedPos.y:F2}, {clampedPos.z:F2})£¬" +
-                  $"±ß½ç[X: {minX:F6}-{maxX:F6}, Z: {minZ:F6}-{maxZ:F6}]");
-
-        // 5. ¶µµ×ÈÕÖ¾ÌáÊ¾£¨½öÓÃÓÚµ÷ÊÔ£©
-        if (gridManager == null)
-        {
-            Debug.LogWarning("GridManagerÎ´¸³Öµ£¬Ê¹ÓÃÕ¤¸ñ»ù´¡²ÎÊı¼ÆËã±ß½ç");
-        }
-
-        return clampedPos;
+        return new Vector3(clampedX, WATER_Y_HEIGHT, clampedZ);
     }
 
-    // ImprovedAStar.cs - FindValidGrid() ·½·¨ÔöÇ¿
     private Vector2Int FindValidGrid(Vector2Int originalGrid, int searchRange = NEIGHBOR_SEARCH_RANGE)
     {
-        // ÏÈ¼ì²éÔ­Ê¼Õ¤¸ñÊÇ·ñÓĞĞ§
-        // ======== Ìæ»»ÖĞÎÄ·½·¨ÎªÓ¢ÎÄ·½·¨ ========
-        if (IsValidGrid(originalGrid) && gridManager.IsGridPassable(originalGrid)) // Ìæ»» Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ
-                                                                                   // =======================================
+        if (IsValidGrid(originalGrid) && gridManager.IsGridPassable(originalGrid))
         {
             return originalGrid;
         }
 
-        // À©´óËÑË÷·¶Î§£¨´Ó5¡ú10£©£¬Ôö¼ÓÕÒµ½ÓĞĞ§Õ¤¸ñµÄ¸ÅÂÊ
         for (int range = 1; range <= searchRange; range++)
         {
             for (int x = -range; x <= range; x++)
             {
                 for (int y = -range; y <= range; y++)
                 {
-                    if (Mathf.Abs(x) == range || Mathf.Abs(y) == range) // Ö»¼ì²éµ±Ç°·¶Î§µÄ±ß½ç
+                    if (Mathf.Abs(x) == range || Mathf.Abs(y) == range)
                     {
                         Vector2Int checkGrid = new Vector2Int(originalGrid.x + x, originalGrid.y + y);
-                        // ======== Ìæ»»ÖĞÎÄ·½·¨ÎªÓ¢ÎÄ·½·¨ ========
-                        if (IsValidGrid(checkGrid) && gridManager.IsGridPassable(checkGrid)) // Ìæ»» Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ
-                                                                                             // =======================================
+                        if (IsValidGrid(checkGrid) && gridManager.IsGridPassable(checkGrid))
                         {
-                            Debug.Log($"ÔÚ·¶Î§ {range} ÕÒµ½ÓĞĞ§Õ¤¸ñ: {checkGrid}");
                             return checkGrid;
                         }
                     }
@@ -303,25 +283,36 @@ public class ImprovedAStar : MonoBehaviour
             }
         }
 
-        Debug.LogError($"Î´ÕÒµ½ÓĞĞ§Õ¤¸ñ£¬Ô­Ê¼Õ¤¸ñ: {originalGrid}");
-        return new Vector2Int(-1, -1); // ÎŞĞ§±ê¼Ç
+        Debug.LogError($"æœªæ‰¾åˆ°æœ‰æ•ˆæ …æ ¼ï¼ŒåŸå§‹æ …æ ¼: {originalGrid}");
+        return new Vector2Int(-1, -1);
     }
 
-    // Ğ£ÑéÕ¤¸ñÊÇ·ñÔÚ±ß½çÄÚ
     private bool IsValidGrid(Vector2Int gridPos)
     {
         return gridPos.x >= 0 && gridPos.x < gridWidth &&
                gridPos.y >= 0 && gridPos.y < gridHeight;
     }
 
-    // ºËĞÄA*Ñ°Â·Âß¼­
     public List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
     {
         ResetNodeData();
         openQueue.Clear();
-        // ³õÊ¼»¯Æğµã
+
+        // å¦‚æœæœ‰è·¯å¾„åç§»ï¼Œä¿®æ­£ç›®æ ‡ç‚¹
+        Vector2Int adjustedTarget = target;
+        if (pathOffset.magnitude > 0.1f)
+        {
+            int offsetX = Mathf.RoundToInt(pathOffset.x / cellSize);
+            int offsetY = Mathf.RoundToInt(pathOffset.y / cellSize);
+            adjustedTarget = new Vector2Int(
+                Mathf.Clamp(target.x + offsetX, 0, gridWidth - 1),
+                Mathf.Clamp(target.y + offsetY, 0, gridHeight - 1)
+            );
+            Debug.Log($"[A*] åº”ç”¨è·¯å¾„åç§»: {pathOffset} â†’ ç›®æ ‡åç§»è‡³ {adjustedTarget}");
+        }
+
         nodeDataArray[start.x, start.y].GCost = 0;
-        float hCost = CalculateHeuristic(start, target);
+        float hCost = CalculateHeuristic(start, adjustedTarget);
         nodeDataArray[start.x, start.y].FCost = hCost;
         nodeDataArray[start.x, start.y].InOpenSet = true;
         openQueue.Enqueue(start, hCost);
@@ -329,35 +320,35 @@ public class ImprovedAStar : MonoBehaviour
         while (openQueue.Count > 0)
         {
             Vector2Int current = openQueue.Dequeue();
-            // ±ê¼ÇÎªÒÑ´¦Àí
             nodeDataArray[current.x, current.y].IsClosed = true;
             nodeDataArray[current.x, current.y].InOpenSet = false;
 
-            // µ½´ïÄ¿±ê£¬ÖØ¹¹²¢¼ò»¯Â·¾¶
-            if (current.Equals(target))
+            if (current.Equals(adjustedTarget))
             {
-                List<Vector2Int> rawPath = ReconstructPath(target);
+                List<Vector2Int> rawPath = ReconstructPath(adjustedTarget);
                 return SimplifyPath(rawPath);
             }
 
-            // ±éÀúÁÚ¾Ó
             neighborBuffer.Clear();
             GetNeighbors(current, neighborBuffer);
             foreach (Vector2Int neighbor in neighborBuffer)
             {
                 if (nodeDataArray[neighbor.x, neighbor.y].IsClosed)
                     continue;
-                if (!gridManager.Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ(neighbor))
+                if (!gridManager.IsGridPassable(neighbor))
                     continue;
 
-                // ¼ÆËãĞÂGÖµ
+                // ====== è®¡ç®—å®‰å…¨è·ç¦»ä»£ä»· (è®ºæ–‡ 4.2 èŠ‚) ======
+                float safetyPenalty = CalculateSafetyCost(neighbor);
+
                 float newGCost = nodeDataArray[current.x, current.y].GCost +
-                                CalculateDistance(current, neighbor) * cellSize;
-                // ¸üĞÂ¸üÓÅÂ·¾¶
+                                CalculateDistance(current, neighbor) * cellSize +
+                                safetyPenalty;
+
                 if (newGCost < nodeDataArray[neighbor.x, neighbor.y].GCost)
                 {
                     nodeDataArray[neighbor.x, neighbor.y].GCost = newGCost;
-                    float neighborHCost = CalculateHeuristic(neighbor, target);
+                    float neighborHCost = CalculateHeuristic(neighbor, adjustedTarget);
                     float neighborFCost = newGCost + neighborHCost;
                     nodeDataArray[neighbor.x, neighbor.y].FCost = neighborFCost;
                     nodeDataArray[neighbor.x, neighbor.y].Parent = current;
@@ -374,10 +365,9 @@ public class ImprovedAStar : MonoBehaviour
                 }
             }
         }
-        return null; // ÎŞÂ·¾¶
+        return null;
     }
 
-    // ÖØÖÃ½ÚµãÊı¾İ
     private void ResetNodeData()
     {
         for (int x = 0; x < gridWidth; x++)
@@ -393,7 +383,6 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
-    // »ñÈ¡8·½ÏòÁÚ¾Ó
     private void GetNeighbors(Vector2Int node, List<Vector2Int> buffer)
     {
         foreach (var offset in NeighborOffsets)
@@ -407,7 +396,6 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
-    // Æô·¢Ê½º¯Êı£¨¶Ô½ÇÏß¾àÀë£©
     private float CalculateHeuristic(Vector2Int a, Vector2Int b)
     {
         int dx = Mathf.Abs(a.x - b.x);
@@ -415,7 +403,6 @@ public class ImprovedAStar : MonoBehaviour
         return (dx + dy + (DIAGONAL_COST - 2) * Mathf.Min(dx, dy)) * cellSizeHeuristic;
     }
 
-    // ¼ÆËã½Úµã¼ä¾àÀë£¨Ö±×ß/¶Ô½ÇÏß£©
     private float CalculateDistance(Vector2Int a, Vector2Int b)
     {
         int dx = Mathf.Abs(a.x - b.x);
@@ -423,7 +410,40 @@ public class ImprovedAStar : MonoBehaviour
         return dx == 0 || dy == 0 ? STRAIGHT_COST : DIAGONAL_COST;
     }
 
-    // ÖØ¹¹Â·¾¶
+    /// <summary>
+    /// è®¡ç®—å®‰å…¨è·ç¦»ä»£ä»· (è®ºæ–‡ 4.2 èŠ‚)
+    /// g(n) = g(parent) + d(parent,n) + C_safe * Î£ exp(-Î» * d(n,k))
+    /// </summary>
+    private float CalculateSafetyCost(Vector2Int gridPos)
+    {
+        float penalty = 0f;
+        float currentWeight = safeCostWeightAStar;
+
+        // ä»åé¦ˆç®¡ç†å™¨è·å–åŠ¨æ€æƒé‡ (é—­ç¯åé¦ˆ)
+        if (enableClosedLoopFeedback && feedbackManager != null)
+        {
+            currentWeight = 3.0f * feedbackManager.CurrentFeedback.safeDistanceMultiplier;
+        }
+
+        for (int dx = -SAFETY_SEARCH_RANGE; dx <= SAFETY_SEARCH_RANGE; dx++)
+        {
+            for (int dz = -SAFETY_SEARCH_RANGE; dz <= SAFETY_SEARCH_RANGE; dz++)
+            {
+                if (dx == 0 && dz == 0) continue;
+                Vector2Int check = new Vector2Int(gridPos.x + dx, gridPos.y + dz);
+                if (!IsValidGrid(check)) continue;
+                if (gridManager.IsGridPassable(check)) continue; // åªå¯¹éšœç¢ç‰©æ …æ ¼è®¡ç®—ä»£ä»·
+
+                float d = Mathf.Sqrt(dx * dx + dz * dz) * cellSize;
+                if (d < safeDistanceRadius && d > 0.001f)
+                {
+                    penalty += currentWeight * Mathf.Exp(-safeCostLambda * d);
+                }
+            }
+        }
+        return penalty;
+    }
+
     private List<Vector2Int> ReconstructPath(Vector2Int end)
     {
         pathBuffer.Clear();
@@ -434,17 +454,16 @@ public class ImprovedAStar : MonoBehaviour
         {
             if (pathBuffer.Contains(current))
             {
-                Debug.LogWarning("Â·¾¶´æÔÚÑ­»·½Úµã£¬ÒÑÖĞ¶Ï£¡");
+                Debug.LogWarning("è·¯å¾„å­˜åœ¨å¾ªç¯èŠ‚ç‚¹ï¼Œå·²ä¸­æ–­ï¼");
                 break;
             }
             pathBuffer.Add(current);
             current = nodeDataArray[current.x, current.y].Parent;
 
-            // ·ÀËÀÑ­»·
             safetyCount++;
             if (safetyCount > gridWidth * gridHeight)
             {
-                Debug.LogError("Â·¾¶ÖØ¹¹ÏİÈëËÀÑ­»·£¬ÒÑÇ¿ÖÆÖĞ¶Ï£¡");
+                Debug.LogError("è·¯å¾„é‡æ„é™·å…¥æ­»å¾ªç¯ï¼Œå·²å¼ºåˆ¶ä¸­æ–­ï¼");
                 pathBuffer.Clear();
                 return null;
             }
@@ -452,16 +471,14 @@ public class ImprovedAStar : MonoBehaviour
 
         if (pathBuffer.Count == 0)
         {
-            Debug.LogError("Â·¾¶ÖØ¹¹Ê§°Ü£¬ÎŞÓĞĞ§½Úµã£¡");
+            Debug.LogError("è·¯å¾„é‡æ„å¤±è´¥ï¼Œæ— æœ‰æ•ˆèŠ‚ç‚¹ï¼");
             return null;
         }
 
         pathBuffer.Reverse();
-        Debug.Log($"Â·¾¶ÖØ¹¹Íê³É£¬Ô­Ê¼½ÚµãÊı£º{pathBuffer.Count}£¬Ê×½Úµã£º{pathBuffer[0]}£¬Î²½Úµã£º{pathBuffer[pathBuffer.Count - 1]}");
         return new List<Vector2Int>(pathBuffer);
     }
 
-    // Â·¾¶¼ò»¯·½·¨
     private List<Vector2Int> SimplifyPath(List<Vector2Int> path)
     {
         if (path == null || path.Count <= 2) return path;
@@ -473,20 +490,17 @@ public class ImprovedAStar : MonoBehaviour
         for (int i = 2; i < path.Count; i++)
         {
             Vector2Int directionCurr = path[i] - path[i - 1];
-            // ÓÅ»¯£ºÔÊĞíÎ¢Ğ¡·½Ïò±ä»¯£¨±ÈÈç·½ÏòÏòÁ¿µã»ı>0.95£¬ÊÓÎªÍ¬Ò»·½Ïò£©
-            // ¹Ø¼üĞŞ¸´£º½« Vector2Int ×ª»»Îª Vector2£¨¸¡µãÏòÁ¿£©ºóÔÙµ÷ÓÃ normalized
             float dot = Vector2.Dot(((Vector2)directionPrev).normalized, ((Vector2)directionCurr).normalized);
-            if (dot < 0.95f) // ·½Ïò±ä»¯½Ï´óÊ±²Å±£Áô½Úµã
+            if (dot < 0.95f)
             {
                 simplified.Add(path[i - 1]);
                 directionPrev = directionCurr;
             }
         }
         simplified.Add(path[path.Count - 1]);
-        Debug.Log($"Â·¾¶¼ò»¯Íê³É£ºÔ­Ê¼{path.Count}¸öµã ¡ú ¼ò»¯ºó{simplified.Count}¸öµã");
         return simplified;
     }
-    // NodeData½á¹¹Ìå¶¨Òå
+
     private struct NodeData
     {
         public float GCost;
@@ -505,7 +519,6 @@ public class ImprovedAStar : MonoBehaviour
         }
     }
 
-    // ¶ş²æ¶ÑÓÅÏÈ¼¶¶ÓÁĞÊµÏÖ
     private class BinaryHeapPriorityQueue
     {
         private class HeapItem
@@ -556,12 +569,11 @@ public class ImprovedAStar : MonoBehaviour
         public Vector2Int Dequeue()
         {
             if (count == 0)
-                throw new InvalidOperationException("¶ÓÁĞÒÑ¿Õ");
+                throw new InvalidOperationException("é˜Ÿåˆ—å·²ç©º");
 
             var topItem = items[0];
             count--;
 
-            // Ìæ»»¶Ñ¶¥ÔªËØ
             var lastItem = items[count];
             lastItem.Index = 0;
             items[0] = lastItem;
@@ -597,7 +609,7 @@ public class ImprovedAStar : MonoBehaviour
         {
             while (index > 0)
             {
-                int parentIndex = (index - 1) >> 1; // (index-1)/2
+                int parentIndex = (index - 1) >> 1;
                 if (items[parentIndex].Priority <= items[index].Priority)
                     break;
 
@@ -610,7 +622,7 @@ public class ImprovedAStar : MonoBehaviour
         {
             while (true)
             {
-                int leftChild = (index << 1) + 1; // 2*index +1
+                int leftChild = (index << 1) + 1;
                 int rightChild = leftChild + 1;
                 int smallest = index;
 
