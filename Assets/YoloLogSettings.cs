@@ -373,7 +373,7 @@ namespace YoloV8Detection
             // 修复点2：在OnDestroy中主动销毁物体（仅编辑模式）
             if (!Application.isPlaying && gameObject != null)
             {
-                DestroyImmediate(gameObject);
+             //   DestroyImmediate(gameObject);
             }
         }
 

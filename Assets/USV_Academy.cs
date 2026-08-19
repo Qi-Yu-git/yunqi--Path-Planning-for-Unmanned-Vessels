@@ -1,41 +1,41 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using Unity.MLAgents;
 using System.Collections;
 
 /// <summary>
-/// USVÇ¿»¯Ñ§Ï°»·¾³µÄºËĞÄ¹ÜÀíÆ÷
-/// ¸ºÔğĞ­µ÷»·¾³³õÊ¼»¯¡¢²ÎÊı¹ÜÀíºÍÖØÖÃÂß¼­
+/// USVå¼ºåŒ–å­¦ä¹ ç¯å¢ƒçš„æ ¸å¿ƒç®¡ç†å™¨
+/// è´Ÿè´£åè°ƒç¯å¢ƒåˆå§‹åŒ–ã€å‚æ•°ç®¡ç†å’Œé‡ç½®é€»è¾‘
 /// </summary>
 public class USV_Academy : MonoBehaviour
 {
-    #region µ¥ÀıÊµÀı
+    #region å•ä¾‹å®ä¾‹
     public static USV_Academy Instance { get; private set; }
     #endregion
 
-    #region ĞòÁĞ»¯²ÎÊı
-    [Header("»·¾³ÅäÖÃ²ÎÊı")]
-    [Tooltip("×îĞ¡ÑÒÊ¯ÊıÁ¿")]
+    #region åºåˆ—åŒ–å‚æ•°
+    [Header("ç¯å¢ƒé…ç½®å‚æ•°")]
+    [Tooltip("æœ€å°å²©çŸ³æ•°é‡")]
     [Min(1)] public int minRockCount = 5;
-    [Tooltip("×î´óÑÒÊ¯ÊıÁ¿")]
+    [Tooltip("æœ€å¤§å²©çŸ³æ•°é‡")]
     [Min(1)] public int maxRockCount = 15;
-    [Tooltip("USV×î´óËÙ¶È")]
+    [Tooltip("USVæœ€å¤§é€Ÿåº¦")]
     [Range(1f, 5f)] public float maxUSVSpeed = 2.0f;
-    [Tooltip("×î´ó»ØºÏÊ±³¤(Ãë)")]
+    [Tooltip("æœ€å¤§å›åˆæ—¶é•¿(ç§’)")]
     [Min(10f)] public float maxEpisodeTime = 60f;
     #endregion
 
-    #region Ë½ÓĞ±äÁ¿
-    // ³¡¾°ºËĞÄ¹ÜÀíÆ÷ÒıÓÃ
+    #region ç§æœ‰å˜é‡
+    // åœºæ™¯æ ¸å¿ƒç®¡ç†å™¨å¼•ç”¨
     private RandomSpawnManager spawnManager;
     private GridManager gridManager;
-    private USV_GlobalRLAgent usvAgent; // ÖØĞÂ³ÖÓĞÖÇÄÜÌåÒıÓÃ
-    // »·¾³²ÎÊıÊµÀı
+    private USV_GlobalRLAgent usvAgent; // é‡æ–°æŒæœ‰æ™ºèƒ½ä½“å¼•ç”¨
+    // ç¯å¢ƒå‚æ•°å®ä¾‹
     private EnvironmentParameters envParams;
-    // ÒÀÀµÏî¼ÓÔØ×´Ì¬
+    // ä¾èµ–é¡¹åŠ è½½çŠ¶æ€
     private bool areDependenciesLoaded = false;
     #endregion
 
-    #region ÉúÃüÖÜÆÚ·½·¨
+    #region ç”Ÿå‘½å‘¨æœŸæ–¹æ³•
     private void Awake()
     {
         if (Instance == null)
@@ -55,40 +55,40 @@ public class USV_Academy : MonoBehaviour
     }
 
     /// <summary>
-    /// Ã¿Ö¡¼ì²é»ØºÏÊÇ·ñ½áÊø£¬ÒÔ±ã×Ô¶¯ÖØÖÃ»·¾³
+    /// æ¯å¸§æ£€æŸ¥å›åˆæ˜¯å¦ç»“æŸï¼Œä»¥ä¾¿è‡ªåŠ¨é‡ç½®ç¯å¢ƒ
     /// </summary>
     private void Update()
     {
-        // ºËĞÄĞŞ¸Ä£ºÖ»ÓĞÈÎÎñÑ­»·¿ªÆôÊ±£¬²Å×Ô¶¯ÖØÖÃ»·¾³
+        // æ ¸å¿ƒä¿®æ”¹ï¼šåªæœ‰ä»»åŠ¡å¾ªç¯å¼€å¯æ—¶ï¼Œæ‰è‡ªåŠ¨é‡ç½®ç¯å¢ƒ
         if (areDependenciesLoaded && usvAgent != null && usvAgent.IsEpisodeDone && usvAgent.enableTaskLoop)
         {
-            Debug.Log("ÈÎÎñÍê³É£¬×¼±¸ÖØÖÃ»·¾³...");
+            Debug.Log("ä»»åŠ¡å®Œæˆï¼Œå‡†å¤‡é‡ç½®ç¯å¢ƒ...");
             ResetEnvironment();
         }
     }
     #endregion
 
-    #region ÒÀÀµ¹ÜÀí
+    #region ä¾èµ–ç®¡ç†
     private IEnumerator WaitForDependencies()
     {
-        // ĞŞ¸´2.0.1¼æÈİ£ºFindFirstObjectByType¼Ó·ºĞÍÔ¼Êø£¨¾É°æÎŞ£¬ĞÂ°æĞèÒª£©
+        // ä¿®å¤2.0.1å…¼å®¹ï¼šFindFirstObjectByTypeåŠ æ³›å‹çº¦æŸï¼ˆæ—§ç‰ˆæ— ï¼Œæ–°ç‰ˆéœ€è¦ï¼‰
         while (gridManager == null)
         {
             gridManager = Object.FindFirstObjectByType<GridManager>(FindObjectsInactive.Include);
             if (gridManager == null)
             {
-                Debug.LogWarning("µÈ´ıGridManager¼ÓÔØ...");
+                Debug.LogWarning("ç­‰å¾…GridManageråŠ è½½...");
                 yield return new WaitForSeconds(0.1f);
             }
         }
-        Debug.Log("GridManager ÒÑÕÒµ½¡£");
+        Debug.Log("GridManager å·²æ‰¾åˆ°ã€‚");
 
         while (!gridManager.IsGridReady())
         {
-            Debug.LogWarning("µÈ´ıGridManager×¼±¸Õ¤¸ñÊı¾İ...");
+            Debug.LogWarning("ç­‰å¾…GridManagerå‡†å¤‡æ …æ ¼æ•°æ®...");
             yield return new WaitForSeconds(0.1f);
         }
-        Debug.Log("GridManager Êı¾İÒÑ¾ÍĞ÷¡£");
+        Debug.Log("GridManager æ•°æ®å·²å°±ç»ªã€‚");
 
         spawnManager = Object.FindFirstObjectByType<RandomSpawnManager>(FindObjectsInactive.Include);
         usvAgent = Object.FindFirstObjectByType<USV_GlobalRLAgent>(FindObjectsInactive.Include);
@@ -96,100 +96,103 @@ public class USV_Academy : MonoBehaviour
         if (ValidateDependencies())
         {
             areDependenciesLoaded = true;
-            // ¹Ø¼ü£ºML-Agents 2.0.1Í¨¹ıAcademy.Instance»ñÈ¡È«¾ÖÊµÀı
+            // å…³é”®ï¼šML-Agents 2.0.1é€šè¿‡Academy.Instanceè·å–å…¨å±€å®ä¾‹
             envParams = Academy.Instance.EnvironmentParameters;
             RegisterEnvironmentParameters();
-            Debug.Log("ËùÓĞ»·¾³ÒÀÀµÏî¼ÓÔØÍê³É£¬×¼±¸Æô¶¯µÚÒ»¸ö»ØºÏ...");
+            Debug.Log("æ‰€æœ‰ç¯å¢ƒä¾èµ–é¡¹åŠ è½½å®Œæˆï¼Œå‡†å¤‡å¯åŠ¨ç¬¬ä¸€ä¸ªå›åˆ...");
             ResetEnvironment();
         }
         else
         {
-            Debug.LogError("»·¾³ÒÀÀµÏî¼ÓÔØÊ§°Ü£¬²¿·Ö×é¼şÈ±Ê§£¡Çë¼ì²é³¡¾°ÉèÖÃ¡£");
+            Debug.LogError("ç¯å¢ƒä¾èµ–é¡¹åŠ è½½å¤±è´¥ï¼Œéƒ¨åˆ†ç»„ä»¶ç¼ºå¤±ï¼è¯·æ£€æŸ¥åœºæ™¯è®¾ç½®ã€‚");
         }
     }
 
     private bool ValidateDependencies()
     {
         bool isValid = true;
-        if (spawnManager == null) { Debug.LogError("USV_Academy: Î´ÕÒµ½ RandomSpawnManager£¡"); isValid = false; }
-        if (usvAgent == null) { Debug.LogError("USV_Academy: Î´ÕÒµ½ USV_GlobalRLAgent ×é¼ş£¡"); isValid = false; }
+        if (spawnManager == null) { Debug.LogError("USV_Academy: æœªæ‰¾åˆ° RandomSpawnManagerï¼"); isValid = false; }
+        if (usvAgent == null) { Debug.LogError("USV_Academy: æœªæ‰¾åˆ° USV_GlobalRLAgent ç»„ä»¶ï¼"); isValid = false; }
         return isValid;
     }
     #endregion
 
-    #region ²ÎÊı¹ÜÀí
+    #region å‚æ•°ç®¡ç†
     private void RegisterEnvironmentParameters()
     {
-        if (envParams == null) { Debug.LogError("EnvironmentParameters ÊµÀıÎª¿Õ"); return; }
+        if (envParams == null) { Debug.LogError("EnvironmentParameters å®ä¾‹ä¸ºç©º"); return; }
 
-        // ×¢²á×îĞ¡ÑÒÊ¯ÊıÁ¿»Øµ÷
+        // æ³¨å†Œæœ€å°å²©çŸ³æ•°é‡å›è°ƒ
         envParams.RegisterCallback("rock_count_min", value =>
         {
             int newMin = Mathf.Max(1, Mathf.RoundToInt(value));
             spawnManager?.SetRockCountRange(newMin, spawnManager.currentMaxRockCount);
-            Debug.Log($"[»·¾³²ÎÊı] ×îĞ¡ÑÒÊ¯ÊıÁ¿: {newMin}");
+            Debug.Log($"[ç¯å¢ƒå‚æ•°] æœ€å°å²©çŸ³æ•°é‡: {newMin}");
         });
 
-        // ×¢²á×î´óÑÒÊ¯ÊıÁ¿»Øµ÷
+        // æ³¨å†Œæœ€å¤§å²©çŸ³æ•°é‡å›è°ƒ
         envParams.RegisterCallback("rock_count_max", value =>
         {
             int newMax = Mathf.Max(spawnManager.currentMinRockCount, Mathf.RoundToInt(value));
             spawnManager?.SetRockCountRange(spawnManager.currentMinRockCount, newMax);
-            Debug.Log($"[»·¾³²ÎÊı] ×î´óÑÒÊ¯ÊıÁ¿: {newMax}");
+            Debug.Log($"[ç¯å¢ƒå‚æ•°] æœ€å¤§å²©çŸ³æ•°é‡: {newMax}");
         });
 
-        // ×¢²áUSV×î´óËÙ¶È»Øµ÷
+        // æ³¨å†ŒUSVæœ€å¤§é€Ÿåº¦å›è°ƒ
         envParams.RegisterCallback("max_usv_speed", value =>
         {
             maxUSVSpeed = Mathf.Clamp(value, 1f, 5f);
-            Debug.Log($"[»·¾³²ÎÊı] USV×î´óËÙ¶È: {maxUSVSpeed}");
+            Debug.Log($"[ç¯å¢ƒå‚æ•°] USVæœ€å¤§é€Ÿåº¦: {maxUSVSpeed}");
             usvAgent?.ResetAgentState(maxUSVSpeed, maxEpisodeTime);
         });
     }
     #endregion
 
-    #region »·¾³¿ØÖÆ
+    #region ç¯å¢ƒæ§åˆ¶
+    // ===== ä¿®æ”¹ USV_Academy.cs =====
     public void ResetEnvironment()
     {
-        if (!areDependenciesLoaded) { Debug.LogWarning("»·¾³ÒÀÀµÎ´¼ÓÔØÍê³É£¬ÎŞ·¨ÖØÖÃ»·¾³¡£"); return; }
+        if (!areDependenciesLoaded) { Debug.LogWarning("ç¯å¢ƒä¾èµ–æœªåŠ è½½å®Œæˆï¼Œæ— æ³•é‡ç½®ç¯å¢ƒã€‚"); return; }
 
         if (!gridManager.IsGridReady())
         {
-            Debug.LogWarning("Õ¤¸ñÎ´×¼±¸¾ÍĞ÷£¬Ö´ĞĞÇ¿ÖÆË¢ĞÂ...");
-            gridManager.Ç¿ÖÆË¢ĞÂÕ¤¸ñ();
+            Debug.LogWarning("æ …æ ¼æœªå‡†å¤‡å°±ç»ªï¼Œæ‰§è¡Œå¼ºåˆ¶åˆ·æ–°...");
+            gridManager.å¼ºåˆ¶åˆ·æ–°æ …æ ¼();
             StartCoroutine(WaitForGridRefreshThenReset());
             return;
         }
 
-        // ½öµ±ÈÎÎñÑ­»·¿ªÆôÊ±£¬Éú³ÉÕÏ°­Îï²¢ÖØÖÃAgent
+        // âœ…ã€å…³é”®ä¿®æ”¹ç‚¹ã€‘ï¼šå³ä½¿ enableTaskLoop æ²¡å¼€ï¼Œä¹Ÿå¿…é¡»é‡ç½®æ™ºèƒ½ä½“çŠ¶æ€ï¼Œç¡®ä¿å‚æ•°å‡†ç¡®ã€‚
+        if (usvAgent != null)
+        {
+            // å¼ºåˆ¶å°†è¶…æ—¶æ—¶é—´è®¾å®šä¸º 120 ç§’ï¼ˆå¤§å¹…ç¼©çŸ­ï¼ï¼‰
+            // 120ç§’å¦‚æœè¿˜æ²¡èµ°å®Œï¼Œè¯´æ˜é¿éšœé€»è¾‘æœ‰ä¸¥é‡é—®é¢˜ï¼Œç›´æ¥ç½šæ­»ã€‚
+            usvAgent.ResetAgentState(maxUSVSpeed, 120f);
+        }
+
         if (usvAgent != null && usvAgent.enableTaskLoop && spawnManager != null)
         {
+            // ç¡®ä¿ spawnManager ä¸è¿™é‡Œçš„ maxRockCount åŒæ­¥ï¼ˆå½“å‰è¿™é‡Œå¯èƒ½æ²¡åšåŒæ­¥å¯¼è‡´ç¯å¢ƒä¹±å˜ï¼‰
             spawnManager.SetRockCountRange(minRockCount, maxRockCount);
             spawnManager.Regenerate();
         }
 
-        if (usvAgent != null && usvAgent.enableTaskLoop)
-        {
-            usvAgent.ResetAgentState(maxUSVSpeed, maxEpisodeTime);
-         
-        }
-
-        Debug.Log($"»·¾³ÒÑÖØÖÃ - ÑÒÊ¯ÊıÁ¿·¶Î§: {minRockCount}-{maxRockCount}, ×î´óËÙ¶È: {maxUSVSpeed}");
+        Debug.Log($"ç¯å¢ƒå·²é‡ç½® - å²©çŸ³æ•°é‡: {minRockCount}-{maxRockCount}, æœ€å¤§é€Ÿåº¦: {maxUSVSpeed}, é™æ—¶: 120s");
     }
 
     private IEnumerator WaitForGridRefreshThenReset()
     {
         while (!gridManager.IsGridReady())
         {
-            Debug.LogWarning("µÈ´ıÕ¤¸ñÇ¿ÖÆË¢ĞÂ...");
+            Debug.LogWarning("ç­‰å¾…æ …æ ¼å¼ºåˆ¶åˆ·æ–°...");
             yield return new WaitForSeconds(0.1f);
         }
-        Debug.Log("Õ¤¸ñÇ¿ÖÆË¢ĞÂÍê³É¡£");
+        Debug.Log("æ …æ ¼å¼ºåˆ¶åˆ·æ–°å®Œæˆã€‚");
         ResetEnvironment();
     }
     #endregion
 
-    #region ¹«¹²·½·¨
+    #region å…¬å…±æ–¹æ³•
     public float GetCurrentMaxSpeed() => maxUSVSpeed;
     public float GetMaxEpisodeTime() => maxEpisodeTime;
     public bool IsEnvironmentReady() => areDependenciesLoaded && gridManager.IsGridReady();

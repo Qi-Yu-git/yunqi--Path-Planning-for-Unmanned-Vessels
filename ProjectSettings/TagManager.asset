@@ -7,6 +7,8 @@ TagManager:
   - USV
   - Rock
   - Obstacle
+  - Ship
+  - DynamicObstacle
   layers:
   - Default
   - TransparentFX
@@ -15,8 +17,8 @@ TagManager:
   - Water
   - UI
   - USV
-  - 
-  - 
+  - Ship
+  - DynamicObstacle
   - 
   - 
   - 

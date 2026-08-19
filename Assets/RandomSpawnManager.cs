@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -8,64 +8,70 @@ public class RandomSpawnManager : MonoBehaviour
     [SerializeField] private GridManager gridManager;
     [SerializeField] private Transform startPos;
     [SerializeField] private Transform targetPos;
-    [SerializeField] private Vector2 spawnRangeX = new Vector2(-30, 30); // Ëæ»úX·¶Î§
-    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-30, 30); // Ëæ»úZ·¶Î§
-    [SerializeField] private float minStartTargetDistance = 8f; // ÆğµãÖÕµã×îĞ¡¾àÀë
-    [SerializeField] private int maxSinglePosRetries = 5; // µ¥¸öÎ»ÖÃ×î´óÖØÊÔ´ÎÊı
+    [SerializeField] private Vector2 spawnRangeX = new Vector2(-30, 30); // éšæœºXèŒƒå›´
+    [SerializeField] private Vector2 spawnRangeZ = new Vector2(-30, 30); // éšæœºZèŒƒå›´
+    [SerializeField] private float minStartTargetDistance = 8f; // èµ·ç‚¹ç»ˆç‚¹æœ€å°è·ç¦»
+    [SerializeField] private int maxSinglePosRetries = 5; // å•ä¸ªä½ç½®æœ€å¤§é‡è¯•æ¬¡æ•°
 
 
-    // ½¸Ê¯Éú³ÉÅäÖÃ
-    [Header("½¸Ê¯Éú³É²ÎÊı")]
-    [SerializeField] private GameObject rockPrefab; // ½¸Ê¯Ô¤ÖÆÌå
-    [SerializeField] private int minRockCount = 5;   // ×îĞ¡½¸Ê¯ÊıÁ¿
-    [SerializeField] private int maxRockCount = 15;  // ×î´ó½¸Ê¯ÊıÁ¿
-    [SerializeField] private float rockScaleMin = 0.8f; // ½¸Ê¯×îĞ¡Ëõ·Å
-    [SerializeField] private float rockScaleMax = 1.5f; // ½¸Ê¯×î´óËõ·Å
-    [SerializeField] private LayerMask obstacleLayer; // ½¸Ê¯ËùÔÚ²ã£¨Ğè°üº¬ÔÚGridManagerµÄobstacleLayerÖĞ£©
-    [SerializeField] private float rockAvoidDistance = 3f; // ½¸Ê¯ÓëÆğµã/ÖÕµãµÄ°²È«¾àÀë
+    // ç¤çŸ³ç”Ÿæˆé…ç½®
+    [Header("ç¤çŸ³ç”Ÿæˆå‚æ•°")]
+    [SerializeField] private GameObject rockPrefab; // ç¤çŸ³é¢„åˆ¶ä½“
+ //   [SerializeField] private int minRockCount = 5;   // æœ€å°ç¤çŸ³æ•°é‡
+  //  [SerializeField] private int maxRockCount = 15;  // æœ€å¤§ç¤çŸ³æ•°é‡
+    [SerializeField] private float rockScaleMin = 0.8f; // ç¤çŸ³æœ€å°ç¼©æ”¾
+    [SerializeField] private float rockScaleMax = 1.5f; // ç¤çŸ³æœ€å¤§ç¼©æ”¾
+    [SerializeField] private LayerMask obstacleLayer; // ç¤çŸ³æ‰€åœ¨å±‚ï¼ˆéœ€åŒ…å«åœ¨GridManagerçš„obstacleLayerä¸­ï¼‰
+    [SerializeField] private float rockAvoidDistance = 3f; // ç¤çŸ³ä¸èµ·ç‚¹/ç»ˆç‚¹çš„å®‰å…¨è·ç¦»
 
-    private List<GameObject> spawnedRocks = new List<GameObject>(); // ÒÑÉú³É½¸Ê¯ÁĞ±í
-    // ĞŞ¸ÄÎªpublicÒÔ½â¾ö·ÃÎÊÈ¨ÏŞÎÊÌâ
+    private List<GameObject> spawnedRocks = new List<GameObject>(); // å·²ç”Ÿæˆç¤çŸ³åˆ—è¡¨
+    // ä¿®æ”¹ä¸ºpublicä»¥è§£å†³è®¿é—®æƒé™é—®é¢˜
     public int currentMinRockCount;
     public int currentMaxRockCount;
 
-    // ±£Áô·ÃÎÊÆ÷·½±ãºóĞøÀ©Õ¹
+    // ä¿ç•™è®¿é—®å™¨æ–¹ä¾¿åç»­æ‰©å±•
     public int CurrentMinRockCount => currentMinRockCount;
     public int CurrentMaxRockCount => currentMaxRockCount;
 
-    [Header("Æô¶¯ÅäÖÃ")]
-    public bool spawnOnStart = true; // ĞÂÔö¿ª¹Ø£ºÊÇ·ñÔÚÆô¶¯Ê±×Ô¶¯Éú³É
+    [Header("å¯åŠ¨é…ç½®")]
+    public bool spawnOnStart = true; // æ–°å¢å¼€å…³ï¼šæ˜¯å¦åœ¨å¯åŠ¨æ—¶è‡ªåŠ¨ç”Ÿæˆ
 
 
     private void Start()
     {
-        currentMinRockCount = minRockCount;
-        currentMaxRockCount = maxRockCount;
+        // âœ…ã€ä¿®æ”¹ç‚¹ã€‘ï¼šé”å®šåˆå§‹å²©çŸ³æ•°é‡ï¼ˆä¿æŒåœ¨ 5~10 ä¸ªï¼‰ï¼Œä¸è®©è®­ç»ƒç¯å¢ƒå˜å¾—è¿‡éš¾ã€‚
+        currentMinRockCount = 5;  // åŸï¼šminRockCount
+        currentMaxRockCount = 10; // åŸï¼šmaxRockCount
 
         if (gridManager == null)
         {
-            Debug.LogError("RandomSpawnManager£ºGridManagerÎ´¸³Öµ£¡");
+            Debug.LogError("RandomSpawnManagerï¼šGridManageræœªèµ‹å€¼ï¼");
             return;
         }
 
-        // ºËĞÄĞŞ¸Ä£º½öµ±spawnOnStartÎªtrueÊ±£¬²ÅÆô¶¯Éú³É
         if (spawnOnStart)
         {
             StartCoroutine(WaitForGridInitThenSetup());
         }
         else
         {
-            Debug.Log("RandomSpawnManager£ºÒÑ½ûÓÃÆô¶¯Ê±×Ô¶¯Éú³É");
+            Debug.Log("RandomSpawnManagerï¼šå·²ç¦ç”¨å¯åŠ¨æ—¶è‡ªåŠ¨ç”Ÿæˆ");
         }
     }
     /// <summary>
-    /// ¹© Academy µ÷ÓÃ£¬¶¯Ì¬µ÷Õû½¸Ê¯Éú³ÉÊıÁ¿·¶Î§
+    /// ä¾› Academy è°ƒç”¨ï¼ŒåŠ¨æ€è°ƒæ•´ç¤çŸ³ç”Ÿæˆæ•°é‡èŒƒå›´
     /// </summary>
     public void SetRockCountRange(int newMin, int newMax)
     {
-        currentMinRockCount = Mathf.Max(1, newMin); // ·ÀÖ¹ÊıÁ¿Îª0
-        currentMaxRockCount = Mathf.Max(currentMinRockCount, newMax); // È·±£×î´óÖµ²»Ğ¡ÓÚ×îĞ¡Öµ
-        Debug.Log($"½¸Ê¯ÊıÁ¿·¶Î§¸üĞÂÎª£º{currentMinRockCount}-{currentMaxRockCount}");
+        // âœ…ã€ä¿®æ”¹ç‚¹ã€‘ï¼šå¼ºåˆ¶ç¯å¢ƒå²©çŸ³æ•°é‡èŒƒå›´åœ¨ 5 åˆ° 15 ä¹‹é—´ï¼Œç»ä¸å…è®¸ä½äº 5 ä¸ªï¼ˆå¦åˆ™å¤ªç®€å•ä¸å¥½å­¦ï¼‰ã€‚
+        currentMinRockCount = Mathf.Clamp(newMin, 5, 10);
+        currentMaxRockCount = Mathf.Clamp(newMax, currentMinRockCount, 15);
+
+        // ä¿è¯æœ€å¤§å€¼è‡³å°‘æ¯”æœ€å°å€¼å¤š 2ï¼Œå¦åˆ™ä¼šå¡æ­»ã€‚
+        if (currentMaxRockCount < currentMinRockCount + 2)
+            currentMaxRockCount = currentMinRockCount + 2;
+
+        Debug.Log($"âœ… ç¤çŸ³æ•°é‡é”å®šåœ¨ï¼š{currentMinRockCount}-{currentMaxRockCount}");
     }
 
 
@@ -75,18 +81,18 @@ public class RandomSpawnManager : MonoBehaviour
         {
             yield return new WaitForSeconds(0.2f);
         }
-        ClearExistingRocks(); // Çå³ı¾É½¸Ê¯
-        GenerateRandomRocks(); // Éú³ÉĞÂ½¸Ê¯
-        GenerateRandomStartAndTarget(); // Éú³ÉÆğµãÖÕµã
+        ClearExistingRocks(); // æ¸…é™¤æ—§ç¤çŸ³
+        GenerateRandomRocks(); // ç”Ÿæˆæ–°ç¤çŸ³
+        GenerateRandomStartAndTarget(); // ç”Ÿæˆèµ·ç‚¹ç»ˆç‚¹
     }
 
-    // Éú³ÉËæ»ú½¸Ê¯
+    // ç”Ÿæˆéšæœºç¤çŸ³
     private void GenerateRandomRocks()
     {
-        // ´Óµ±Ç°·¶Î§ÖĞËæ»ú½¸Ê¯ÊıÁ¿
+        // ä»å½“å‰èŒƒå›´ä¸­éšæœºç¤çŸ³æ•°é‡
         int rockCount = Random.Range(currentMinRockCount, currentMaxRockCount + 1);
         int spawned = 0;
-        int maxAttempts = rockCount * 2; // ¼õÉÙ×î´ó³¢ÊÔ´ÎÊı
+        int maxAttempts = rockCount * 2; // å‡å°‘æœ€å¤§å°è¯•æ¬¡æ•°
         int attempts = 0;
 
         while (spawned < rockCount && attempts < maxAttempts)
@@ -100,12 +106,12 @@ public class RandomSpawnManager : MonoBehaviour
 
             if (IsRockPosValid(rockPos))
             {
-                // ÊµÀı»¯½¸Ê¯µÄÂß¼­
+                // å®ä¾‹åŒ–ç¤çŸ³çš„é€»è¾‘
                 GameObject newRock = Instantiate(rockPrefab, rockPos, Quaternion.Euler(-90f, Random.Range(0f, 360f), 0f));
-                // Ó¦ÓÃËõ·Å
+                // åº”ç”¨ç¼©æ”¾
                 float scale = Random.Range(rockScaleMin, rockScaleMax);
                 newRock.transform.localScale = new Vector3(scale, scale, scale);
-                // ÉèÖÃ½¸Ê¯²ã¼¶
+                // è®¾ç½®ç¤çŸ³å±‚çº§
                 if (obstacleLayer.value != 0)
                 {
                     int layerIndex = GetLayerFromMask(obstacleLayer);
@@ -116,48 +122,48 @@ public class RandomSpawnManager : MonoBehaviour
             }
         }
 
-        Debug.Log($"Éú³É½¸Ê¯Íê³É£º³É¹¦Éú³É {spawned}/{rockCount} ¸ö£¬³¢ÊÔ´ÎÊı {attempts}");
-        gridManager.Ç¿ÖÆË¢ĞÂÕ¤¸ñ();
+        Debug.Log($"ç”Ÿæˆç¤çŸ³å®Œæˆï¼šæˆåŠŸç”Ÿæˆ {spawned}/{rockCount} ä¸ªï¼Œå°è¯•æ¬¡æ•° {attempts}");
+        gridManager.å¼ºåˆ¶åˆ·æ–°æ …æ ¼();
     }
 
-    // Ğ£Ñé½¸Ê¯Î»ÖÃÊÇ·ñÓĞĞ§
+    // æ ¡éªŒç¤çŸ³ä½ç½®æ˜¯å¦æœ‰æ•ˆ
     private bool IsRockPosValid(Vector3 rockPos)
     {
-        // 1. ×ª»»ÎªÕ¤¸ñ×ø±ê
-        Vector2Int gridPos = gridManager.ÊÀ½ç×ªÕ¤¸ñ(rockPos);
-        // 2. ¼ì²éÕ¤¸ñÓĞĞ§ĞÔ
+        // 1. è½¬æ¢ä¸ºæ …æ ¼åæ ‡
+        Vector2Int gridPos = gridManager.ä¸–ç•Œè½¬æ …æ ¼(rockPos);
+        // 2. æ£€æŸ¥æ …æ ¼æœ‰æ•ˆæ€§
         if (!gridManager.IsValidGridPosition(gridPos))
             return false;
 
-        // 3. ¼ì²éÊÇ·ñÓëÆğµã/ÖÕµã¹ı½ü
+        // 3. æ£€æŸ¥æ˜¯å¦ä¸èµ·ç‚¹/ç»ˆç‚¹è¿‡è¿‘
         if (startPos != null && Vector3.Distance(rockPos, startPos.position) < rockAvoidDistance)
             return false;
         if (targetPos != null && Vector3.Distance(rockPos, targetPos.position) < rockAvoidDistance)
             return false;
 
-        // 4. ¼ì²éÊÇ·ñÓëÆäËû½¸Ê¯¹ı½ü
+        // 4. æ£€æŸ¥æ˜¯å¦ä¸å…¶ä»–ç¤çŸ³è¿‡è¿‘
         foreach (var rock in spawnedRocks)
         {
             if (rock != null && Vector3.Distance(rockPos, rock.transform.position) < 2f)
                 return false;
         }
-        // ========== ĞÂÔö£º¹ıÂË·ÇÕÏ°­Îï²ã¼¶ ==========
+        // ========== æ–°å¢ï¼šè¿‡æ»¤ééšœç¢ç‰©å±‚çº§ ==========
         Collider[] colliders = Physics.OverlapSphere(rockPos, 0.5f);
         foreach (var col in colliders)
         {
             if (col.gameObject.layer != LayerMask.NameToLayer("Obstacle"))
             {
-                continue; // ºöÂÔ·ÇÕÏ°­ÎïÅö×²Ìå
+                continue; // å¿½ç•¥ééšœç¢ç‰©ç¢°æ’ä½“
             }
         }
 
  
 
-        // 5. ¼ì²é¸ÃÎ»ÖÃÊÇ·ñ¿ÉÍ¨ĞĞ£¨È·±£²»ÓëÒÑÓĞÕÏ°­ÎïÖØµş£©
-        return gridManager.Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ(gridPos);
+        // 5. æ£€æŸ¥è¯¥ä½ç½®æ˜¯å¦å¯é€šè¡Œï¼ˆç¡®ä¿ä¸ä¸å·²æœ‰éšœç¢ç‰©é‡å ï¼‰
+        return gridManager.æ …æ ¼æ˜¯å¦å¯é€šè¡Œ(gridPos);
     }
 
-    // Çå³ıÒÑÉú³ÉµÄ½¸Ê¯
+    // æ¸…é™¤å·²ç”Ÿæˆçš„ç¤çŸ³
     private void ClearExistingRocks()
     {
         foreach (var rock in spawnedRocks)
@@ -168,7 +174,7 @@ public class RandomSpawnManager : MonoBehaviour
         spawnedRocks.Clear();
     }
 
-    // ´ÓLayerMask»ñÈ¡²ã¼¶Ë÷Òı
+    // ä»LayerMaskè·å–å±‚çº§ç´¢å¼•
     private int GetLayerFromMask(LayerMask mask)
     {
         int layer = 0;
@@ -184,15 +190,15 @@ public class RandomSpawnManager : MonoBehaviour
 
     public void GenerateRandomStartAndTarget()
     {
-        // Éú³ÉÓĞĞ§Æğµã
+        // ç”Ÿæˆæœ‰æ•ˆèµ·ç‚¹
         Vector3 validStart = GenerateValidRandomPos();
         if (IsInvalidPos(validStart))
         {
-            Debug.LogError("ÎŞ·¨Éú³ÉÓĞĞ§Æğµã£¡");
+            Debug.LogError("æ— æ³•ç”Ÿæˆæœ‰æ•ˆèµ·ç‚¹ï¼");
             return;
         }
 
-        // Éú³ÉÓĞĞ§ÖÕµã
+        // ç”Ÿæˆæœ‰æ•ˆç»ˆç‚¹
         Vector3 validTarget = Vector3.zero;
         int targetRetry = 0;
         do
@@ -205,33 +211,33 @@ public class RandomSpawnManager : MonoBehaviour
 
         if (IsInvalidPos(validTarget))
         {
-            Debug.LogError("ÎŞ·¨Éú³ÉÓĞĞ§ÖÕµã£¡");
+            Debug.LogError("æ— æ³•ç”Ÿæˆæœ‰æ•ˆç»ˆç‚¹ï¼");
             return;
         }
 
-        // ¸³ÖµÎ»ÖÃ
+        // èµ‹å€¼ä½ç½®
         if (startPos != null)
             startPos.position = validStart;
         if (targetPos != null)
             targetPos.position = validTarget;
-        Debug.Log($"Æğµã£º{validStart} ÖÕµã£º{validTarget} ¾àÀë£º{Vector3.Distance(validStart, validTarget):F2}m");
+        Debug.Log($"èµ·ç‚¹ï¼š{validStart} ç»ˆç‚¹ï¼š{validTarget} è·ç¦»ï¼š{Vector3.Distance(validStart, validTarget):F2}m");
     }
 
-    // Éú³ÉËæ»úÓĞĞ§Î»ÖÃ
+    // ç”Ÿæˆéšæœºæœ‰æ•ˆä½ç½®
     private Vector3 GenerateValidRandomPos()
     {
         Vector3 randomPos;
         int retryCount = 0;
-        int maxAttempts = 50; // Ôö¼Ó×î´ó³¢ÊÔ´ÎÊı
+        int maxAttempts = 50; // å¢åŠ æœ€å¤§å°è¯•æ¬¡æ•°
 
         do
         {
-            // Éú³ÉËæ»úÎ»ÖÃ£¬ÔÚÖ¸¶¨·¶Î§ÄÚ
+            // ç”Ÿæˆéšæœºä½ç½®ï¼Œåœ¨æŒ‡å®šèŒƒå›´å†…
             float x = Random.Range(spawnRangeX.x, spawnRangeX.y);
             float z = Random.Range(spawnRangeZ.x, spawnRangeZ.y);
             randomPos = new Vector3(x, 0.4f, z);
 
-            // Èç¹û¶à´Î³¢ÊÔÊ§°Ü£¬À©´óËÑË÷·¶Î§
+            // å¦‚æœå¤šæ¬¡å°è¯•å¤±è´¥ï¼Œæ‰©å¤§æœç´¢èŒƒå›´
             if (retryCount > maxAttempts / 2)
             {
                 float expandRange = (retryCount - maxAttempts / 2) * 0.5f;
@@ -243,21 +249,21 @@ public class RandomSpawnManager : MonoBehaviour
             retryCount++;
         } while (!IsPosValid(randomPos) && retryCount < maxAttempts);
 
-        // Èç¹ûËùÓĞ³¢ÊÔ¶¼Ê§°Ü£¬·µ»ØÒ»¸öÄ¬ÈÏµÄ°²È«Î»ÖÃ
+        // å¦‚æœæ‰€æœ‰å°è¯•éƒ½å¤±è´¥ï¼Œè¿”å›ä¸€ä¸ªé»˜è®¤çš„å®‰å…¨ä½ç½®
         if (retryCount >= maxAttempts)
         {
-            Debug.LogWarning("ÎŞ·¨Éú³ÉÓĞĞ§Î»ÖÃ£¬Ê¹ÓÃÄ¬ÈÏÎ»ÖÃ");
-            return new Vector3(0, 0.4f, 0); // Ä¬ÈÏÎ»ÖÃ
+            Debug.LogWarning("æ— æ³•ç”Ÿæˆæœ‰æ•ˆä½ç½®ï¼Œä½¿ç”¨é»˜è®¤ä½ç½®");
+            return new Vector3(0, 0.4f, 0); // é»˜è®¤ä½ç½®
         }
 
         return randomPos;
     }
 
-    // Ğ£ÑéÎ»ÖÃÓĞĞ§ĞÔ
+    // æ ¡éªŒä½ç½®æœ‰æ•ˆæ€§
     private bool IsPosValid(Vector3 worldPos)
     {
-        Vector2Int gridPos = gridManager.ÊÀ½ç×ªÕ¤¸ñ(worldPos);
-        if (!gridManager.IsValidGridPosition(gridPos) || !gridManager.Õ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ(gridPos))
+        Vector2Int gridPos = gridManager.ä¸–ç•Œè½¬æ …æ ¼(worldPos);
+        if (!gridManager.IsValidGridPosition(gridPos) || !gridManager.æ …æ ¼æ˜¯å¦å¯é€šè¡Œ(gridPos))
             return false;
         if (Physics.CheckSphere(worldPos, 0.5f, obstacleLayer))
             return false;
@@ -269,16 +275,16 @@ public class RandomSpawnManager : MonoBehaviour
         return pos == Vector3.negativeInfinity;
     }
 
-    // ÖØĞÂÉú³ÉÕû¸ö³¡¾°
+    // é‡æ–°ç”Ÿæˆæ•´ä¸ªåœºæ™¯
     public void Regenerate()
     {
-        ClearExistingRocks(); // Çå³ı¾ÉÕÏ°­Îï
-        GenerateRandomRocks(); // Éú³ÉĞÂÕÏ°­Îï
-        GenerateRandomStartAndTarget(); // Éú³ÉĞÂÆğµãºÍÄ¿±êµã
-        gridManager.Ç¿ÖÆË¢ĞÂÕ¤¸ñ(); // È·±£Õ¤¸ñÕÏ°­ÎïÊı¾İÍ¬²½
+        ClearExistingRocks(); // æ¸…é™¤æ—§éšœç¢ç‰©
+        GenerateRandomRocks(); // ç”Ÿæˆæ–°éšœç¢ç‰©
+        GenerateRandomStartAndTarget(); // ç”Ÿæˆæ–°èµ·ç‚¹å’Œç›®æ ‡ç‚¹
+        gridManager.å¼ºåˆ¶åˆ·æ–°æ …æ ¼(); // ç¡®ä¿æ …æ ¼éšœç¢ç‰©æ•°æ®åŒæ­¥
     }
 
-    // ÇåÀí½¸Ê¯£¨±ÜÃâ³¡¾°²ĞÁô£©
+    // æ¸…ç†ç¤çŸ³ï¼ˆé¿å…åœºæ™¯æ®‹ç•™ï¼‰
     private void OnDestroy()
     {
         ClearExistingRocks();

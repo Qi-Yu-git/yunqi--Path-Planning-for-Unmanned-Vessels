@@ -1,0 +1,29 @@
+{
+    "USV_GlobalRLAgent": {
+        "checkpoints": [
+            {
+                "steps": 5509,
+                "file_path": "results\\usv_ppo_train_seed5\\USV_GlobalRLAgent\\USV_GlobalRLAgent-5509.onnx",
+                "reward": 357.11807752336773,
+                "creation_time": 1786762270.2383158,
+                "auxillary_file_paths": [
+                    "results\\usv_ppo_train_seed5\\USV_GlobalRLAgent\\USV_GlobalRLAgent-5509.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 5509,
+            "file_path": "results\\usv_ppo_train_seed5\\USV_GlobalRLAgent.onnx",
+            "reward": 357.11807752336773,
+            "creation_time": 1786762270.2383158,
+            "auxillary_file_paths": [
+                "results\\usv_ppo_train_seed5\\USV_GlobalRLAgent\\USV_GlobalRLAgent-5509.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.5.1+cu121"
+    }
+}

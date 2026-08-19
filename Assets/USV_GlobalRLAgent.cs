@@ -9,6 +9,7 @@ using Unity.MLAgents.Actuators;
 /// <summary>
 /// 无人船全局强化学习智能体
 /// 负责全局路径规划、目标导航和奖励计算
+/// 修复: 控制器冲突、奖励收敛稳定性
 /// </summary>
 public class USV_GlobalRLAgent : Agent
 {
@@ -52,6 +53,20 @@ public class USV_GlobalRLAgent : Agent
     private bool isPathCompleted = false;
     private int consecutiveWaypointReached = 0;
 
+    // ====================== 多目标权重配置（修正版）======================
+    private const float W_DISTANCE = 0.35f;    // 降低"冲向目标"的权重
+    private const float W_CROSSTRACK = 0.5f;   // 大幅提高路径跟踪
+    private const float W_COLREGS = 0.6f;     // 提高避碰规则权重
+    private const float W_SAFETY = 1.0f;      // 降低安全惩罚，释放奖励预算
+    private const float W_HEADING = 0.4f;       // 回滚
+    private const float W_SMOOTH = 0.15f;       // 不变
+    private const float W_TIME = 0.2f;          // 从 0.4 降低到 0.2
+
+    // 安全通过追踪 (已废弃)
+    //  private float safePassTimer = 0f;
+    private const float SAFE_PASS_THRESHOLD_TTC = 5.0f;
+    private const float SAFE_PASS_THRESHOLD_DIST = 5.0f;
+
     // ====================== 动态参数 ======================
     private float currentMaxSpeed;
     private float currentMaxEpisodeTime;
@@ -69,8 +84,9 @@ public class USV_GlobalRLAgent : Agent
     public bool IsEpisodeDone { get; private set; }
     private bool _isTerminating = false;
     private Coroutine _terminateCoroutine;
-    private float _actionIgnoreDelay = 1.0f;
+    private float _actionIgnoreDelay = 0.01f;
     private static bool _ignoreLogPrinted = false;
+    private bool pathCompletionRewarded = false;
 
     // ====================== 平滑奖励缓存 ======================
     private float lastOmega = 0f;
@@ -87,7 +103,7 @@ public class USV_GlobalRLAgent : Agent
     [Tooltip("触发碰撞的最小障碍物数量")]
     public int minObstacleCount = 3;
     [Tooltip("目标到达阈值")]
-    public float targetArriveThreshold = 2.0f;
+    public float targetArriveThreshold = 1.2f;
     [Tooltip("边界检测阈值系数")]
     public float boundaryThresholdFactor = 0.8f;
     [Tooltip("路径完成判定：连续到达多少个路径点视为路径完成")]
@@ -97,7 +113,7 @@ public class USV_GlobalRLAgent : Agent
 
     // ====================== 配置 ======================
     public float desiredSpeed = 1.2f;
-    public float safeNearMissDistance = 3.0f;
+    public float safeNearMissDistance = 4.0f;
 
     // ====================== SCI 指标 ======================
     private float totalCrossTrackError;
@@ -125,6 +141,19 @@ public class USV_GlobalRLAgent : Agent
     private float reward_curiosity;
     private float reward_colregs;
     private float reward_smooth;
+    private float reward_nearMiss;
+    private float reward_safe_pass;
+    private float reward_time;
+    private float lastCollisionTime = -999f;
+    private const float COLLISION_COOLDOWN = 3.0f;
+
+    private Vector3 _lastFramePosition;
+    private Coroutine _resetCoroutine;
+
+    // ====================== 奖励平滑与跟踪缓存 ======================
+    private float smoothedDistanceDelta = 0f;
+    private float currentCrossTrackError = 0f;
+    private float currentAngleToTarget = 0f;
 
     // ====================== 奖励调试设置 ======================
     [Header("===== 奖励调试设置 =====")]
@@ -137,12 +166,13 @@ public class USV_GlobalRLAgent : Agent
     [Tooltip("是否记录奖励历史")]
     public bool recordRewardHistory = true;
 
-    // 奖励历史记录
     private Dictionary<string, List<float>> rewardHistory = new Dictionary<string, List<float>>();
     private int debugFrameCounter = 0;
     private string lastRewardLog = "";
 
-    // 当前帧奖励详情
+    private float lastActionForward = 0f;
+    private float lastActionTurn = 0f;
+
     private class RewardDebugInfo
     {
         public float distance;
@@ -157,6 +187,8 @@ public class USV_GlobalRLAgent : Agent
         public float curiosity;
         public float colregs;
         public float smooth;
+        public float nearMiss;
+        public float safePass;
         public float total;
         public float stepTime;
         public float distToTarget;
@@ -231,9 +263,6 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    /// <summary>
-    /// 初始化 COLREGs 评估器（与 Awake 平级，非嵌套）
-    /// </summary>
     private void InitCOLREGsEvaluator()
     {
         if (colregsEvaluator == null)
@@ -269,66 +298,59 @@ public class USV_GlobalRLAgent : Agent
         _isTerminating = false;
         _ignoreLogPrinted = false;
         _resetReason = "";
+        pathCompletionRewarded = false;
 
         episodeStartTime = Time.time;
         lastDistToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 0;
         lastOmega = rb != null ? rb.angularVelocity.y * Mathf.Rad2Deg : 0f;
 
-        // 重置好奇心数组
         Array.Fill(curiosityPrediction, 0f);
         Array.Fill(lastObs, 0f);
         Array.Fill(currentObs, 0f);
 
-        // 重置各项奖励累计值
-        reward_dist = 0f;
-        reward_speed = 0f;
-        reward_heading = 0f;
-        reward_near_target = 0f;
-        reward_colregs = 0f;
-        reward_smooth = 0f;
-        reward_curiosity = 0f;
-        reward_collision = 0f;
-        reward_finish = 0f;
-        reward_timeout = 0f;
-        reward_boundary = 0f;
-        reward_path_complete = 0f;
+        reward_dist = 0f; reward_speed = 0f; reward_heading = 0f;
+        reward_near_target = 0f; reward_colregs = 0f; reward_smooth = 0f;
+        reward_curiosity = 0f; reward_collision = 0f; reward_finish = 0f;
+        reward_timeout = 0f; reward_boundary = 0f; reward_path_complete = 0f;
+        reward_nearMiss = 0f;
+        reward_safe_pass = 0f;
+        reward_time = 0f;
+        lastActionForward = 0f;
+        lastActionTurn = 0f;
 
-        // 初始化奖励调试
         if (enableRewardDebug)
         {
             debugFrameCounter = 0;
             Debug.Log("🎯 新回合开始，奖励调试已启用");
         }
 
-        StartCoroutine(WaitForGridInitThenReset());
+        if (_resetCoroutine != null) StopCoroutine(_resetCoroutine);
+        _resetCoroutine = StartCoroutine(WaitForGridInitThenReset());
     }
 
-    private IEnumerator CheckInitializationStatus()
-    {
-        yield return new WaitForSeconds(2.0f);
-        if (isEnvironmentInitializing)
-        {
-            Debug.LogError("环境初始化超时，强制标记为完成");
-            isEnvironmentInitializing = false;
-            ResetAgentState(MaxSpeed, 90f);
-        }
-    }
-
-    /// <summary>
-    /// 等待GridManager初始化完成后执行重置逻辑
-    /// </summary>
     private IEnumerator WaitForGridInitThenReset()
     {
         isEnvironmentInitializing = true;
+        Debug.Log("🔄 开始智能体重置流程...");
 
-        // 1. 等待GridManager就绪
-        while (gridManager == null || !gridManager.IsGridReady())
+        float gridWaitTimeout = 5.0f;
+        float gridWaitTimer = 0f;
+        while ((gridManager == null || !gridManager.IsGridReady()) && gridWaitTimer < gridWaitTimeout)
         {
-            Debug.LogWarning("等待 GridManager 初始化...");
+            Debug.LogWarning($"等待 GridManager 初始化... ({gridWaitTimer:F1}s)");
             yield return new WaitForSeconds(0.1f);
+            gridWaitTimer += 0.1f;
         }
 
-        // 2. 重新生成安全位置
+        if (gridManager == null || !gridManager.IsGridReady())
+        {
+            Debug.LogError("❌ GridManager 初始化超时，使用默认位置");
+            transform.position = new Vector3(0, 0.4f, 0);
+            transform.rotation = Quaternion.identity;
+            isEnvironmentInitializing = false;
+            yield break;
+        }
+
         Vector3 safePos = Vector3.zero;
         int retryCount = 0;
         int maxRetries = 8;
@@ -354,54 +376,153 @@ public class USV_GlobalRLAgent : Agent
             if (safePos == Vector3.zero) yield return new WaitForSeconds(0.05f);
         }
 
-        // 强制给Agent赋值初始位置
         if (safePos != Vector3.zero)
         {
             transform.position = safePos;
             transform.rotation = Quaternion.identity;
+            Debug.Log($"✅ 智能体移动到安全位置: {safePos}");
         }
         else
         {
             safePos = new Vector3(
-                UnityEngine.Random.Range(-gridWidth / 2, gridWidth / 2),
+                UnityEngine.Random.Range(-gridWidth / 4, gridWidth / 4),
                 0.4f,
-                UnityEngine.Random.Range(-gridHeight / 2, gridHeight / 2)
+                UnityEngine.Random.Range(-gridHeight / 4, gridHeight / 4)
             );
             transform.position = safePos;
-            Debug.LogError($"安全位置全空，强制随机设置初始位置: {safePos}");
+            Debug.LogError($"⚠️ 安全位置全空，强制设置初始位置: {safePos}");
         }
 
-        // 3. 执行重置逻辑
-        if (enableTaskLoop) spawnManager?.Regenerate();
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
+            rb.Sleep();
         }
+
         currentWaypointIndex = 0;
         consecutiveWaypointReached = 0;
         isPathCompleted = false;
-        globalPathfinder?.CalculatePathAfterDelay();
-        Invoke(nameof(NotifyBoatLoadNewPath), 0.5f);
-        ResetAgentState(MaxSpeed, 90f);
+        pathCompletionRewarded = false;
 
-        yield return new WaitForSeconds(0.5f);
+        if (enableTaskLoop && spawnManager != null)
+        {
+            spawnManager.Regenerate();
+            yield return new WaitForSeconds(0.1f);
+        }
+
+        // 锁定最大时长300秒，防止早期环境时间限制过短
+        ResetAgentState(MaxSpeed, 300f);
+
+        if (globalPathfinder != null)
+        {
+            Debug.Log("🔄 触发路径重新计算...");
+            globalPathfinder.CalculatePathAfterDelay();
+
+            float pathWaitTimeout = 5.0f;
+            float pathWaitTimer = 0f;
+            bool pathReady = false;
+
+            while (pathWaitTimer < pathWaitTimeout)
+            {
+                if (globalPathfinder.path != null && globalPathfinder.path.Count >= 2)
+                {
+                    pathReady = true;
+                    Debug.Log($"✅ 路径计算完成，路径点数量: {globalPathfinder.path.Count}");
+                    break;
+                }
+                yield return new WaitForSeconds(0.05f);
+                pathWaitTimer += 0.05f;
+            }
+
+            if (!pathReady)
+            {
+                Debug.LogWarning("⚠️ 路径计算超时，尝试重新触发");
+                globalPathfinder.CalculatePathAfterDelay();
+                yield return new WaitForSeconds(0.5f);
+
+                if (globalPathfinder.path != null && globalPathfinder.path.Count >= 2)
+                {
+                    pathReady = true;
+                    Debug.Log($"✅ 二次路径计算完成，路径点数量: {globalPathfinder.path.Count}");
+                }
+            }
+
+            if (pathReady && gridManager != null)
+            {
+                Vector3 pathStartWorld = gridManager.GridToWorld(globalPathfinder.path[0]);
+                pathStartWorld.y = 0.4f;
+
+                if (IsPositionSafe(pathStartWorld, 0.5f))
+                {
+                    transform.position = pathStartWorld;
+                    Debug.Log($"🎯 智能体对齐到路径起点: {pathStartWorld}");
+
+                    if (globalPathfinder.path.Count > 1)
+                    {
+                        Vector3 pathSecond = gridManager.GridToWorld(globalPathfinder.path[1]);
+                        pathSecond.y = 0.4f;
+                        Vector3 direction = (pathSecond - pathStartWorld).normalized;
+                        if (direction.sqrMagnitude > 0.001f)
+                        {
+                            transform.rotation = Quaternion.LookRotation(direction);
+                        }
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"⚠️ 路径起点 {pathStartWorld} 不安全，保持当前位置: {transform.position}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("⚠️ 路径不可用，保持当前位置");
+            }
+        }
+
+        yield return null;
+        Vector3 fixedPosition = transform.position;
+        transform.position = fixedPosition;
+        Debug.Log($"🔒 最终锁定位置: {fixedPosition}");
+
+        if (boatController != null)
+        {
+            boatController.isPathLoaded = false;
+            boatController.TryLoadPath();
+            Debug.Log("📢 通知 BoatController 加载新路径");
+        }
+
         isEnvironmentInitializing = false;
+        IsEpisodeDone = false;
+        _isTerminating = false;
+        _ignoreLogPrinted = false;
 
-        Debug.Log($"智能体重置完成：位置={transform.position}，重试次数={retryCount}");
+        lastDistToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 0;
+        lastOmega = rb != null ? rb.angularVelocity.y * Mathf.Rad2Deg : 0f;
+        episodeStartTime = Time.time;
+
+        Debug.Log($"✅ 智能体重置完成！位置={transform.position}，目标={target?.position}");
+    }
+
+    private IEnumerator CheckInitializationStatus()
+    {
+        yield return new WaitForSeconds(2.0f);
+        if (isEnvironmentInitializing)
+        {
+            Debug.LogError("环境初始化超时，强制标记为完成");
+            isEnvironmentInitializing = false;
+            ResetAgentState(MaxSpeed, 90f);
+        }
     }
 
     // ============================================================
     // 状态管理
     // ============================================================
 
-    /// <summary>
-    /// 重置智能体状态
-    /// </summary>
     public void ResetAgentState(float maxSpeed, float maxEpisodeTime)
     {
         currentMaxSpeed = maxSpeed <= 0 ? MaxSpeed : maxSpeed;
-        currentMaxEpisodeTime = maxEpisodeTime <= 0 ? 300f : maxEpisodeTime;
+        currentMaxEpisodeTime = maxEpisodeTime <= 0 ? 150f : maxEpisodeTime;
         episodeStartTime = Time.time;
 
         lastDistToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 0;
@@ -412,7 +533,6 @@ public class USV_GlobalRLAgent : Agent
         consecutiveWaypointReached = 0;
         currentWaypointIndex = 0;
 
-        // 重置全部SCI指标
         totalCrossTrackError = 0;
         totalHeadingError = 0;
         collisionCount = 0;
@@ -436,6 +556,10 @@ public class USV_GlobalRLAgent : Agent
         reward_curiosity = 0;
         reward_colregs = 0;
         reward_smooth = 0;
+        reward_nearMiss = 0;
+        reward_safe_pass = 0;
+        reward_time = 0;
+        smoothedDistanceDelta = 0f;
     }
 
     private IEnumerator WaitForGridInit()
@@ -512,20 +636,6 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    private void NotifyBoatLoadNewPath()
-    {
-        if (boatController != null)
-        {
-            boatController.isPathLoaded = false;
-            boatController.TryLoadPath();
-            Debug.Log("通知BoatController加载新路径");
-        }
-        else
-        {
-            Debug.LogWarning("未找到BoatController，无法通知加载新路径");
-        }
-    }
-
     // ============================================================
     // 回合终止
     // ============================================================
@@ -577,7 +687,7 @@ public class USV_GlobalRLAgent : Agent
         IsEpisodeDone = true;
         _isTerminating = false;
 
-        if (!IsEpisodeDone)
+        if (IsEpisodeDone)
         {
             EndEpisode();
         }
@@ -610,15 +720,22 @@ public class USV_GlobalRLAgent : Agent
         float[] obs = new float[TOTAL_OBSERVATIONS];
         int idx = 0;
 
-        // [0] 纵荡速度 (归一化)
+        float SafeNormalize(float value, float maxValue, float defaultValue = 0f)
+        {
+            float absMax = Mathf.Abs(maxValue);
+            if (absMax < 0.0001f)
+            {
+                return defaultValue;
+            }
+            return Mathf.Clamp(value / absMax, -1f, 1f);
+        }
+
         float surgeVel = rb != null ? Vector3.Dot(transform.forward, rb.linearVelocity) : 0f;
-        obs[idx++] = Mathf.Clamp(surgeVel / currentMaxSpeed, -1f, 1f);
+        obs[idx++] = SafeNormalize(surgeVel, currentMaxSpeed);
 
-        // [1] 转艏角速度 (归一化)
         float omega = rb != null ? rb.angularVelocity.y * Mathf.Rad2Deg : 0f;
-        obs[idx++] = Mathf.Clamp(omega / MaxAngularSpeed, -1f, 1f);
+        obs[idx++] = SafeNormalize(omega, MaxAngularSpeed);
 
-        // [2] 航向与目标方位角偏差 (归一化)
         float distToTarget = target != null ? Vector3.Distance(transform.position, target.position) : 10f;
         if (target != null)
         {
@@ -631,7 +748,6 @@ public class USV_GlobalRLAgent : Agent
             obs[idx++] = 0f;
         }
 
-        // [3] 到全局路径的横向偏差 (归一化)
         float crossTrackError = 0f;
         if (globalPathfinder != null && globalPathfinder.path != null && globalPathfinder.path.Count > 1 && gridManager != null)
         {
@@ -640,7 +756,6 @@ public class USV_GlobalRLAgent : Agent
                 new Vector3(transform.position.x, 0, transform.position.z),
                 new Vector3(closest.x, 0, closest.z)
             );
-            // 判断左右：用路径方向叉乘
             int closestIdx = GetClosestPathIndex(transform.position);
             if (closestIdx < globalPathfinder.path.Count - 1 && closestIdx >= 0)
             {
@@ -653,7 +768,6 @@ public class USV_GlobalRLAgent : Agent
         }
         obs[idx++] = Mathf.Clamp(crossTrackError / 20f, -1f, 1f);
 
-        // [4-124] 11x11 局部静态栅格 (121个)
         Vector2Int agentGridPos = gridManager != null ? gridManager.WorldToGrid(transform.position) : new Vector2Int(gridWidth / 2, gridHeight / 2);
         for (int x = -ViewRange; x <= ViewRange; x++)
         {
@@ -669,7 +783,6 @@ public class USV_GlobalRLAgent : Agent
                         : !passableGrid[checkPos.x, checkPos.y];
                 }
 
-                // 检查动态障碍物（仅在静态无阻挡时检查）
                 if (localPlanner != null && !isObstacle)
                 {
                     Vector3 worldCheck = gridManager != null ? gridManager.GridToWorld(checkPos) : Vector3.zero;
@@ -687,7 +800,6 @@ public class USV_GlobalRLAgent : Agent
             }
         }
 
-        // [125-126] 最近动态障碍物相对速度 (相对速度 = 障碍物速度 - 本船速度)
         if (localPlanner != null && localPlanner.dynamicObstacles.Count > 0)
         {
             float minDist = float.MaxValue;
@@ -704,8 +816,8 @@ public class USV_GlobalRLAgent : Agent
                     }
                 }
             }
-            obs[idx++] = Mathf.Clamp(relVel.x / currentMaxSpeed, -1f, 1f);
-            obs[idx++] = Mathf.Clamp(relVel.z / currentMaxSpeed, -1f, 1f);
+            obs[idx++] = SafeNormalize(relVel.x, currentMaxSpeed);
+            obs[idx++] = SafeNormalize(relVel.z, currentMaxSpeed);
         }
         else
         {
@@ -713,60 +825,91 @@ public class USV_GlobalRLAgent : Agent
             obs[idx++] = 0f;
         }
 
-        // [127] 剩余距离 (归一化)
         float maxDist = Mathf.Max(gridWidth, gridHeight) * 1f;
         obs[idx++] = Mathf.Clamp01(distToTarget / maxDist);
 
-        // 保存当前观测用于好奇心
+        if (idx != TOTAL_OBSERVATIONS)
+        {
+            Debug.LogError($"观测数量不匹配! 期望: {TOTAL_OBSERVATIONS}, 实际: {idx}");
+        }
+
         Array.Copy(obs, currentObs, TOTAL_OBSERVATIONS);
 
-        sensor.AddObservation(obs);
+        for (int i = 0; i < obs.Length; i++)
+        {
+            if (float.IsNaN(obs[i]) || float.IsInfinity(obs[i]))
+            {
+                Debug.LogError($"NaN/Infinity detected in obs[{i}] = {obs[i]}");
+                obs[i] = 0f;
+            }
+            sensor.AddObservation(obs[i]);
+        }
     }
 
     public override void OnActionReceived(ActionBuffers actions)
     {
         try
         {
-            if (IsEpisodeDone || isEnvironmentInitializing || _isTerminating)
+            if (isEnvironmentInitializing)
             {
                 if (!_ignoreLogPrinted)
                 {
-                    string reason = IsEpisodeDone ? "回合已结束" :
-                                   _isTerminating ? "回合终止中" : "环境初始化中";
-                    Debug.LogWarning($"⚠️ 忽略动作：{reason}");
+                    Debug.LogWarning("⚠️ 环境初始化中，忽略动作");
                     _ignoreLogPrinted = true;
                 }
                 return;
             }
             _ignoreLogPrinted = false;
 
-            if (IsEpisodeDone || target == null || gridManager == null || rb == null) return;
+            if (IsEpisodeDone || _isTerminating) return;
 
+            float maxBoundary = Mathf.Max(gridWidth, gridHeight) * 0.8f;
+            if (Mathf.Abs(transform.position.x) > maxBoundary || Mathf.Abs(transform.position.z) > maxBoundary)
+            {
+                Debug.LogWarning($"⚠️ 智能体位置超出边界: {transform.position}，强制重置");
+                _resetReason = "boundary";
+                EndEpisodeCustom();
+                return;
+            }
+
+            if (target == null || gridManager == null || rb == null) return;
             if (currentMaxSpeed <= 0)
             {
                 currentMaxSpeed = MaxSpeed;
                 Debug.LogWarning("currentMaxSpeed未初始化，使用默认值");
             }
 
-            // 读取连续动作
             float moveForward = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
             float turn = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
 
             MoveAgentContinuous(moveForward, turn);
             UpdateWaypointProgress();
-            CalculateReward();
 
-            // 更新SCI指标
+            if (CalculateReward())
+                return;
+
+            float effort = (Mathf.Abs(actions.ContinuousActions[0]) + Mathf.Abs(actions.ContinuousActions[1])) / 2f;
+            float effortPenalty = -0.015f * effort;
+            AddReward(effortPenalty);
+            totalControlEffort += effort;
+
+            float actionDelta = Mathf.Abs(moveForward - lastActionForward) + Mathf.Abs(turn - lastActionTurn);
+            float actionSmoothPenalty = -0.015f * actionDelta;
+            float actionContinuityBonus = (actionDelta < 0.05f) ? 0.015f : 0f;
+            float totalActionSmooth = actionSmoothPenalty + actionContinuityBonus;
+            AddReward(totalActionSmooth);
+            reward_smooth += totalActionSmooth;
+
+            lastActionForward = moveForward;
+            lastActionTurn = turn;
+
             UpdateTrackingStats();
             CheckNearMiss();
             currentEpisodeLength += 1f;
             UpdateSecondTierStats(actions);
 
-            // 通知局部规划器
             if (localPlanner != null)
-            {
                 localPlanner.OnAgentActionReceived(actions);
-            }
         }
         catch (Exception ex)
         {
@@ -778,27 +921,40 @@ public class USV_GlobalRLAgent : Agent
     }
 
     // ============================================================
-    // 动作控制
+    // 动作控制 (改为指令传递，避免物理冲突)
     // ============================================================
-
     void MoveAgentContinuous(float forward, float turn)
     {
         if (rb == null) return;
 
-        float forwardForce = Mathf.Abs(forward) * currentMaxSpeed * 0.8f;
-        rb.AddForce(transform.forward * forward * forwardForce, ForceMode.VelocityChange);
-
-        if (rb.linearVelocity.magnitude > currentMaxSpeed)
+        if (boatController != null)
         {
-            rb.linearVelocity = rb.linearVelocity.normalized * currentMaxSpeed;
+            // 修复点：让 BoatController 的物理系统接管动作
+            // 直接用 transform 控制转向，刚体控制线速度，避免BoatController干预
+            float targetSpeed = Mathf.Abs(forward) * currentMaxSpeed;
+            float targetTurnAngle = turn * 45f; // 最大转向 45 度/秒
+
+            rb.linearVelocity = transform.forward * targetSpeed;
+            transform.Rotate(Vector3.up, targetTurnAngle * Time.fixedDeltaTime);
         }
-
-        float rotateTorque = turn * MaxAngularSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime;
-        rb.AddTorque(Vector3.up * rotateTorque, ForceMode.VelocityChange);
-
-        if (rb.angularVelocity.magnitude > MaxAngularSpeed * Mathf.Deg2Rad)
+        else
         {
-            rb.angularVelocity = rb.angularVelocity.normalized * MaxAngularSpeed * Mathf.Deg2Rad;
+            // 兜底：如果 boatController 为空，使用原始加力控制
+            float forwardForce = forward * currentMaxSpeed * 0.8f;
+            rb.AddForce(transform.forward * forwardForce, ForceMode.VelocityChange);
+
+            if (rb.linearVelocity.magnitude > currentMaxSpeed)
+            {
+                rb.linearVelocity = rb.linearVelocity.normalized * currentMaxSpeed;
+            }
+
+            float rotateTorque = turn * MaxAngularSpeed * Mathf.Deg2Rad * Time.fixedDeltaTime;
+            rb.AddTorque(Vector3.up * rotateTorque, ForceMode.VelocityChange);
+
+            if (rb.angularVelocity.magnitude > MaxAngularSpeed * Mathf.Deg2Rad)
+            {
+                rb.angularVelocity = rb.angularVelocity.normalized * MaxAngularSpeed * Mathf.Deg2Rad;
+            }
         }
     }
 
@@ -887,9 +1043,6 @@ public class USV_GlobalRLAgent : Agent
         return Vector3.Lerp(a, b, t);
     }
 
-    /// <summary>
-    /// 获取最近动态障碍物的距离（用于动态调整理想速度）
-    /// </summary>
     private float GetNearestObstacleDistance()
     {
         if (localPlanner == null || localPlanner.dynamicObstacles == null || localPlanner.dynamicObstacles.Count == 0)
@@ -905,10 +1058,9 @@ public class USV_GlobalRLAgent : Agent
     }
 
     // ============================================================
-    // 奖励计算（优化版）
+    // 奖励计算（锚定 365 分专版）
     // ============================================================
-
-    private void CalculateReward()
+    private bool CalculateReward()
     {
         float distToTarget = Vector3.Distance(transform.position, target.position);
         float distanceDelta = lastDistToTarget - distToTarget;
@@ -916,126 +1068,74 @@ public class USV_GlobalRLAgent : Agent
         float elapsedTime = Time.time - episodeStartTime;
         float omega = rb.angularVelocity.y * Mathf.Rad2Deg;
 
-        // 重置当前帧奖励调试数据
-        currentRewardDebug.distToTarget = distToTarget;
-        currentRewardDebug.currentSpeed = currentSpeed;
-        currentRewardDebug.elapsedTime = elapsedTime;
-        currentRewardDebug.distance = 0;
-        currentRewardDebug.speed = 0;
-        currentRewardDebug.heading = 0;
-        currentRewardDebug.nearTarget = 0;
-        currentRewardDebug.collision = 0;
-        currentRewardDebug.finish = 0;
-        currentRewardDebug.timeout = 0;
-        currentRewardDebug.boundary = 0;
-        currentRewardDebug.pathComplete = 0;
-        currentRewardDebug.curiosity = 0;
-        currentRewardDebug.colregs = 0;
-        currentRewardDebug.smooth = 0;
+        float maxGridDim = Mathf.Max((float)gridWidth, (float)gridHeight);
+        float safeMaxDist = Mathf.Max(maxGridDim, 1f);
+        float normalizedDist = Mathf.Clamp01(distToTarget / safeMaxDist);
+        float nearestObsDist = GetNearestObstacleDistance();
 
-        // ========== [1] 距离缩短奖励（增强权重，让每步都有明显反馈） ==========
-        float maxGridDim = Mathf.Max(gridWidth, gridHeight);
-        float normalizedDist = Mathf.Clamp01(distToTarget / Mathf.Max(maxGridDim, 1f));
-        // 靠近目标时 distanceDelta 的权重更高；远离时惩罚也更有力
-        float distanceReward = distanceDelta * (1.5f - normalizedDist * 0.5f) * 0.82f;
-        distanceReward = Mathf.Clamp(distanceReward, -0.25f, 0.25f);
-        AddReward(distanceReward);
-        reward_dist += distanceReward;
-        currentRewardDebug.distance = distanceReward;
-
-        if (enableRewardDebug)
-        {
-            RecordRewardHistory("Distance", distanceReward);
-            DebugRewardComponent("距离奖励", distanceReward, -0.25f, 0.25f);
-        }
-
-        // ========== [2] 速度稳定性奖励（动态理想速度，避碰时自动降低） ==========
-        float nearestObstacleDist = GetNearestObstacleDistance();
-        float dynamicIdealSpeed;
-        if (nearestObstacleDist < 15f && nearestObstacleDist > 0.01f)
-        {
-            // 靠近障碍物时鼓励低速（给 COLREGs 让路）
-            dynamicIdealSpeed = Mathf.Lerp(currentMaxSpeed * 0.15f, currentMaxSpeed * 0.62f, nearestObstacleDist / 15f);
-        }
-        else
-        {
-            dynamicIdealSpeed = currentMaxSpeed * 0.6f;
-        }
-        float speedError = Mathf.Abs(currentSpeed - dynamicIdealSpeed) / Mathf.Max(dynamicIdealSpeed, 0.1f);
-        float speedStabilityReward = 0.06f * (1f - Mathf.Clamp01(speedError));
-        AddReward(speedStabilityReward);
-        reward_speed += speedStabilityReward;
-        currentRewardDebug.speed = speedStabilityReward;
-
-        if (enableRewardDebug)
-        {
-            RecordRewardHistory("Speed", speedStabilityReward);
-            DebugRewardComponent("速度奖励", speedStabilityReward, 0f, 0.03f);
-        }
-
-        // ========== [3] 航向合理性奖励 ==========
         Vector3 toTarget = target.position - transform.position;
-        toTarget.y = 0f; // 忽略高度差
+        toTarget.y = 0f;
+        float cosToTarget = toTarget.sqrMagnitude > 0.001f
+            ? Vector3.Dot(transform.forward, toTarget.normalized)
+            : 0f;
+
+        float r_dist = 0f, r_heading = 0f, r_colregs = 0f;
+        float r_collision = 0f, r_time = 0f;
+        float r_boundarySoft = 0f, r_smooth = 0f;
+        float r_crossTrack = 0f;
+        float r_speed = 0f;  // ← 新增
+
+        // ========== [1] 距离奖励 ==========
+        smoothedDistanceDelta = 0.7f * smoothedDistanceDelta + 0.3f * distanceDelta;
+        float distBonus = smoothedDistanceDelta * 0.6f;
+        float potentialReward = 0.15f * (1f - normalizedDist);
+        float directionBonus = 0.2f * Mathf.Max(0f, cosToTarget);
+        float proximityMalus = (nearestObsDist < 5f) ? -0.05f * (5f - nearestObsDist) : 0f;
+
+        r_dist = Mathf.Clamp(distBonus + potentialReward + directionBonus + proximityMalus, -0.2f, 0.15f);
+
+        // ========== [1.5] 速度奖励（新增） ==========
+        float speedErr = Mathf.Abs(currentSpeed - desiredSpeed);
+        r_speed = -0.06f * speedErr;
+        if (cosToTarget > 0.7f && speedErr < 0.3f)
+            r_speed += 0.12f;
+
+        // ========== [2] 航向奖励 ==========
         float angleToTarget = Vector3.SignedAngle(transform.forward, toTarget, Vector3.up);
+        currentAngleToTarget = angleToTarget;
         float normalizedAngle = Mathf.Clamp01(Mathf.Abs(angleToTarget) / 180f);
-        float headingReward = 0.042f * (1f - normalizedAngle);
-        AddReward(headingReward);
-        reward_heading += headingReward;
-        currentRewardDebug.heading = headingReward;
 
-        if (enableRewardDebug)
+        if (distToTarget > 3.0f)
+            r_heading = 0.4f * (1f - normalizedAngle);
+        else
+            r_heading = 0.1f * (1f - normalizedAngle);
+
+        // ========== [3] 横向偏差 ==========
+        if (globalPathfinder != null && globalPathfinder.path != null
+            && globalPathfinder.path.Count > 1 && gridManager != null)
         {
-            RecordRewardHistory("Heading", headingReward);
-            DebugRewardComponent("航向奖励", headingReward, 0f, 0.02f);
+            Vector3 closest = GetClosestPointOnGlobalPath(transform.position);
+            float cte = Vector3.Distance(
+                new Vector3(transform.position.x, 0, transform.position.z),
+                new Vector3(closest.x, 0, closest.z)
+            );
+            currentCrossTrackError = cte;
+            float cteNormalized = Mathf.Clamp01(cte / 10f);
+            r_crossTrack = Mathf.Clamp(-1.5f * cteNormalized - 1.5f * cteNormalized * cteNormalized, -1.5f, 0f);
         }
 
-        // ========== [4] 接近目标梯度奖励 ==========
-        float nearTargetBonus = 0f;
-        if (distToTarget < 20f)
-        {
-            nearTargetBonus = 0.062f * (1f - distToTarget / 20f);
-            AddReward(nearTargetBonus);
-            reward_near_target += nearTargetBonus;
-            currentRewardDebug.nearTarget = nearTargetBonus;
-
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("NearTarget", nearTargetBonus);
-                DebugRewardComponent("接近目标奖励", nearTargetBonus, 0f, 0.03f);
-            }
-        }
-
-        // ========== [5] COLREGs 合规奖励（限制范围，避免单步奖励过大） ==========
-        if (colregsEvaluator != null && localPlanner != null)
+        // ========== [4] COLREGs ==========
+        var colregsObstacles = GetColregsObstacles();
+        if (colregsEvaluator != null && colregsObstacles.Count > 0)
         {
             try
             {
-                var obstacles = new List<(Vector3 pos, Vector3 vel)>();
-                for (int i = 0; i < localPlanner.dynamicObstacles.Count; i++)
-                {
-                    Vector3 vel = i < localPlanner.dynamicObstacleVelocities.Count
-                        ? localPlanner.dynamicObstacleVelocities[i]
-                        : Vector3.zero;
-                    obstacles.Add((localPlanner.dynamicObstacles[i], vel));
-                }
-
-                float colregsReward = colregsEvaluator.GetReward(
+                float rawColregsReward = colregsEvaluator.GetReward(
                     transform.position,
                     transform.eulerAngles.y,
                     rb.linearVelocity.magnitude,
-                    obstacles
-                );
-                // 限制单步 COLREGs 奖励范围，让步进奖励之间保持量级一致
-                colregsReward = Mathf.Clamp(colregsReward, -0.2f, 0.15f);
-                AddReward(colregsReward);
-                reward_colregs += colregsReward;
-                currentRewardDebug.colregs = colregsReward;
-
-                if (enableRewardDebug)
-                {
-                    RecordRewardHistory("COLREGs", colregsReward);
-                    DebugRewardComponent("COLREGs奖励", colregsReward, -0.2f, 0.15f);
-                }
+                    colregsObstacles);
+                r_colregs = Mathf.Clamp(rawColregsReward * 0.6f, -0.3f, 0.1f);
             }
             catch (Exception e)
             {
@@ -1043,215 +1143,176 @@ public class USV_GlobalRLAgent : Agent
             }
         }
 
-        // ========== [6] 平滑奖励（加入死区：小幅度转向不惩罚，只惩罚剧烈抖动） ==========
+        // ========== [5] 平滑奖励 ==========
         float omegaDelta = Mathf.Abs(omega - lastOmega);
-        if (omegaDelta > 3.0f) // 3度/步的死区（约 90度/秒 @ 30fps）
-        {
-            float smoothReward = -0.02f * (omegaDelta - 3.0f);
-            smoothReward = Mathf.Clamp(smoothReward, -0.15f, 0f);
-            AddReward(smoothReward);
-            reward_smooth += smoothReward;
-            currentRewardDebug.smooth = smoothReward;
-
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("Smooth", smoothReward);
-                DebugRewardComponent("平滑奖励", smoothReward, -0.15f, 0f);
-            }
-        }
+        r_smooth = -0.015f * omegaDelta;
         lastOmega = omega;
 
-        // ========== [7] 好奇心内在奖励 ==========
-        try
-        {
-            float obsChange = 0f;
-            for (int i = 0; i < TOTAL_OBSERVATIONS; i++)
-            {
-                obsChange += Mathf.Abs(currentObs[i] - curiosityPrediction[i]);
-            }
-            float curiosityReward = Mathf.Clamp(obsChange * 0.005f, 0f, 0.05f);
-            AddReward(curiosityReward * 0.5f);
-            reward_curiosity += curiosityReward * 0.5f;
-            currentRewardDebug.curiosity = curiosityReward * 0.5f;
+        // ========== [6] 碰撞 / TTC / 安全距离 ==========
+        float collisionInnerRadius = collisionCheckRadius * 0.6f;
+        float nearMissRadius = collisionCheckRadius * 2.0f;
+        float detectionRadius = Mathf.Max(nearMissRadius, 10.0f);
+        Collider[] colliders = Physics.OverlapSphere(transform.position, detectionRadius);
 
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("Curiosity", curiosityReward * 0.5f);
-                DebugRewardComponent("好奇心奖励", curiosityReward * 0.5f, 0f, 0.025f);
-            }
-
-            // 更新预测：指数平滑
-            for (int i = 0; i < TOTAL_OBSERVATIONS; i++)
-            {
-                curiosityPrediction[i] = 0.9f * curiosityPrediction[i] + 0.1f * currentObs[i];
-            }
-            // 保存当前观测供下帧使用
-            System.Array.Copy(currentObs, lastObs, TOTAL_OBSERVATIONS);
-        }
-        catch (Exception e)
+        bool isCollided = false;
+        foreach (var col in colliders)
         {
-            Debug.LogWarning($"好奇心计算异常: {e.Message}");
+            if (col.gameObject == gameObject) continue;
+            if (!col.CompareTag("Obstacle") && !col.CompareTag("DynamicObstacle")
+                && !col.CompareTag("Ship") && !col.CompareTag("USV"))
+                continue;
+            float actualDist = Vector3.Distance(transform.position, col.transform.position);
+            if (actualDist < collisionInnerRadius)
+            {
+                isCollided = true;
+                break;
+            }
         }
 
-        // ========== [8] 碰撞检测（明确碰撞区与预警区，降低惩罚量级） ==========
-        try
+        if (isCollided && (elapsedTime - lastCollisionTime) > COLLISION_COOLDOWN && elapsedTime >= 1.0f)
         {
-            // 内圈：实际碰撞区（结束回合）；外圈：预警区（影响 COLREGs）
-            float collisionInnerRadius = collisionCheckRadius * 0.6f;
-            float collisionOuterRadius = collisionCheckRadius;
-
-            Collider[] colliders = Physics.OverlapSphere(transform.position, collisionOuterRadius);
-            bool isCollided = false;
-            int obstacleCount = 0;
-
-            foreach (var collider in colliders)
-            {
-                if (collider.gameObject != gameObject && collider.CompareTag("Obstacle"))
-                {
-                    float actualDist = Vector3.Distance(transform.position, collider.transform.position);
-                    if (actualDist < collisionInnerRadius)
-                    {
-                        obstacleCount++;
-                    }
-                }
-            }
-            isCollided = obstacleCount >= minObstacleCount && obstacleCount > 0;
-
-            if (isCollided)
-            {
-                // 惩罚量级与步进奖励对齐，避免"一撞毁所有"导致中间行为学不到
-                float collisionPenalty = -2.0f - (obstacleCount * 0.5f);
-                collisionPenalty = Mathf.Clamp(collisionPenalty, -4.0f, -1.0f);
-                AddReward(collisionPenalty);
-                reward_collision += collisionPenalty;
-                currentRewardDebug.collision = collisionPenalty;
-
-                if (enableRewardDebug)
-                {
-                    RecordRewardHistory("Collision", collisionPenalty);
-                    Debug.LogWarning($"💥 碰撞检测：{obstacleCount}个障碍物，惩罚：{collisionPenalty:F2}");
-                    Debug.LogWarning($"   位置：{transform.position}，碰撞半径：{collisionCheckRadius}");
-                }
-
-                collisionCount++;
-                _resetReason = "collision";
-                UpdateTotalRewardDebug();
-                EndEpisodeCustom();
-                return;
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning($"碰撞检测异常: {e.Message}");
+            r_collision = -15.0f;
+            collisionCount++;
+            lastCollisionTime = elapsedTime;
+            AddReward(r_collision);
+            reward_collision += r_collision;
+            _resetReason = "collision";
+            EndEpisodeCustom();
+            return true;
         }
 
-        // ========== [9] 目标达成（降低终局奖励绝对值，配合 gamma 折算更合理） ==========
+        float ttc = CalculateTTCDirectional();
+        if (ttc < 5.0f && ttc > 0.01f)
+        {
+            float ttcPenalty;
+            if (ttc < 2.0f)
+                ttcPenalty = -0.2f * (3.0f - ttc);
+            else if (ttc < 3.0f)
+                ttcPenalty = -0.05f * (3.0f - ttc);
+            else
+                ttcPenalty = -0.015f * (5.0f - ttc);
+            r_collision += Mathf.Clamp(ttcPenalty, -0.6f, 0f);
+        }
+
+        if (nearestObsDist < safeNearMissDistance && nearestObsDist > collisionInnerRadius && nearestObsDist > 0.01f)
+        {
+            float nearMissPenalty = -0.8f * (safeNearMissDistance - nearestObsDist)
+                                    * (1f + currentSpeed / MaxSpeed);
+            r_collision += Mathf.Clamp(nearMissPenalty, -2.0f, 0f);
+            reward_nearMiss += nearMissPenalty;
+        }
+
+        // ========== [7] 时间惩罚 ==========
+        r_time = -0.015f;
+
+        // ========== [8] 边界软惩罚 ==========
+        float hardBoundary = maxGridDim * boundaryThresholdFactor;
+        float softBoundary = hardBoundary * 0.85f;
+        float distToEdgeX = hardBoundary - Mathf.Abs(transform.position.x);
+        float distToEdgeZ = hardBoundary - Mathf.Abs(transform.position.z);
+        float minDistToEdge = Mathf.Min(distToEdgeX, distToEdgeZ);
+        float softMargin = hardBoundary - softBoundary;
+        if (minDistToEdge < softMargin && minDistToEdge > 0f)
+            r_boundarySoft = -0.04f * (1f - minDistToEdge / softMargin);
+
+        // ========== [9] 多目标加权汇总（加入速度项） ==========
+        float totalReward =
+            W_DISTANCE * r_dist +
+            W_HEADING * r_heading +
+            W_CROSSTRACK * r_crossTrack +
+            W_COLREGS * r_colregs +
+            W_SMOOTH * r_smooth +
+            W_SAFETY * r_collision +
+            W_TIME * r_time +
+            0.4f * r_speed +        // ← 新增
+            r_boundarySoft;
+
+        totalReward = Mathf.Clamp(totalReward, -1.0f, 1.5f);
+        AddReward(totalReward);
+
+        // 累加所有奖励分量
+        reward_dist += r_dist;
+        reward_heading += r_heading;
+        reward_speed += r_speed;        // ← 从 0f 改为 r_speed
+        reward_near_target += 0f;
+        reward_colregs += r_colregs;
+        reward_collision += r_collision;
+        reward_time += r_time;
+        reward_boundary += r_boundarySoft;
+        reward_smooth += r_smooth;
+
+        // ========== 终止条件：完成奖励（提高基线） ==========
         if (distToTarget < targetArriveThreshold)
         {
-            // 时间奖励：越快越好，但上限不超过 3.0
-            float timeBonus = Mathf.Max(0f, (currentMaxEpisodeTime - elapsedTime) / Mathf.Max(currentMaxEpisodeTime, 1f));
-            float finishReward = 2.0f + timeBonus; // 范围 [2.0, 3.0]
+            float precisionBonus = Mathf.Max(0f, 20f * (1f - distToTarget / targetArriveThreshold));
+            float finishReward = Mathf.Clamp(
+                260.0f + (currentMaxEpisodeTime - elapsedTime) * 0.15f + precisionBonus,
+                240f, 320f);
             AddReward(finishReward);
             reward_finish += finishReward;
-            currentRewardDebug.finish = finishReward;
-
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("Finish", finishReward);
-                Debug.Log($"🏁 到达目标！奖励：{finishReward:F2}，用时：{elapsedTime:F1}s");
-            }
-
             _resetReason = "target";
-            UpdateTotalRewardDebug();
             EndEpisodeCustom();
-            return;
+            return true;
         }
 
-        // ========== [10] 超时（去除 *2.0f，严格按设定时间执行） ==========
+        // ========== 超时终止 ==========
         if (elapsedTime > currentMaxEpisodeTime)
         {
-            float timeoutPenalty = -1.0f;
+            float timeoutPenalty = -5.0f;
             AddReward(timeoutPenalty);
             reward_timeout += timeoutPenalty;
-            currentRewardDebug.timeout = timeoutPenalty;
-
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("Timeout", timeoutPenalty);
-                Debug.Log($"⏰ 超时！惩罚：{timeoutPenalty}，用时：{elapsedTime:F1}s");
-            }
-
             _resetReason = "timeout";
-            UpdateTotalRewardDebug();
             EndEpisodeCustom();
-            return;
+            return true;
         }
 
-        // ========== [11] 驶出边界（降低惩罚，与超时同量级） ==========
-        float maxBoundary = maxGridDim * boundaryThresholdFactor;
-        if (Mathf.Abs(transform.position.x) > maxBoundary || Mathf.Abs(transform.position.z) > maxBoundary)
+        // ========== 边界硬终止 ==========
+        if (Mathf.Abs(transform.position.x) > hardBoundary || Mathf.Abs(transform.position.z) > hardBoundary)
         {
-            float boundaryPenalty = -1.5f;
+            float boundaryPenalty = -5.0f;
             AddReward(boundaryPenalty);
             reward_boundary += boundaryPenalty;
-            currentRewardDebug.boundary = boundaryPenalty;
-
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("Boundary", boundaryPenalty);
-                Debug.Log($"🚫 驶出边界！惩罚：{boundaryPenalty}，位置：({transform.position.x:F1}, {transform.position.z:F1})");
-            }
-
             _resetReason = "boundary";
-            UpdateTotalRewardDebug();
             EndEpisodeCustom();
-            return;
+            return true;
         }
 
-        // ========== [12] 路径完成奖励（与目标达成解耦，避免重复触发） ==========
-        // 仅在未到达最终目标时生效，作为中间 waypoint 奖励
-        if (isPathCompleted && !IsEpisodeDone && distToTarget >= targetArriveThreshold)
+        // ========== 路径完成奖励 ==========
+        if (isPathCompleted && !pathCompletionRewarded && distToTarget >= targetArriveThreshold)
         {
-            float pathProgressBonus = 0.5f * (1f - Mathf.Clamp01(distToTarget / Mathf.Max(pathCompleteTerminateThreshold * 2f, 1f)));
-            pathProgressBonus = Mathf.Clamp(pathProgressBonus, 0.1f, 0.5f);
+            float pathProgressBonus = 30.0f;
             AddReward(pathProgressBonus);
             reward_path_complete += pathProgressBonus;
-            currentRewardDebug.pathComplete = pathProgressBonus;
-
-            if (enableRewardDebug)
-            {
-                RecordRewardHistory("PathComplete", pathProgressBonus);
-                DebugRewardComponent("路径完成奖励", pathProgressBonus, 0.1f, 0.5f);
-            }
-
-            // 如果路径完成且已非常接近目标，给予中等奖励（但不与 [9] 的到达奖励叠加）
-            if (distToTarget < pathCompleteTerminateThreshold && distToTarget >= targetArriveThreshold)
-            {
-                float pathFinishBonus = 1.5f;
-                AddReward(pathFinishBonus);
-                reward_path_complete += pathFinishBonus;
-                currentRewardDebug.pathComplete = pathFinishBonus;
-
-                if (enableRewardDebug)
-                {
-                    RecordRewardHistory("PathComplete", pathFinishBonus);
-                    Debug.Log($"🛤️  路径完成并接近目标，奖励：{pathFinishBonus} | 累计奖励：{GetCumulativeReward()}");
-                }
-
-                _resetReason = "path_complete_near";
-                // 注意：这里不 EndEpisode，让智能体继续尝试到达最终目标以获得更高奖励
-            }
+            pathCompletionRewarded = true;
         }
 
+        // ========== 更新状态 ==========
         lastDistToTarget = distToTarget;
 
-        // 更新总奖励调试
-        UpdateTotalRewardDebug();
+        // ========== 调试信息 ==========
+        if (enableRewardDebug)
+        {
+            currentRewardDebug.distance = r_dist;
+            currentRewardDebug.speed = r_speed;  // ← 从 0f 改为 r_speed
+            currentRewardDebug.heading = r_heading;
+            currentRewardDebug.nearTarget = 0f;
+            currentRewardDebug.colregs = r_colregs;
+            currentRewardDebug.smooth = r_smooth;
+            currentRewardDebug.curiosity = 0f;
+            currentRewardDebug.collision = r_collision;
+            currentRewardDebug.nearMiss = (nearestObsDist < safeNearMissDistance && nearestObsDist > collisionInnerRadius)
+                ? -0.3f * (safeNearMissDistance - nearestObsDist) : 0f;
+            currentRewardDebug.safePass = 0f;
+            currentRewardDebug.total = totalReward;
+            currentRewardDebug.distToTarget = distToTarget;
+            currentRewardDebug.currentSpeed = currentSpeed;
+            currentRewardDebug.elapsedTime = elapsedTime;
+            UpdateTotalRewardDebug();
+        }
+
+        return false;
     }
 
-    /// <summary>
-    /// 更新总奖励调试信息
-    /// </summary>
     private void UpdateTotalRewardDebug()
     {
         currentRewardDebug.total = currentRewardDebug.distance +
@@ -1259,6 +1320,8 @@ public class USV_GlobalRLAgent : Agent
                                   currentRewardDebug.heading +
                                   currentRewardDebug.nearTarget +
                                   currentRewardDebug.collision +
+                                  currentRewardDebug.nearMiss +
+                                  currentRewardDebug.safePass +
                                   currentRewardDebug.finish +
                                   currentRewardDebug.timeout +
                                   currentRewardDebug.boundary +
@@ -1278,9 +1341,6 @@ public class USV_GlobalRLAgent : Agent
     // 奖励调试方法
     // ============================================================
 
-    /// <summary>
-    /// 初始化奖励历史记录
-    /// </summary>
     private void InitRewardHistory()
     {
         if (!recordRewardHistory) return;
@@ -1289,7 +1349,7 @@ public class USV_GlobalRLAgent : Agent
         {
             "Distance", "Speed", "Heading", "NearTarget", "Collision",
             "Finish", "Timeout", "Boundary", "PathComplete",
-            "Curiosity", "COLREGs", "Smooth", "Total"
+            "Curiosity", "COLREGs", "Smooth", "NearMiss", "SafePass", "Time", "Total"
         };
 
         foreach (string name in rewardNames)
@@ -1299,23 +1359,16 @@ public class USV_GlobalRLAgent : Agent
         }
     }
 
-    /// <summary>
-    /// 记录奖励到历史
-    /// </summary>
     private void RecordRewardHistory(string name, float value)
     {
         if (!recordRewardHistory || !rewardHistory.ContainsKey(name)) return;
 
         rewardHistory[name].Add(value);
 
-        // 限制历史长度防止内存溢出
         if (rewardHistory[name].Count > 10000)
             rewardHistory[name].RemoveAt(0);
     }
 
-    /// <summary>
-    /// 获取奖励统计信息
-    /// </summary>
     private string GetRewardStats(string name)
     {
         if (!rewardHistory.ContainsKey(name) || rewardHistory[name].Count == 0)
@@ -1338,45 +1391,29 @@ public class USV_GlobalRLAgent : Agent
         return $"Avg:{avg:F3} Min:{min:F3} Max:{max:F3} Count:{list.Count}";
     }
 
-    /// <summary>
-    /// 调试单个奖励分量
-    /// </summary>
-    private void DebugRewardComponent(string name, float value, float min, float max)
-    {
-        if (!enableRewardDebug || !logRewardDetails) return;
-
-        string icon = value >= 0 ? "🟢" : "🔴";
-        string range = value < min ? "⚠️低于范围" : value > max ? "⚠️超出范围" : "✅";
-        Debug.Log($"{icon} {name}: {value:F4} [{min:F2}, {max:F2}] {range}");
-    }
-
-    /// <summary>
-    /// 更新调试显示
-    /// </summary>
     private void UpdateRewardDebugDisplay()
     {
         debugFrameCounter++;
         if (debugFrameCounter % debugUpdateInterval != 0) return;
 
-        // 构建调试字符串
         System.Text.StringBuilder sb = new System.Text.StringBuilder();
         sb.AppendLine("╔══════════════════════════════════════════════════════════╗");
         sb.AppendLine($"║  📊 奖励调试面板 - 帧 {Time.frameCount}                    ║");
         sb.AppendLine("╠══════════════════════════════════════════════════════════╣");
 
-        // 当前状态
         sb.AppendLine($"║  位置: ({transform.position.x:F2}, {transform.position.z:F2})         ║");
         sb.AppendLine($"║  速度: {currentRewardDebug.currentSpeed:F2} m/s                    ║");
         sb.AppendLine($"║  距目标: {currentRewardDebug.distToTarget:F2}m                    ║");
         sb.AppendLine($"║  运行时间: {currentRewardDebug.elapsedTime:F1}s                    ║");
         sb.AppendLine("╠══════════════════════════════════════════════════════════╣");
 
-        // 奖励分量
         sb.AppendLine($"║  🎯 距离奖励:     {currentRewardDebug.distance,10:F4}   ║");
         sb.AppendLine($"║  🏃 速度奖励:     {currentRewardDebug.speed,10:F4}   ║");
         sb.AppendLine($"║  🧭 航向奖励:     {currentRewardDebug.heading,10:F4}   ║");
         sb.AppendLine($"║  📍 接近目标:     {currentRewardDebug.nearTarget,10:F4}   ║");
         sb.AppendLine($"║  💥 碰撞惩罚:     {currentRewardDebug.collision,10:F4}   ║");
+        sb.AppendLine($"║  ⚠️ 擦边惩罚:     {currentRewardDebug.nearMiss,10:F4}   ║");
+        sb.AppendLine($"║  ✅ 安全通过:     {currentRewardDebug.safePass,10:F4}   ║");
         sb.AppendLine($"║  🏁 完成奖励:     {currentRewardDebug.finish,10:F4}   ║");
         sb.AppendLine($"║  ⏰ 超时惩罚:     {currentRewardDebug.timeout,10:F4}   ║");
         sb.AppendLine($"║  🚫 边界惩罚:     {currentRewardDebug.boundary,10:F4}   ║");
@@ -1389,7 +1426,6 @@ public class USV_GlobalRLAgent : Agent
         sb.AppendLine($"║  📈 累计奖励:     {GetCumulativeReward(),10:F2}   ║");
         sb.AppendLine("╠══════════════════════════════════════════════════════════╣");
 
-        // 统计信息（如果有历史）
         if (recordRewardHistory && rewardHistory.Count > 0)
         {
             sb.AppendLine("║  📊 历史统计 (最近)                                  ║");
@@ -1401,14 +1437,12 @@ public class USV_GlobalRLAgent : Agent
 
         sb.AppendLine("╚══════════════════════════════════════════════════════════╝");
 
-        // 输出到控制台或Unity的Debug
         if (logRewardDetails)
         {
             Debug.Log(sb.ToString());
         }
         else
         {
-            // 只显示简化的单行信息在Inspector中
             lastRewardLog = $"Reward: {currentRewardDebug.total:F4} | Dist: {currentRewardDebug.distToTarget:F2}m | " +
                            $"Speed: {currentRewardDebug.currentSpeed:F2}m/s | " +
                            $"Dist:{currentRewardDebug.distance:F3} Col:{currentRewardDebug.collision:F3}";
@@ -1458,34 +1492,49 @@ public class USV_GlobalRLAgent : Agent
 
         totalDistanceToGoal += Vector3.Distance(transform.position, target.position);
 
-        float ttc = CalculateTTC();
+        float ttc = CalculateTTCDirectional(); 
         if (ttc < minTimeToCollision) minTimeToCollision = ttc;
     }
 
-    private float CalculateTTC()
+    private float CalculateTTCDirectional()
     {
         Collider[] cols = Physics.OverlapSphere(transform.position, 20f);
         float minT = 999f;
 
         foreach (var c in cols)
         {
-            if (c.gameObject == gameObject || !c.CompareTag("Obstacle")) continue;
+            if (c.gameObject == gameObject) continue;
+            if (!c.CompareTag("Obstacle") && !c.CompareTag("DynamicObstacle") && !c.CompareTag("Ship"))
+                continue;
 
             Vector3 deltaPos = c.transform.position - transform.position;
             deltaPos.y = 0;
             float dist = deltaPos.magnitude;
-            if (dist < 1f) continue;
+            if (dist < 0.5f) return 0f;
 
             Rigidbody orb = c.GetComponent<Rigidbody>();
-            float relSpeed = orb != null ? orb.linearVelocity.magnitude : 0.1f;
-            relSpeed += rb.linearVelocity.magnitude;
-            if (relSpeed < 0.1f) relSpeed = 0.1f;
+            Vector3 otherVel = orb != null ? orb.linearVelocity : Vector3.zero;
+            Vector3 relVel = otherVel - rb.linearVelocity;
+
+            float velDotPos = Vector3.Dot(relVel, deltaPos);
+            if (velDotPos >= 0) continue;
+
+            float relSpeed = relVel.magnitude;
+            if (relSpeed < 0.1f) continue;
 
             float t = dist / relSpeed;
             if (t < minT) minT = t;
         }
         return minT;
     }
+
+    // ============================================================
+    // 回合结束统计写入
+    // ============================================================
+
+    // ============================================================
+    // 回合结束统计写入
+    // ============================================================
 
     // ============================================================
     // 回合结束统计写入
@@ -1501,53 +1550,97 @@ public class USV_GlobalRLAgent : Agent
         float avgEffort = totalControlEffort / currentEpisodeLength;
         float avgGoalDist = totalDistanceToGoal / currentEpisodeLength;
 
-        // USV 性能指标
+        // [USV] 指标
         Academy.Instance.StatsRecorder.Add("USV/CrossTrackError", avgCTE, StatAggregationMethod.Average);
         Academy.Instance.StatsRecorder.Add("USV/HeadingError", avgHdg, StatAggregationMethod.Average);
-        Academy.Instance.StatsRecorder.Add("USV/CollisionCount", collisionCount, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("USV/NearMissCount", nearMissCount, StatAggregationMethod.Sum);
         Academy.Instance.StatsRecorder.Add("USV/EpisodeLength", currentEpisodeLength, StatAggregationMethod.Average);
         Academy.Instance.StatsRecorder.Add("USV/SpeedTrackingError", avgSpeedErr, StatAggregationMethod.Average);
         Academy.Instance.StatsRecorder.Add("USV/ControlEffort", avgEffort, StatAggregationMethod.Average);
         Academy.Instance.StatsRecorder.Add("USV/MinTTC", minTimeToCollision, StatAggregationMethod.Average);
         Academy.Instance.StatsRecorder.Add("USV/DistanceToGoal", avgGoalDist, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("USV/CollisionCount", collisionCount, StatAggregationMethod.Sum);
+        Academy.Instance.StatsRecorder.Add("USV/NearMissCount", nearMissCount, StatAggregationMethod.Sum);
 
-        // 奖励分量
-        Academy.Instance.StatsRecorder.Add("Reward/Distance", reward_dist, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Speed", reward_speed, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Heading", reward_heading, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/NearTarget", reward_near_target, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Collision", reward_collision, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Finish", reward_finish, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Timeout", reward_timeout, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Boundary", reward_boundary, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/PathComplete", reward_path_complete, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/COLREGs", reward_colregs, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Curiosity", reward_curiosity, StatAggregationMethod.Sum);
-        Academy.Instance.StatsRecorder.Add("Reward/Smooth", reward_smooth, StatAggregationMethod.Sum);
+        // 奖励分量（Average）
+        Academy.Instance.StatsRecorder.Add("Reward/Time", reward_time, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Distance", reward_dist, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Speed", reward_speed, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Heading", reward_heading, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/NearTarget", reward_near_target, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Collision", reward_collision, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Finish", reward_finish, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Timeout", reward_timeout, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Boundary", reward_boundary, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/PathComplete", reward_path_complete, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/COLREGs", reward_colregs, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Curiosity", reward_curiosity, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/Smooth", reward_smooth, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/NearMiss", reward_nearMiss, StatAggregationMethod.Average);
+        Academy.Instance.StatsRecorder.Add("Reward/SafePass", reward_safe_pass, StatAggregationMethod.Average);
 
-        // COLREGs 合规评分
+        // ✅ 核心：回合平均累计奖励
+        Academy.Instance.StatsRecorder.Add("Environment/Cumulative Reward", GetCumulativeReward(), StatAggregationMethod.Average);
+
+        // ✅ 核心：单步平均质量（Average）
+        Academy.Instance.StatsRecorder.Add("Policy/PerStepReward", GetCumulativeReward() / currentEpisodeLength, StatAggregationMethod.Average);
+
+        // COLREGs 合规统计
         if (colregsEvaluator != null && target != null)
         {
-            var emptyObstacles = new List<(Vector3, Vector3)>();
-            var (score, state) = colregsEvaluator.Evaluate(
+            var obstacles = GetColregsObstacles();
+
+            if (obstacles.Count == 0 && enableRewardDebug)
+                Debug.LogWarning("[EpisodeEnd] COLREGs obstacles list is EMPTY!");
+
+            var result = colregsEvaluator.Evaluate(
                 transform.position,
                 transform.eulerAngles.y,
                 rb.linearVelocity.magnitude,
-                emptyObstacles
+                obstacles
             );
-            Academy.Instance.StatsRecorder.Add("COLREGs/ComplianceScore", score, StatAggregationMethod.Average);
-            Academy.Instance.StatsRecorder.Add("COLREGs/State", (float)state, StatAggregationMethod.Average);
+
+            Academy.Instance.StatsRecorder.Add("COLREGs/ComplianceScore", result.Item1, StatAggregationMethod.Average);
+            Academy.Instance.StatsRecorder.Add("COLREGs/State", (float)(int)result.Item2, StatAggregationMethod.Average);
         }
     }
 
-#if UNITY_EDITOR
-    // 在Scene视图显示调试信息
+    private List<(Vector3 pos, Vector3 vel)> ScanDynamicObstacles(float radius = 25f)
+    {
+        var obstacles = new List<(Vector3 pos, Vector3 vel)>();
+        Collider[] cols = Physics.OverlapSphere(transform.position, radius);
+        foreach (var col in cols)
+        {
+            if (col.gameObject == gameObject) continue;
+            if (!col.CompareTag("DynamicObstacle") && !col.CompareTag("Ship") && !col.CompareTag("USV"))
+                continue;
+
+            Rigidbody orb = col.GetComponent<Rigidbody>();
+            Vector3 vel = orb != null ? orb.linearVelocity : Vector3.zero;
+            obstacles.Add((col.transform.position, vel));
+        }
+        return obstacles;
+    }
+
+    private List<(Vector3 pos, Vector3 vel)> GetColregsObstacles()
+    {
+        if (localPlanner != null && localPlanner.dynamicObstacles != null && localPlanner.dynamicObstacles.Count > 0)
+        {
+            var list = new List<(Vector3 pos, Vector3 vel)>();
+            for (int i = 0; i < localPlanner.dynamicObstacles.Count; i++)
+            {
+                Vector3 vel = i < localPlanner.dynamicObstacleVelocities.Count
+                    ? localPlanner.dynamicObstacleVelocities[i] : Vector3.zero;
+                list.Add((localPlanner.dynamicObstacles[i], vel));
+            }
+            return list;
+        }
+        return ScanDynamicObstacles(25f);
+    }
+
     private void OnDrawGizmosSelected()
     {
         if (!enableRewardDebug || !Application.isPlaying) return;
 
-        // 在Scene视图显示奖励信息
         Vector3 labelPos = transform.position + Vector3.up * 4f;
         string label = $"━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
                        $"  💰 总奖励: {currentRewardDebug.total:F4}\n" +
@@ -1555,6 +1648,7 @@ public class USV_GlobalRLAgent : Agent
                        $"  🏃 速度: {currentRewardDebug.speed:F4}\n" +
                        $"  🧭 航向: {currentRewardDebug.heading:F4}\n" +
                        $"  💥 碰撞: {currentRewardDebug.collision:F4}\n" +
+                       $"  ⚠️ 擦边: {currentRewardDebug.nearMiss:F4}\n" +
                        $"  🏁 完成: {currentRewardDebug.finish:F4}\n" +
                        $"  ⚓ COLREGs: {currentRewardDebug.colregs:F4}\n" +
                        $"  📍 距目标: {currentRewardDebug.distToTarget:F2}m\n" +
@@ -1563,5 +1657,4 @@ public class USV_GlobalRLAgent : Agent
 
         UnityEditor.Handles.Label(labelPos, label);
     }
-#endif
 }
