@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using USVGridSystem;
 
 public class RandomSpawnManager : MonoBehaviour
 {
@@ -116,6 +116,7 @@ public class RandomSpawnManager : MonoBehaviour
                 {
                     int layerIndex = GetLayerFromMask(obstacleLayer);
                     newRock.layer = layerIndex;
+                    newRock.tag = "Obstacle";   // ← 加这行
                 }
                 spawnedRocks.Add(newRock);
                 spawned++;

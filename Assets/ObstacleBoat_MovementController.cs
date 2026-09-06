@@ -1,90 +1,111 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using System;
-// ĞÂÔö£º½â¾öDictionaryÎ´ÕÒµ½µÄÃüÃû¿Õ¼ä
+using System.Collections;
 using System.Collections.Generic;
-
+using YoloV8Detection;
+using USVGridSystem;
 /// <summary>
-/// ÎŞÈË´¬×ÔÖ÷ÒÆ¶¯¿ØÖÆ£¨ÊÖ¶¯ÓÅÏÈ+×Ô¶¯Ëæ»úÒÆ¶¯£©- ÊÊÅäGridManagerÕ¤¸ñÏµÍ³
-/// ĞŞ¸´µã£º1. Ìæ»»¹ıÊ±µÄFindObjectOfType ¡ú FindFirstObjectByType 2. Ç¿»¯Õ¤¸ñ×ø±ê×ª»»½¡×³ĞÔ 3. ÈÕÖ¾½ÓÈëYoloLogSettingsÍ³Ò»¿ØÖÆ
-/// ¶îÍâĞŞ¸´£º1. Ìí¼ÓSystem.Collections.GenericÃüÃû¿Õ¼ä 2. ½â¾öRandom/ObjectÃüÃû¿Õ¼ä³åÍ»
+/// æ— äººèˆ¹è‡ªä¸»ç§»åŠ¨æ§åˆ¶ï¼ˆæ‰‹åŠ¨ä¼˜å…ˆ+è‡ªåŠ¨éšæœºç§»åŠ¨ï¼‰- é€‚é…GridManageræ …æ ¼ç³»ç»Ÿ
 /// </summary>
-[RequireComponent(typeof(Collider))] // È·±£ÓĞÅö×²Ìå£¨Õ¤¸ñ¼ì²â¸¨Öú£©
+[RequireComponent(typeof(Collider))]
 public class USV_AutoMovement : MonoBehaviour
 {
-    [Header("ÒÆ¶¯»ù´¡ÉèÖÃ")]
-    [Tooltip("ÎŞÈË´¬ÊÖ¶¯ÒÆ¶¯ËÙ¶È")]
+    [Header("ç§»åŠ¨åŸºç¡€è®¾ç½®")]
+    [Tooltip("æ— äººèˆ¹æ‰‹åŠ¨ç§»åŠ¨é€Ÿåº¦")]
     public float usvMoveSpeed = 5f;
-    [Tooltip("ÀëË®Ãæ¸ß¶ÈÆ«ÒÆ£¨¹Ì¶¨YÖá£©")]
+    [Tooltip("ç¦»æ°´é¢é«˜åº¦åç§»ï¼ˆå›ºå®šYè½´ï¼‰")]
     public float waterHeightOffset = 0.5f;
 
-    [Header("°´¼ü¿ØÖÆÅäÖÃ")]
-    public KeyCode forwardControlKey = KeyCode.W; // Ç°½ø
-    public KeyCode backwardControlKey = KeyCode.S; // ºóÍË
-    public KeyCode leftControlKey = KeyCode.A; // ×óÒÆ
-    public KeyCode rightControlKey = KeyCode.D; // ÓÒÒÆ
+    [Header("æŒ‰é”®æ§åˆ¶é…ç½®")]
+    public KeyCode forwardControlKey = KeyCode.W;
+    public KeyCode backwardControlKey = KeyCode.S;
+    public KeyCode leftControlKey = KeyCode.A;
+    public KeyCode rightControlKey = KeyCode.D;
 
-    [Header("×Ô¶¯ÒÆ¶¯ÅäÖÃ")]
-    [Tooltip("×Ô¶¯ÒÆ¶¯ËÙ¶È£¨½¨ÒéµÍÓÚÊÖ¶¯ËÙ¶È£©")]
+    [Header("è‡ªåŠ¨ç§»åŠ¨é…ç½®")]
+    [Tooltip("è‡ªåŠ¨ç§»åŠ¨é€Ÿåº¦ï¼ˆå»ºè®®ä½äºæ‰‹åŠ¨é€Ÿåº¦ï¼‰")]
     public float autoMoveSpeed = 3f;
-    [Tooltip("Ëæ»ú·½Ïò¸üĞÂ¼ä¸ô£¨Ãë£©")]
+    [Tooltip("éšæœºæ–¹å‘æ›´æ–°é—´éš”ï¼ˆç§’ï¼‰")]
     public float randomDirUpdateInterval = 1.5f;
-    [Tooltip("ÊÇ·ñ¿ªÆôÕÏ°­¶ã±Ü£¨»ùÓÚGridManagerÕ¤¸ñ£©")]
+    [Tooltip("æ˜¯å¦å¼€å¯éšœç¢èº²é¿ï¼ˆåŸºäºGridManageræ …æ ¼ï¼‰")]
     public bool enableObstacleAvoid = true;
-    [Tooltip("ÊÇ·ñÏŞÖÆË®Óò±ß½ç£¨»ùÓÚGridManager£©")]
+    [Tooltip("æ˜¯å¦é™åˆ¶æ°´åŸŸè¾¹ç•Œï¼ˆåŸºäºGridManagerï¼‰")]
     public bool enableWaterBoundaryLimit = true;
 
-    // Ë½ÓĞ±äÁ¿
-    private Vector3 _randomMoveDir; // µ±Ç°Ëæ»úÒÆ¶¯·½Ïò
-    private float _dirUpdateTimer; // Ëæ»ú·½Ïò¸üĞÂ¼ÆÊ±Æ÷
-    private GridManager _gridManager; // Õ¤¸ñ¹ÜÀíÆ÷ÒıÓÃ
-    private bool _isGridReady; // Õ¤¸ñ¾ÍĞ÷±ê¼Ç
-    // ĞÂÔö£ºÈÕÖ¾ÅäÖÃÓëÈÕÖ¾ÊµÀı£¨USVÄ£¿éÈÕÖ¾£©
-    private YoloLogSettings _yoloLogSettings;
-    private readonly YoloLogSettings.LogModule _currentModule = YoloLogSettings.LogModule.Main; // ¼ÙÉè¸Ã½Å±¾¹éÊôMainÄ£¿é£¬¿É¸ù¾İÊµ¼Êµ÷Õû
+    // ç§æœ‰å˜é‡
+    private Vector3 _randomMoveDir;
+    private float _dirUpdateTimer;
+    private GridManager _gridManager;
+    private bool _isGridReady;
+
+    // æ—¥å¿—é…ç½®
+    private YoloV8Detection.YoloLogSettings _yoloLogSettings;
+    private readonly YoloV8Detection.YoloLogSettings.LogModule _currentModule = YoloV8Detection.YoloLogSettings.LogModule.ObstacleBoat;
 
     void Start()
     {
-        // ³õÊ¼»¯Ëæ»ú·½Ïò£¨±ÜÃâ³õÊ¼Ö¡ÎŞ·½Ïò£©
-        // ĞŞ¸´£ºÃ÷È·Ö¸¶¨UnityEngineÃüÃû¿Õ¼ä£¬½â¾öRandom³åÍ»
-        _randomMoveDir = new Vector3(UnityEngine.Random.Range(-1f, 1f), 0, UnityEngine.Random.Range(-1f, 1f)).normalized;
+        UpdateRandomMoveDir();
 
-        // ĞŞ¸´£ºÌæ»»¹ıÊ±µÄFindObjectOfType ¡ú FindFirstObjectByType£¨¼æÈİUnityĞÂ°æ±¾£©
-        // ĞŞ¸´£ºÃ÷È·Ö¸¶¨UnityEngineÃüÃû¿Õ¼ä£¬½â¾öObject³åÍ»
-        // ÈçĞè°üº¬·Ç¼¤»î¶ÔÏó£¬Ìí¼Ó²ÎÊı£ºFindObjectsInactive.Include
         _gridManager = UnityEngine.Object.FindFirstObjectByType<GridManager>();
-
-        // ĞÂÔö£º³õÊ¼»¯ÈÕÖ¾ÅäÖÃ£¨ÓÅÏÈ´ÓÈ«¾Öµ¥Àı»ñÈ¡£¬ÎŞÔòĞÂ½¨£©
         InitLogSettings();
 
-        // Ô­ÓĞÈÕÖ¾Ìæ»»ÎªÍ³Ò»ÈÕÖ¾½Ó¿Ú
         if (_gridManager == null && (enableObstacleAvoid || enableWaterBoundaryLimit))
         {
-            LogWarn($"Î´ÕÒµ½GridManager£¬ÕÏ°­¶ã±Ü/±ß½çÏŞÖÆ¹¦ÄÜ½«Ê§Ğ§£¡");
+            LogWarn($"æœªæ‰¾åˆ°GridManagerï¼Œéšœç¢èº²é¿/è¾¹ç•Œé™åˆ¶åŠŸèƒ½å°†å¤±æ•ˆï¼");
         }
 
-        // Ğ£Ñé²ÎÊıºÏ·¨ĞÔ
         ValidateParameters();
+
+        if (_gridManager != null && enableObstacleAvoid)
+        {
+            StartCoroutine(CheckAndFixInitialPosition());
+        }
+    }
+
+    // âœ… æ­£ç¡®ï¼šè¿”å›ç±»å‹æ˜¯ IEnumeratorï¼ˆéæ³›å‹ï¼‰ï¼Œå¹¶ä¸”åªå®šä¹‰ä¸€æ¬¡
+    private IEnumerator CheckAndFixInitialPosition()
+    {
+        yield return new WaitForSeconds(0.5f);
+
+        if (_gridManager == null) yield break;
+
+        Vector2Int gridPos = _gridManager.WorldToGrid(transform.position);
+        if (!_gridManager.IsGridPassable(gridPos))
+        {
+            LogWarn($"åˆå§‹ä½ç½®åœ¨éšœç¢ç‰©ä¸Šï¼Œå°è¯•ç§»åŠ¨åˆ°å®‰å…¨ä½ç½®");
+
+            for (int i = 0; i < 20; i++)
+            {
+                float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+                Vector3 offset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * 2f;
+                Vector3 newPos = transform.position + offset;
+
+                Vector2Int newGridPos = _gridManager.WorldToGrid(newPos);
+                if (_gridManager.IsGridPassable(newGridPos))
+                {
+                    transform.position = new Vector3(newPos.x, waterHeightOffset, newPos.z);
+                    LogInfo($"ç§»åŠ¨åˆ°å®‰å…¨ä½ç½®: {transform.position}");
+                    break;
+                }
+            }
+        }
     }
 
     void Update()
     {
-        // ¸üĞÂÕ¤¸ñ¾ÍĞ÷×´Ì¬£¨Ç¿»¯¿ÕÖµĞ£Ñé£©
         _isGridReady = _gridManager != null && _gridManager.IsGridReady();
 
         Vector3 currentPosition = transform.position;
         float xAxisMovement = 0f;
         float zAxisMovement = 0f;
 
-        // 1. ¼ì²âÊÇ·ñÓĞÊÖ¶¯ÊäÈë£¨ÊÖ¶¯¿ØÖÆÓÅÏÈ¼¶×î¸ß£©
         bool hasManualInput = CheckManualInput();
 
         if (hasManualInput)
         {
-            // 2. ÊÖ¶¯¿ØÖÆÂß¼­
             xAxisMovement = GetManualXMovement();
             zAxisMovement = GetManualZMovement();
 
-            // ÊÖ¶¯¿ØÖÆÒ²ÏŞÖÆË®Óò±ß½ç
             if (enableWaterBoundaryLimit && _isGridReady)
             {
                 LimitPositionToWaterBoundary(ref xAxisMovement, ref zAxisMovement, currentPosition);
@@ -92,135 +113,107 @@ public class USV_AutoMovement : MonoBehaviour
         }
         else
         {
-            // 3. ÎŞÊÖ¶¯ÊäÈëÊ±£¬Ö´ĞĞ×Ô¶¯Ëæ»úÒÆ¶¯
             AutoRandomMovement(ref xAxisMovement, ref zAxisMovement);
         }
 
-        // ¸üĞÂÎ»ÖÃ²¢¹Ì¶¨Ë®Ãæ¸ß¶È£¨ÏŞÖÆNaN/ÎŞÇî´óÖµ£©
         UpdateUSVPosition(currentPosition, xAxisMovement, zAxisMovement);
     }
 
-    /// <summary>
-    /// ĞÂÔö£º³õÊ¼»¯ÈÕÖ¾ÅäÖÃ
-    /// </summary>
     private void InitLogSettings()
     {
-        // ·½Ê½1£º´ÓÈ«¾Öµ¥Àı»ñÈ¡£¨ÍÆ¼ö£¬±£Ö¤È«¾ÖÅäÖÃÍ³Ò»£©
-        _yoloLogSettings = YoloLogSettingsGlobal.Instance?.LogSettings;
+        _yoloLogSettings = YoloV8Detection.YoloLogSettings.Instance;
 
-        // ·½Ê½2£ºÎŞÈ«¾Öµ¥ÀıÔòĞÂ½¨£¨¶µµ×£©
         if (_yoloLogSettings == null)
         {
-            _yoloLogSettings = new YoloLogSettings();
-            LogWarn("Î´ÕÒµ½È«¾ÖYoloLogSettings£¬Ê¹ÓÃ±¾µØÁÙÊ±ÅäÖÃ");
+            Debug.LogWarning("æœªæ‰¾åˆ° YoloLogSettings å•ä¾‹ï¼Œæ—¥å¿—åŠŸèƒ½å°†å¤±æ•ˆï¼");
         }
     }
 
-    /// <summary>
-    /// ĞÂÔö£ºÍ³Ò»ÈÕÖ¾Êä³ö·½·¨£¨ÊÊÅäYoloLogSettings£©
-    /// </summary>
-    #region Í³Ò»ÈÕÖ¾½Ó¿Ú
+    #region ç»Ÿä¸€æ—¥å¿—æ¥å£
     private void LogDebug(string message)
     {
-        WriteLog(YoloLogSettings.LogLevel.Debug, message);
+        WriteLog(YoloV8Detection.YoloLogSettings.LogLevel.Debug, message);
     }
 
     private void LogInfo(string message)
     {
-        WriteLog(YoloLogSettings.LogLevel.Info, message);
+        WriteLog(YoloV8Detection.YoloLogSettings.LogLevel.Info, message);
     }
 
     private void LogWarn(string message)
     {
-        WriteLog(YoloLogSettings.LogLevel.Warn, message);
+        WriteLog(YoloV8Detection.YoloLogSettings.LogLevel.Warn, message);
     }
 
     private void LogError(string message, Exception ex = null)
     {
         var fullMessage = ex == null ? message : $"{message}\n{ex}";
-        WriteLog(YoloLogSettings.LogLevel.Error, fullMessage);
+        WriteLog(YoloV8Detection.YoloLogSettings.LogLevel.Error, fullMessage);
     }
 
     private void LogFatal(string message, Exception ex = null)
     {
         var fullMessage = ex == null ? message : $"{message}\n{ex}";
-        WriteLog(YoloLogSettings.LogLevel.Fatal, fullMessage);
+        WriteLog(YoloV8Detection.YoloLogSettings.LogLevel.Fatal, fullMessage);
     }
 
-    /// <summary>
-    /// µ×²ãÈÕÖ¾Êä³öÂß¼­£¨¶Ô½ÓYoloLogSettingsĞ£Ñé£©
-    /// </summary>
-    private void WriteLog(YoloLogSettings.LogLevel level, string message)
+    private void WriteLog(YoloV8Detection.YoloLogSettings.LogLevel level, string message)
     {
-        // 1. Ğ£ÑéÄ£¿éÊÇ·ñÆôÓÃ
+        if (_yoloLogSettings == null) return;
         if (!_yoloLogSettings.IsModuleEnabled(_currentModule)) return;
 
-        // 2. Ğ£ÑéÈÕÖ¾¼¶±ğ£¨µ±Ç°¼¶±ğ >= ÅäÖÃ¼¶±ğ²ÅÊä³ö£©
         var configLevel = _yoloLogSettings.GetModuleLogLevel(_currentModule);
         if (level < configLevel) return;
 
-        // 3. Ö´ĞĞÊµ¼ÊÈÕÖ¾Êä³ö£¨±£ÁôÔ­ÓĞUnity DebugÊä³öÂß¼­£©
         string logContent = $"[{name}] {message}";
         switch (level)
         {
-            case YoloLogSettings.LogLevel.Debug:
+            case YoloV8Detection.YoloLogSettings.LogLevel.Debug:
                 Debug.Log(logContent, this);
                 break;
-            case YoloLogSettings.LogLevel.Info:
+            case YoloV8Detection.YoloLogSettings.LogLevel.Info:
                 Debug.Log(logContent, this);
                 break;
-            case YoloLogSettings.LogLevel.Warn:
+            case YoloV8Detection.YoloLogSettings.LogLevel.Warn:
                 Debug.LogWarning(logContent, this);
                 break;
-            case YoloLogSettings.LogLevel.Error:
+            case YoloV8Detection.YoloLogSettings.LogLevel.Error:
                 Debug.LogError(logContent, this);
                 break;
-            case YoloLogSettings.LogLevel.Fatal:
+            case YoloV8Detection.YoloLogSettings.LogLevel.Fatal:
                 Debug.LogError($"[FATAL] {logContent}", this);
                 break;
-            case YoloLogSettings.LogLevel.None:
+            case YoloV8Detection.YoloLogSettings.LogLevel.None:
                 break;
         }
     }
     #endregion
 
-    /// <summary>
-    /// Ğ£Ñé²ÎÊıºÏ·¨ĞÔ£¬±ÜÃâÔËĞĞÊ±Òì³£
-    /// </summary>
     private void ValidateParameters()
     {
         if (usvMoveSpeed < 0)
         {
-            // Ìæ»»Ô­ÓĞÈÕÖ¾ÎªÍ³Ò»½Ó¿Ú
-            LogWarn($"ÊÖ¶¯ÒÆ¶¯ËÙ¶È²»ÄÜÎª¸º£¬ÒÑÖØÖÃÎª5");
+            LogWarn($"æ‰‹åŠ¨ç§»åŠ¨é€Ÿåº¦ä¸èƒ½ä¸ºè´Ÿï¼Œå·²é‡ç½®ä¸º5");
             usvMoveSpeed = 5f;
         }
         if (autoMoveSpeed < 0)
         {
-            // Ìæ»»Ô­ÓĞÈÕÖ¾ÎªÍ³Ò»½Ó¿Ú
-            LogWarn($"×Ô¶¯ÒÆ¶¯ËÙ¶È²»ÄÜÎª¸º£¬ÒÑÖØÖÃÎª3");
+            LogWarn($"è‡ªåŠ¨ç§»åŠ¨é€Ÿåº¦ä¸èƒ½ä¸ºè´Ÿï¼Œå·²é‡ç½®ä¸º3");
             autoMoveSpeed = 3f;
         }
         if (randomDirUpdateInterval <= 0)
         {
-            // Ìæ»»Ô­ÓĞÈÕÖ¾ÎªÍ³Ò»½Ó¿Ú
-            LogWarn($"·½Ïò¸üĞÂ¼ä¸ô±ØĞë´óÓÚ0£¬ÒÑÖØÖÃÎª1.5");
+            LogWarn($"æ–¹å‘æ›´æ–°é—´éš”å¿…é¡»å¤§äº0ï¼Œå·²é‡ç½®ä¸º1.5");
             randomDirUpdateInterval = 1.5f;
         }
     }
 
-    /// <summary>
-    /// ¼ì²âÊÇ·ñÓĞÊÖ¶¯ÊäÈë
-    /// </summary>
     private bool CheckManualInput()
     {
         return Input.GetKey(forwardControlKey) || Input.GetKey(backwardControlKey) ||
                Input.GetKey(leftControlKey) || Input.GetKey(rightControlKey);
     }
 
-    /// <summary>
-    /// »ñÈ¡ÊÖ¶¯¿ØÖÆµÄXÖáÎ»ÒÆ
-    /// </summary>
     private float GetManualXMovement()
     {
         float x = 0f;
@@ -229,9 +222,6 @@ public class USV_AutoMovement : MonoBehaviour
         return x;
     }
 
-    /// <summary>
-    /// »ñÈ¡ÊÖ¶¯¿ØÖÆµÄZÖáÎ»ÒÆ
-    /// </summary>
     private float GetManualZMovement()
     {
         float z = 0f;
@@ -240,12 +230,8 @@ public class USV_AutoMovement : MonoBehaviour
         return z;
     }
 
-    /// <summary>
-    /// ×Ô¶¯Ëæ»úÒÆ¶¯Âß¼­£¨ÊÊÅäGridManagerÕ¤¸ñÕÏ°­/±ß½ç£©
-    /// </summary>
     private void AutoRandomMovement(ref float xMove, ref float zMove)
     {
-        // ¶¨Ê±¸üĞÂËæ»úÒÆ¶¯·½Ïò
         _dirUpdateTimer += Time.deltaTime;
         if (_dirUpdateTimer >= randomDirUpdateInterval)
         {
@@ -253,44 +239,33 @@ public class USV_AutoMovement : MonoBehaviour
             _dirUpdateTimer = 0f;
         }
 
-        // ÕÏ°­¶ã±ÜÂß¼­£¨»ùÓÚÕ¤¸ñ£©
         if (enableObstacleAvoid && _isGridReady)
         {
             AvoidObstaclesByGrid();
         }
 
-        // Ë®Óò±ß½çÏŞÖÆ
         if (enableWaterBoundaryLimit && _isGridReady)
         {
             LimitDirectionToWaterBoundary();
         }
 
-        // Ó¦ÓÃ×Ô¶¯ÒÆ¶¯Î»ÒÆ£¨ÏŞÖÆ×î´óËÙ¶È£©
         xMove = Mathf.Clamp(_randomMoveDir.x * autoMoveSpeed * Time.deltaTime, -autoMoveSpeed * Time.deltaTime, autoMoveSpeed * Time.deltaTime);
         zMove = Mathf.Clamp(_randomMoveDir.z * autoMoveSpeed * Time.deltaTime, -autoMoveSpeed * Time.deltaTime, autoMoveSpeed * Time.deltaTime);
     }
 
-    /// <summary>
-    /// ¸üĞÂËæ»úÒÆ¶¯·½Ïò£¨È·±£·½ÏòÓĞĞ§£©
-    /// </summary>
     private void UpdateRandomMoveDir()
     {
-        // ĞŞ¸´£ºÃ÷È·Ö¸¶¨UnityEngineÃüÃû¿Õ¼ä£¬½â¾öRandom³åÍ»
-        Vector3 newDir = new Vector3(UnityEngine.Random.Range(-1f, 1f), 0, UnityEngine.Random.Range(-1f, 1f));
-        // ±ÜÃâÁãÏòÁ¿£¨·ÀÖ¹ÎŞÒÆ¶¯£©
-        _randomMoveDir = newDir.magnitude < 0.1f ? Vector3.forward : newDir.normalized;
+        float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+        Vector3 newDir = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+        _randomMoveDir = newDir.normalized;
     }
 
-    /// <summary>
-    /// »ùÓÚGridManagerÕ¤¸ñµÄÕÏ°­¶ã±ÜÂß¼­
-    /// </summary>
     private void AvoidObstaclesByGrid()
     {
         int retryCount = 0;
-        const int maxRetry = 5; // ×î´óÖØÊÔ´ÎÊı£¬±ÜÃâËÀÑ­»·
+        const int maxRetry = 5;
         bool isCurrentDirBlocked = IsDirectionBlockedByGrid(_randomMoveDir);
 
-        // ¼ì²âµ½ÕÏ°­ÔòÖØÊÔËæ»ú·½Ïò
         while (isCurrentDirBlocked && retryCount < maxRetry)
         {
             UpdateRandomMoveDir();
@@ -298,29 +273,20 @@ public class USV_AutoMovement : MonoBehaviour
             retryCount++;
         }
 
-        // »æÖÆµ÷ÊÔÉäÏß
-        Color rayColor = isCurrentDirBlocked ? Color.red : Color.green;
-        Debug.DrawRay(transform.position, _randomMoveDir * 2f, rayColor, 0.1f);
-
         if (isCurrentDirBlocked)
         {
-            // Ìæ»»Ô­ÓĞÈÕÖ¾ÎªÍ³Ò»½Ó¿Ú
-            LogWarn($"³¢ÊÔ{maxRetry}´ÎÈÔ¼ì²âµ½Õ¤¸ñÕÏ°­£¬Í£Ö¹×Ô¶¯ÒÆ¶¯");
-            _randomMoveDir = Vector3.zero; // Í£Ö¹ÒÆ¶¯£¬±ÜÃâ×²Ç½
+            float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            _randomMoveDir = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)).normalized;
+            LogWarn($"éšœç¢ç‰©é˜»æŒ¡ï¼Œå¼ºåˆ¶ç”Ÿæˆæ–°æ–¹å‘: {_randomMoveDir}");
         }
     }
 
-    /// <summary>
-    /// ¼ì²âÖ¸¶¨·½ÏòµÄÕ¤¸ñÊÇ·ñ±»×èµ²£¨Ç¿»¯×ø±ê×ª»»½¡×³ĞÔ£©
-    /// </summary>
     private bool IsDirectionBlockedByGrid(Vector3 direction)
     {
         if (direction == Vector3.zero || !_isGridReady) return false;
 
-        // ¼ÆËãÏÂÒ»²½µÄÊÀ½ç×ø±ê
         Vector3 nextWorldPos = transform.position + direction * (autoMoveSpeed * Time.deltaTime * 1.5f);
 
-        // °²È«×ª»»ÊÀ½ç×ø±êµ½Õ¤¸ñ×ø±ê£¨Ôö¼Ó¿ÕÖµ/·¶Î§Ğ£Ñé£©
         Vector2Int nextGridPos;
         try
         {
@@ -328,23 +294,17 @@ public class USV_AutoMovement : MonoBehaviour
         }
         catch (System.Exception e)
         {
-            // Ìæ»»Ô­ÓĞÈÕÖ¾ÎªÍ³Ò»½Ó¿Ú
-            LogError($"ÊÀ½ç×ø±ê×ªÕ¤¸ñ×ø±êÊ§°Ü£º{e.Message}", e);
+            LogError($"ä¸–ç•Œåæ ‡è½¬æ …æ ¼åæ ‡å¤±è´¥ï¼š{e.Message}", e);
             return false;
         }
 
-        // ¼ì²éÕ¤¸ñÊÇ·ñ¿ÉÍ¨ĞĞ
         return !_gridManager.IsGridPassable(nextGridPos);
     }
 
-    /// <summary>
-    /// ÏŞÖÆÒÆ¶¯·½ÏòÔÚË®Óò±ß½çÄÚ
-    /// </summary>
     private void LimitDirectionToWaterBoundary()
     {
         Vector3 futurePos = transform.position + _randomMoveDir * (autoMoveSpeed * Time.deltaTime * 2f);
 
-        // ¼ì²âXÖá±ß½ç£¨Ôö¼Ó¿ÕÖµĞ£Ñé£©
         if (futurePos.x < _gridManager.WaterMinX)
         {
             _randomMoveDir = new Vector3(Mathf.Abs(_randomMoveDir.x), 0, _randomMoveDir.z).normalized;
@@ -354,7 +314,6 @@ public class USV_AutoMovement : MonoBehaviour
             _randomMoveDir = new Vector3(-Mathf.Abs(_randomMoveDir.x), 0, _randomMoveDir.z).normalized;
         }
 
-        // ¼ì²âZÖá±ß½ç£¨Ôö¼Ó¿ÕÖµĞ£Ñé£©
         if (futurePos.z < _gridManager.WaterMinZ)
         {
             _randomMoveDir = new Vector3(_randomMoveDir.x, 0, Mathf.Abs(_randomMoveDir.z)).normalized;
@@ -365,15 +324,11 @@ public class USV_AutoMovement : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// ÏŞÖÆÊÖ¶¯ÒÆ¶¯µÄÎ»ÖÃÔÚË®Óò±ß½çÄÚ
-    /// </summary>
     private void LimitPositionToWaterBoundary(ref float xMove, ref float zMove, Vector3 currentPos)
     {
         float futureX = currentPos.x + xMove;
         float futureZ = currentPos.z + zMove;
 
-        // ĞŞÕıXÖáÎ»ÒÆ£¨Ôö¼Ó±ß½çÖµĞ£Ñé£©
         if (futureX < _gridManager.WaterMinX)
         {
             xMove = Mathf.Max(_gridManager.WaterMinX - currentPos.x, -usvMoveSpeed * Time.deltaTime);
@@ -383,7 +338,6 @@ public class USV_AutoMovement : MonoBehaviour
             xMove = Mathf.Min(_gridManager.WaterMaxX - currentPos.x, usvMoveSpeed * Time.deltaTime);
         }
 
-        // ĞŞÕıZÖáÎ»ÒÆ£¨Ôö¼Ó±ß½çÖµĞ£Ñé£©
         if (futureZ < _gridManager.WaterMinZ)
         {
             zMove = Mathf.Max(_gridManager.WaterMinZ - currentPos.z, -usvMoveSpeed * Time.deltaTime);
@@ -394,32 +348,22 @@ public class USV_AutoMovement : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// °²È«¸üĞÂÎŞÈË´¬Î»ÖÃ£¨·ÀÖ¹Òì³£Öµ£©
-    /// </summary>
     private void UpdateUSVPosition(Vector3 currentPos, float xMove, float zMove)
     {
-        // ÏŞÖÆÎ»ÒÆÖµ£¬±ÜÃâNaN/ÎŞÇî´óµ¼ÖÂÒì³£
         float newX = Mathf.Clamp(currentPos.x + xMove, -1000f, 1000f);
         float newZ = Mathf.Clamp(currentPos.z + zMove, -1000f, 1000f);
 
-        // ×îÖÕ±ß½ç¶µµ×£¨¼´Ê¹Õ¤¸ñÎ´¾ÍĞ÷Ò²ÏŞÖÆ£©
         if (enableWaterBoundaryLimit && _isGridReady)
         {
             newX = Mathf.Clamp(newX, _gridManager.WaterMinX, _gridManager.WaterMaxX);
             newZ = Mathf.Clamp(newZ, _gridManager.WaterMinZ, _gridManager.WaterMaxZ);
         }
 
-        // ¹Ì¶¨YÖá¸ß¶È£¬¸üĞÂÎ»ÖÃ
         transform.position = new Vector3(newX, waterHeightOffset, newZ);
     }
 
-    /// <summary>
-    /// Gizmos»æÖÆ£º¸¨Öú²é¿´Ë®Óò±ß½çºÍÕÏ°­¼ì²â
-    /// </summary>
     void OnDrawGizmosSelected()
     {
-        // »æÖÆË®Óò±ß½ç£¨Èç¹ûGridManager´æÔÚ£©
         if (_gridManager != null && enableWaterBoundaryLimit)
         {
             Gizmos.color = new Color(0, 1, 0, 0.2f);
@@ -436,112 +380,11 @@ public class USV_AutoMovement : MonoBehaviour
             Gizmos.DrawWireCube(center, size);
         }
 
-        // »æÖÆ×Ô¶¯ÒÆ¶¯·½Ïò
         if (enableObstacleAvoid)
         {
             Gizmos.color = Color.blue;
             Gizmos.DrawRay(transform.position, _randomMoveDir * 2f);
             Gizmos.DrawWireSphere(transform.position + _randomMoveDir * 2f, 0.2f);
-        }
-    }
-}
-
-/// <summary>
-/// ĞÂÔö£ºÈ«¾ÖYoloLogSettingsµ¥Àı£¨¿ÉÑ¡£¬ÓÃÓÚÈ«¾ÖÍ³Ò»ÅäÖÃ£©
-/// </summary>
-public class YoloLogSettingsGlobal : MonoBehaviour
-{
-    public static YoloLogSettingsGlobal Instance { get; private set; }
-    public YoloLogSettings LogSettings { get; private set; }
-
-    private void Awake()
-    {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
-
-        // ³õÊ¼»¯È«¾ÖÈÕÖ¾ÅäÖÃ
-        LogSettings = new YoloLogSettings();
-    }
-}
-
-/// <summary>
-/// ÈÕÖ¾ÅäÖÃºËĞÄÀà£¨ĞèÈ·±£¸ÃÀàÔÚÏîÄ¿ÖĞ´æÔÚ£¬´Ë´¦ÎªÊÊÅäËùĞèµÄ×îĞ¡¶¨Òå£©
-/// </summary>
-public class YoloLogSettings
-{
-    // ÈÕÖ¾¼¶±ğ¶¨Òå
-    public enum LogLevel
-    {
-        None,    // ²»Êä³öÈÎºÎÈÕÖ¾
-        Fatal,   // ÖÂÃü´íÎó
-        Error,   // ÆÕÍ¨´íÎó
-        Warn,    // ¾¯¸æ
-        Info,    // ĞÅÏ¢
-        Debug    // µ÷ÊÔ
-    }
-
-    // Ä£¿é¶¨Òå£¨¿É¸ù¾İÏîÄ¿À©Õ¹£©
-    public enum LogModule
-    {
-        Main,    // Ö÷Ä£¿é£¨Ê¾Àı£©
-        USV,     // ÎŞÈË´¬Ä£¿é
-        Grid,    // Õ¤¸ñÄ£¿é
-        Other    // ÆäËûÄ£¿é
-    }
-
-    // Ä£¿éÆôÓÃ×´Ì¬£¨Ä¬ÈÏÈ«²¿ÆôÓÃ£©
-    private Dictionary<LogModule, bool> _moduleEnabled = new Dictionary<LogModule, bool>()
-    {
-        { LogModule.Main, true },
-        { LogModule.USV, true },
-        { LogModule.Grid, true },
-        { LogModule.Other, true }
-    };
-
-    // Ä£¿éÈÕÖ¾¼¶±ğ£¨Ä¬ÈÏÈ«²¿ÎªDebug£©
-    private Dictionary<LogModule, LogLevel> _moduleLogLevel = new Dictionary<LogModule, LogLevel>()
-    {
-        { LogModule.Main, LogLevel.Debug },
-        { LogModule.USV, LogLevel.Debug },
-        { LogModule.Grid, LogLevel.Debug },
-        { LogModule.Other, LogLevel.Debug }
-    };
-
-    /// <summary>
-    /// ¼ì²éÄ£¿éÊÇ·ñÆôÓÃÈÕÖ¾
-    /// </summary>
-    public bool IsModuleEnabled(LogModule module)
-    {
-        return _moduleEnabled.TryGetValue(module, out bool enabled) && enabled;
-    }
-
-    /// <summary>
-    /// »ñÈ¡Ä£¿éµÄÈÕÖ¾¼¶±ğ
-    /// </summary>
-    public LogLevel GetModuleLogLevel(LogModule module)
-    {
-        return _moduleLogLevel.TryGetValue(module, out LogLevel level) ? level : LogLevel.None;
-    }
-
-    // ¿ÉÑ¡£ºÌá¹©ÅäÖÃĞŞ¸Ä½Ó¿Ú£¨ÓÃÓÚÍâ²¿¿ØÖÆÈÕÖ¾¿ª¹Ø/¼¶±ğ£©
-    public void SetModuleEnabled(LogModule module, bool enabled)
-    {
-        if (_moduleEnabled.ContainsKey(module))
-        {
-            _moduleEnabled[module] = enabled;
-        }
-    }
-
-    public void SetModuleLogLevel(LogModule module, LogLevel level)
-    {
-        if (_moduleLogLevel.ContainsKey(module))
-        {
-            _moduleLogLevel[module] = level;
         }
     }
 }

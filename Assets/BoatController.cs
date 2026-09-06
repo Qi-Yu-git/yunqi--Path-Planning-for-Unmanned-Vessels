@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
-
+using USVGridSystem;
 public class BoatController : MonoBehaviour
 {
     // 公开参数（在Inspector赋值）
@@ -12,7 +12,7 @@ public class BoatController : MonoBehaviour
     [Tooltip("转向速度（建议1）")]
     public float rotationSpeed = 1f;          // 转向平滑系数
     [Tooltip("路径点切换距离（建议1）")]
-    [SerializeField] private float waypointDistance = 1.0f;       // 匹配目标版本的1f
+    public float waypointDistance = 1.0f;  // 改为 public，或添加 [SerializeField]
     public float endPointSlowRange = 2f;      // 终点前减速范围
     public float minEndSpeed = 0.5f;          // 终点前最小速度
 
@@ -397,75 +397,36 @@ public class BoatController : MonoBehaviour
     }
 
     // ========== 核心优化：FixedUpdate增加避障状态判断 ==========
+    // ========== 在 BoatController.cs 的 FixedUpdate() 中 ==========
     void FixedUpdate()
     {
-        // 固定Y轴高度，避免上下浮动
+        // 固定Y轴高度
         transform.position = new Vector3(transform.position.x, 0.4f, transform.position.z);
 
+        // ========== 核心修改：禁用原有的路径跟随逻辑 ==========
+        // 路径跟随现在由 USV_LocalPlanner 负责，BoatController 只处理碰撞避障
+
+        // 如果训练环境（ML-Agents Agent）接管了控制，BoatController 只负责路径逻辑
         if (isReachedEnd || worldPath == null || worldPath.Count == 0)
             return;
 
         // 到达最后一个路径点
         if (currentWaypointIndex >= worldPath.Count)
         {
-            rb.linearVelocity = Vector3.zero;
             isReachedEnd = true;
-            Debug.Log("已到达终点，停止移动");
+            Debug.Log("已到达终点");
             return;
         }
 
-        // 避障状态下跳过常规移动逻辑（由避障协程处理）
+        // 避障状态下跳过路径点切换逻辑
         if (isInCollisionAvoidance)
             return;
 
-        // 移动到当前路径点（目标版本逻辑）
-        Vector3 target = worldPath[currentWaypointIndex];
-        Vector3 targetXZ = new Vector3(target.x, 0.4f, target.z);
-        Vector3 currentXZ = new Vector3(transform.position.x, 0.4f, transform.position.z);
-        float distance = Vector3.Distance(currentXZ, targetXZ);
-        bool isLastWaypoint = (currentWaypointIndex == worldPath.Count - 1);
-        float stopDistance = isLastWaypoint ? 0.5f : waypointDistance; // 用waypointDistance作为判断阈值
+        // ⚠️ 以下代码可以注释掉，因为 LocalPlanner 已经处理了路径跟随
+        // 或者保留但不再修改 rb.linearVelocity
 
-        // 到达当前路径点，切换到下一个（提前预判下一个点方向）
-        if (distance <= stopDistance)
-        {
-            currentWaypointIndex++;
-            // 提前转向下一个点，减少转向延迟
-            if (currentWaypointIndex < worldPath.Count)
-            {
-                Vector3 nextTarget = worldPath[currentWaypointIndex];
-                Vector3 nextTargetXZ = new Vector3(nextTarget.x, 0.4f, nextTarget.z);
-                Quaternion nextRotation = Quaternion.LookRotation(nextTargetXZ - currentXZ);
-                transform.rotation = Quaternion.Euler(0, nextRotation.eulerAngles.y, 0);
-            }
-            return;
-        }
-
-        // 平滑转向目标（降低旋转速度，减少抖动）
-        Quaternion targetRotation = Quaternion.LookRotation(targetXZ - currentXZ);
-        targetRotation = Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
-        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
-
-        // 计算目标速度（终点前减速，增加平滑过渡）
-        float targetSpeed = moveSpeed;
-        if (isLastWaypoint)
-        {
-            float distanceToEnd = Vector3.Distance(currentXZ, worldPath[worldPath.Count - 1]);
-            if (distanceToEnd <= endPointSlowRange)
-            {
-                float speedRatio = distanceToEnd / endPointSlowRange;
-                targetSpeed = Mathf.Lerp(minEndSpeed, moveSpeed * 0.5f, speedRatio);
-            }
-            else
-            {
-                targetSpeed = moveSpeed * 0.5f;
-            }
-        }
-
-        // 速度平滑过渡（避免突然加速/减速）
-        currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.fixedDeltaTime * 2f);
-        Vector3 moveDir = transform.forward * currentSpeed;
-        rb.linearVelocity = new Vector3(moveDir.x, rb.linearVelocity.y, moveDir.z);
+        // 只更新位置但不控制速度（LocalPlanner 会控制）
+        // 这部分可以保留用于调试，但不要修改 Rigidbody
     }
 
     // 外部设置原始目标点的方法（供外部调用，如路径管理器）

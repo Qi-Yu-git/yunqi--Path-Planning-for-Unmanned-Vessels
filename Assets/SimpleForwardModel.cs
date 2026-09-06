@@ -25,13 +25,13 @@ public class SimpleForwardModel
     #region 可配置参数
     [Header("网络结构")]
     [Tooltip("输入层维度 = 观测维度 + 动作维度")]
-    public int inputDim = 130;              // 128 obs + 2 actions
+    public int inputDim = 140;              // 134 obs + 6 actions (改为134+6=140)
 
     [Tooltip("隐层神经元数量")]
     public int hiddenDim = 256;
 
     [Tooltip("输出层维度 = 观测维度")]
-    public int outputDim = 128;
+    public int outputDim = 134;             // 改为134
 
     [Header("训练超参数")]
     [Tooltip("学习率")]

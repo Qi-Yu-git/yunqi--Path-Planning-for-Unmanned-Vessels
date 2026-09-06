@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using Unity.MLAgents;
 using System.Collections;
+using USVGridSystem;
 
 /// <summary>
 /// USV强化学习环境的核心管理器
@@ -167,7 +168,7 @@ public class USV_Academy : MonoBehaviour
         {
             // 强制将超时时间设定为 120 秒（大幅缩短！）
             // 120秒如果还没走完，说明避障逻辑有严重问题，直接罚死。
-            usvAgent.ResetAgentState(maxUSVSpeed, 120f);
+            usvAgent.ResetAgentState(maxUSVSpeed, 90f);
         }
 
         if (usvAgent != null && usvAgent.enableTaskLoop && spawnManager != null)

@@ -367,14 +367,10 @@ namespace YoloV8Detection
                 _instance = null;
             }
 #if UNITY_EDITOR
-            _editorRetryStarted = false;
+    _editorRetryStarted = false;
 #endif
 
-            // 修复点2：在OnDestroy中主动销毁物体（仅编辑模式）
-            if (!Application.isPlaying && gameObject != null)
-            {
-             //   DestroyImmediate(gameObject);
-            }
+
         }
 
 #if UNITY_EDITOR
@@ -387,15 +383,18 @@ namespace YoloV8Detection
         private void OnSceneClosing(Scene scene, bool removingScene)
         {
             // 增加空引用保护（避免销毁时报错）
-            if (this == null || gameObject == null) return;
+            if (this == null) return; // 【重点】：直接检查 this 是否为 null
 
-            // 清理YoloLogSettings物体
             if (gameObject.name == "[YoloLogSettings]")
             {
                 // 延迟销毁，避免立即访问已销毁对象
                 EditorApplication.delayCall += () =>
                 {
-                    if (gameObject != null) DestroyImmediate(gameObject);
+                    // 【重点】：再次双重检查，防止 DelayCall 执行时对象已经没了
+                    if (this != null && gameObject != null)
+                    {
+                        DestroyImmediate(gameObject);
+                    }
                 };
                 _instance = null;
             }
@@ -405,29 +404,36 @@ namespace YoloV8Detection
         /// 编辑器停止播放时自动清理空物体
         /// </summary>
         [InitializeOnLoadMethod]
-        private static void EditorPlayModeCleanup()
+private static void EditorPlayModeCleanup()
+{
+    EditorApplication.playModeStateChanged += (state) =>
+    {
+        if (state == PlayModeStateChange.ExitingPlayMode || state == PlayModeStateChange.EnteredEditMode)
         {
-            // 监听编辑器播放模式变化
-            EditorApplication.playModeStateChanged += (state) =>
+            GameObject logObj = GameObject.Find("[YoloLogSettings]");
+            if (logObj != null)
             {
-                // 当停止运行（从播放模式切换到编辑模式）时执行清理
-                if (state == PlayModeStateChange.ExitingPlayMode || state == PlayModeStateChange.EnteredEditMode)
+                // ✅ 使用延迟调用，避免在播放模式切换时立即销毁
+                EditorApplication.delayCall += () =>
                 {
-                    // 查找并销毁自动创建的YoloLogSettings物体
-                    GameObject logObj = GameObject.Find("[YoloLogSettings]");
                     if (logObj != null)
                     {
                         Object.DestroyImmediate(logObj);
+                        _instance = null;
                     }
-                    // 重置单例引用
-                    _instance = null;
-                }
-            };
+                };
+            }
+        }
+    };
 
-            // 修复点3：监听场景关闭事件（全局）- 使用匿名方法避免签名问题
-            EditorSceneManager.sceneClosing += (Scene scene, bool removingScene) =>
+    EditorSceneManager.sceneClosing += (Scene scene, bool removingScene) =>
+    {
+        GameObject logObj = GameObject.Find("[YoloLogSettings]");
+        if (logObj != null)
+        {
+            // ✅ 使用延迟调用
+            EditorApplication.delayCall += () =>
             {
-                GameObject logObj = GameObject.Find("[YoloLogSettings]");
                 if (logObj != null)
                 {
                     Object.DestroyImmediate(logObj);
@@ -435,6 +441,8 @@ namespace YoloV8Detection
                 }
             };
         }
+    };
+}
 #endif
 
 #if UNITY_EDITOR
@@ -621,5 +629,15 @@ namespace YoloV8Detection
 #endif
         }
         #endregion
+
+        // YoloLogSettings.cs 添加
+        private void OnApplicationQuit()
+        {
+            if (Application.isPlaying && _instance == this)
+            {
+                Destroy(gameObject);
+                _instance = null;
+            }
+        }
     }
 }

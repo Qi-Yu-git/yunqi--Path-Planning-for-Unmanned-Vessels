@@ -1032,11 +1032,9 @@ MonoBehaviour:
   target: {fileID: 1521328185}
   colregsEvaluator: {fileID: 0}
   collisionCheckRadius: 1.5
-  minObstacleCount: 3
   targetArriveThreshold: 2
   boundaryThresholdFactor: 0.8
   pathCompleteWaypointCount: 3
-  pathCompleteTerminateThreshold: 3
   desiredSpeed: 1.2
   safeNearMissDistance: 3
   enableRewardDebug: 1
@@ -1059,7 +1057,7 @@ MonoBehaviour:
     VectorObservationSize: 128
     NumStackedVectorObservations: 1
     m_ActionSpec:
-      m_NumContinuousActions: 2
+      m_NumContinuousActions: 6
       BranchSizes: 01000000
     VectorActionSize: 
     VectorActionDescriptions: []
@@ -1086,16 +1084,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27cf9ba6050ba1e418a4002ba81ec937, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  localSafeDistance: 3
-  colregsSafeDistance: 4
-  dwaPredictTime: 0.8
-  returnToPathThreshold: 2
+  predictTime: 3
+  predictSteps: 30
+  maxLinearSpeed: 1.2
+  maxAngularSpeed: 0.26
+  collisionHardBoundary: 0.85
+  currentPathIndex: 0
   dynamicObstacles: []
   dynamicObstacleVelocities: []
-  predictionTime: 2
-  collisionThreshold: 2.5
-  avoidDistance: 3
-  obstacleSpeedFactor: 0.8
 --- !u!114 &173794675
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5179,11 +5175,9 @@ MonoBehaviour:
   target: {fileID: 0}
   colregsEvaluator: {fileID: 0}
   collisionCheckRadius: 1.5
-  minObstacleCount: 3
   targetArriveThreshold: 2
   boundaryThresholdFactor: 0.8
   pathCompleteWaypointCount: 3
-  pathCompleteTerminateThreshold: 3
   desiredSpeed: 1.2
   safeNearMissDistance: 3
   enableRewardDebug: 1
